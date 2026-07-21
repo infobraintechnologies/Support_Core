@@ -9,13 +9,15 @@ namespace CBSSupport.Shared.Services
     {
         Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(long clientAuthUserId);
 
-        Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId);
+        Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId, long? clientId = null);
 
-        Task<ChatMessage> CreateInstructionTicketAsync(ChatMessage newTicket);
+        Task<ChatMessage?> CreateInstructionTicketAsync(
+            ChatMessage newTicket,
+            CancellationToken cancellationToken = default);
 
         Task<ChatMessage> GetInstructionByIdAsync(long instructionId);
 
-        Task<IEnumerable<ChatMessage>> GetMessagesByConversationIdAsync(long conversationId);
+        Task<IEnumerable<ChatMessage>> GetMessagesByConversationIdAsync(long conversationId, long? clientId = null);
 
         Task<SidebarViewModel> GetSidebarForUserAsync(long clientAuthUserId, long clientId);
 
@@ -50,9 +52,9 @@ namespace CBSSupport.Shared.Services
 
         Task<bool> UpdateInquiryStatusAsync(long inquiryId, bool isCompleted, long? completedByUserId = null);
 
-        Task<TicketViewModel> GetTicketDetailsByIdAsync(long ticketId);
+        Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null);
 
-        Task<InquiryViewModel> GetInquiryDetailsByIdAsync(long inquiryId);
+        Task<InquiryViewModel?> GetInquiryDetailsByIdAsync(long inquiryId, long? clientId = null);
 
         Task<IEnumerable<object>> GetUnreadNotificationsForAdminAsync();
 
@@ -60,10 +62,10 @@ namespace CBSSupport.Shared.Services
 
         Task<int> MarkAllNotificationsSeenByAdminAsync();
 
-        Task<bool> MarkNotificationSeenByClientAsync(long instructionId);
+        Task<bool> MarkNotificationSeenByClientAsync(long instructionId, long clientId);
 
-        Task<IEnumerable<object>> GetUnreadNotificationsForClientAsync(long? clientId);
+        Task<IEnumerable<object>> GetUnreadNotificationsForClientAsync(long clientId);
 
-        Task<int> MarkAllNotificationsSeenByClientAsync(long? clientId);
+        Task<int> MarkAllNotificationsSeenByClientAsync(long clientId);
     }
 }

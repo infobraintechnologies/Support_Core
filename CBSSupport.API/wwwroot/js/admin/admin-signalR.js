@@ -11,6 +11,7 @@ window.AdminSignalR = (() => {
     // ============================================
 
     let connection = null;
+    const joinedConversations = new Set();
 
     async function initialize() {
         try {
@@ -38,8 +39,16 @@ window.AdminSignalR = (() => {
             console.log("🔄 AdminSignalR: Attempting to reconnect...");
         });
 
-        connection.onreconnected(() => {
+        connection.onreconnected(async () => {
             console.log("✅ AdminSignalR: Reconnected successfully");
+
+            for (const conversationId of joinedConversations) {
+                try {
+                    await connection.invoke("JoinConversation", conversationId);
+                } catch (error) {
+                    console.error(`Failed to rejoin conversation ${conversationId}:`, error);
+                }
+            }
         });
 
         connection.onclose(() => {
@@ -58,7 +67,8 @@ window.AdminSignalR = (() => {
         if (!connection) return;
 
         // Receive private messages
-        connection.on("ReceivePrivateMessage", (message) => {
+        connection.on("MessageCreated", (createdMessage) => {
+            const message = toLegacyMessage(createdMessage);
             console.log("📨 AdminSignalR: ReceivePrivateMessage received:", message);
 
             const currentUser = window.AdminCore?.getCurrentUser();
@@ -122,6 +132,16 @@ window.AdminSignalR = (() => {
             }
         });
 
+        connection.on("TicketChanged", () => {
+            window.AdminTickets?.getTicketsTable()?.ajax.reload(null, false);
+            window.AdminNotifications?.loadNotifications();
+        });
+
+        connection.on("InquiryChanged", () => {
+            window.AdminInquiries?.getInquiriesTable?.()?.ajax.reload(null, false);
+            window.AdminNotifications?.loadNotifications();
+        });
+
         // General notifications
         connection.on("ReceiveNotification", (notification) => {
             console.log("🔔 AdminSignalR: Notification received:", notification);
@@ -176,6 +196,19 @@ window.AdminSignalR = (() => {
                 window.AdminUtils.showNotification(`Inquiry #${data.inquiryId} status updated`, 'info');
             }
         });
+    }
+
+    function toLegacyMessage(message) {
+        return {
+            id: message.id,
+            instructionId: message.conversationId,
+            instruction: message.text,
+            dateTime: message.sentAt,
+            senderName: message.sender?.displayName,
+            insertUser: message.sender?.kind === "Admin" ? message.sender.userId : null,
+            clientAuthUserId: message.sender?.kind === "Client" ? message.sender.userId : null,
+            attachmentId: message.attachmentId
+        };
     }
 
     // ============================================
@@ -246,57 +279,36 @@ window.AdminSignalR = (() => {
     // 📤 SEND FUNCTIONS
     // ============================================
 
-    async function sendAdminMessage(message) {
+    async function sendMessage(conversationId, text) {
         try {
             if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
                 throw new Error("SignalR connection not available");
             }
 
-            console.log("📤 AdminSignalR: Sending admin message:", message);
-            await connection.invoke("SendAdminMessage", message);
+            const message = await connection.invoke(
+                "SendMessage",
+                Number(conversationId),
+                { text, attachmentIds: [] });
+            return toLegacyMessage(message);
         } catch (error) {
             console.error("❌ AdminSignalR: Error sending admin message:", error);
             throw error;
         }
     }
 
-    async function joinPrivateChat(chatId) {
+    async function joinConversation(chatId) {
         try {
             if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
                 throw new Error("SignalR connection not available");
             }
 
             console.log(`📤 AdminSignalR: Joining private chat: ${chatId}`);
-            await connection.invoke("JoinPrivateChat", chatId.toString());
+            const conversationId = Number(chatId);
+            await connection.invoke("JoinConversation", conversationId);
+            joinedConversations.add(conversationId);
         } catch (error) {
             console.error("❌ AdminSignalR: Error joining private chat:", error);
             throw error;
-        }
-    }
-
-    async function notifyTicketCreated(ticketData) {
-        try {
-            if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
-                console.warn("⚠️ AdminSignalR: Connection not available for ticket notification");
-                return;
-            }
-
-            await connection.invoke("NotifyTicketCreated", ticketData);
-        } catch (error) {
-            console.error("❌ AdminSignalR: Error notifying ticket created:", error);
-        }
-    }
-
-    async function notifyInquiryCreated(inquiryData) {
-        try {
-            if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
-                console.warn("⚠️ AdminSignalR: Connection not available for inquiry notification");
-                return;
-            }
-
-            await connection.invoke("NotifyInquiryCreated", inquiryData);
-        } catch (error) {
-            console.error("❌ AdminSignalR: Error notifying inquiry created:", error);
         }
     }
 
@@ -307,9 +319,7 @@ window.AdminSignalR = (() => {
     return {
         initialize,
         getConnection: () => connection,
-        sendAdminMessage,
-        joinPrivateChat,
-        notifyTicketCreated,
-        notifyInquiryCreated
+        sendMessage,
+        joinConversation
     };
 })();

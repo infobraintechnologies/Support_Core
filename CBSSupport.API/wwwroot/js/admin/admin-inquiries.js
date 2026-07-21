@@ -214,15 +214,6 @@ window.AdminInquiries = (() => {
 
                 AdminUtils.showNotification(`Inquiry outcome updated to ${newOutcome} successfully!`, 'success');
 
-                if (window.AdminSignalR && result.clientId) {
-                    try {
-                        await window.AdminSignalR.getConnection()?.invoke("NotifyInquiryStatusUpdate",
-                            currentInquiryData.id, newOutcome, result.clientId);
-                    } catch (signalRError) {
-                        console.warn('❓ AdminInquiries: SignalR notification failed:', signalRError);
-                    }
-                }
-
             } else {
                 throw new Error(result.message || 'Update failed');
             }

@@ -14,6 +14,8 @@
 </head>
 <body>
 
+    <div hidden aria-hidden="true">@Html.AntiForgeryToken()</div>
+
     <header class="app-header">
         <div class="header-left">
             <img src="~/images/infobrain-logo.jpg" alt="Balance Logo" class="header-logo" />
@@ -407,9 +409,11 @@
                 </div>
                 <div class="modal-body">
                     <div class="d-grid">
-                        <a class="btn btn-danger" href="/Login/Logout">
-                            <i class="fas fa-sign-out-alt me-2"></i>Logout
-                        </a>
+                        <form asp-controller="Login" asp-action="Logout" method="post" class="d-grid">
+                            <button type="submit" class="btn btn-danger">
+                                <i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -483,6 +487,7 @@
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script src="~/js/signalr/dist/browser/signalr.min.js"></script>
+    <script src="~/js/security/antiforgery.js" asp-append-version="true"></script>
     <script src="~/js/chat.js" asp-append-version="true"></script>
 </body>
 </html>

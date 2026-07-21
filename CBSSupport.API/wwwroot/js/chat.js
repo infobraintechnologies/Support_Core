@@ -32,15 +32,32 @@ document.addEventListener("DOMContentLoaded", () => {
     const inquiriesTableE1 = $('#inquiriesDataTable');
 
     const connection = new signalR.HubConnectionBuilder()
-        .withUrl("/chathub", {
-            accessTokenFactory: () => {
-                return localStorage.getItem("accessToken") || "";
-            }
-        })
+        .withUrl("/chathub")
         .withAutomaticReconnect()
         .build();
 
+    connection.onreconnected(async () => {
+        if (currentChatContext.id) {
+            try {
+                await connection.invoke("JoinConversation", Number(currentChatContext.id));
+            } catch (error) {
+                console.error("Failed to rejoin the active conversation:", error);
+            }
+        }
+    });
+
     const formatTimestamp = (d) => new Date(d).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    const toLegacyMessage = (message) => ({
+        id: message.id,
+        instructionId: message.conversationId,
+        instruction: message.text,
+        dateTime: message.sentAt,
+        senderName: message.sender?.displayName,
+        insertUser: message.sender?.kind === "Admin" ? message.sender.userId : null,
+        clientAuthUserId: message.sender?.kind === "Client" ? message.sender.userId : null,
+        attachmentId: message.attachmentId
+    });
 
     const updateSendButtonState = () => {
         if (!sendButton) return;
@@ -357,7 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         try {
-            await connection.invoke("JoinPrivateChat", currentChatContext.id.toString());
+            await connection.invoke("JoinConversation", Number(currentChatContext.id));
             await loadMessagesForConversation(currentChatContext.id);
         } catch (error) {
             console.error("Failed to join private chat:", error);
@@ -390,80 +407,13 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        if (!currentChatContext.route) {
-            alert("Please select a conversation to send a message.");
-            return;
-        }
-
-        if (!currentUser.id || currentUser.id <= 0) {
-            console.error("Invalid currentUser.id:", currentUser.id);
-            alert("User authentication error. Please refresh and try again.");
-            return;
-        }
-
-        if (!currentClient.id || currentClient.id <= 0) {
-            console.error("Invalid currentClient.id:", currentClient.id);
-            alert("Client information error. Please refresh and try again.");
-            return;
-        }
-
-        console.log("DEBUG: Sending message with:", {
-            messageText,
-            userId: currentUser.id,
-            clientId: currentClient.id,
-            instructionId: currentChatContext.id,
-            route: currentChatContext.route
-        });
-
-        let postUrl;
-        if (currentChatContext.route === 'support-group') {
-            postUrl = `/v1/api/instructions/support-group`;
-        } else {
-            postUrl = `/v1/api/instructions/reply`;
-        }
-
-        const chatMessage = {
-            Instruction: messageText,
-            ClientId: parseInt(currentClient.id, 10),
-            ClientAuthUserId: parseInt(currentUser.id, 10),
-            InsertUser: parseInt(currentUser.id, 10),
-            InstructionId: parseInt(currentChatContext.id, 10),
-            InstCategoryId: 100,
-            ServiceId: 3,
-            Remarks: "Message from web chat",
-            DateTime: new Date().toISOString(),
-            Status: true,
-            InstChannel: "chat"
-        };
-
-        console.log("SENDING THIS OBJECT:", JSON.stringify(chatMessage, null, 2));
-
         try {
-            const response = await fetch(postUrl, {
-                method: "POST",
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(chatMessage),
-            });
+            const savedMessage = await connection.invoke(
+                "SendMessage",
+                Number(currentChatContext.id),
+                { text: messageText, attachmentIds: [] });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                console.error("Server validation errors:", errorData);
-
-                if (errorData.errors) {
-                    const errorMessages = Object.entries(errorData.errors)
-                        .map(([field, messages]) => `${field}: ${messages.join(', ')}`)
-                        .join('\n');
-                    throw new Error(`Validation errors:\n${errorMessages}`);
-                }
-
-                throw new Error(errorData.message || errorData.title || "Failed to send message.");
-            }
-
-            const savedMessage = await response.json();
-            console.log("CLIENT SIDE: Invoking 'SendClientMessage' with message object:", savedMessage);
-
-            displayMessage(savedMessage, false);
-            await connection.invoke("SendClientMessage", savedMessage);
+            displayMessage(toLegacyMessage(savedMessage), false);
 
             messageInput.value = '';
             updateSendButtonState();
@@ -844,14 +794,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (createTicketModal) createTicketModal.hide();
                     createTicketForm.reset();
 
-                    if (connection.state === signalR.HubConnectionState.Connected) {
-                        await connection.invoke("NotifyTicketCreated", {
-                            ticketId: createdTicket.id,
-                            clientId: currentClient.id,
-                            subject: chatMessage.Instruction.substring(0, 50) + '...'
-                        });
-                    }
-
                 } catch (error) {
                     console.error("Error creating ticket:", error);
                     showNotificationToast(`Error: ${error.message}`, 'error');
@@ -929,14 +871,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (createInquiryModal) createInquiryModal.hide();
                     createInquiryForm.reset();
 
-                    if (connection.state === signalR.HubConnectionState.Connected) {
-                        await connection.invoke("NotifyInquiryCreated", {
-                            inquiryId: createdInquiry.id,
-                            clientId: currentClient.id,
-                            topic: inquiryType
-                        });
-                    }
-
                 } catch (error) {
                     console.error("Error creating inquiry:", error);
                     showNotificationToast(`Error: ${error.message}`, 'error');
@@ -945,7 +879,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    connection.on("ReceivePrivateMessage", (message) => {
+    connection.on("MessageCreated", (createdMessage) => {
+        const message = toLegacyMessage(createdMessage);
         console.log("CLIENT SIDE: 'ReceivePrivateMessage' event fired. Message received:", message);
 
         const conversationId = message.instructionId;
@@ -1036,7 +971,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (supportTicketsTableE1.length) {
             ticketsDataTable = supportTicketsTableE1.DataTable({
                 "ajax": {
-                    "url": `/v1/api/instructions/tickets/${currentClient.id}`,
+                    "url": "/v1/api/instructions/tickets",
                     "dataSrc": function (json) {
                         console.log("DEBUG: Ticket data structure:", json.data[0]);
                         return json.data;
@@ -1159,7 +1094,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (inquiriesTableE1.length) {
             inquiriesDataTable = inquiriesTableE1.DataTable({
                 "ajax": {
-                    "url": `/v1/api/instructions/inquiries/${currentClient.id}`,
+                    "url": "/v1/api/instructions/inquiries",
                     "dataSrc": function (json) {
                         console.log("DEBUG: Inquiry data structure:", json.data[0]);
                         console.log("DEBUG: All inquiry fields:", json.data.length > 0 ? Object.keys(json.data[0]) : "No data");

@@ -110,10 +110,18 @@ body {
     font-size: 1.1rem;
     transition: color 0.2s ease;
     text-decoration: none;
+    cursor: pointer;
 }
 
     .logout-link:hover {
         color: #fed7d7;
+    }
+
+    .logout-link:focus-visible {
+        color: #fed7d7;
+        outline: 2px solid #ffffff;
+        outline-offset: 3px;
+        border-radius: 0.25rem;
     }
 
 /* 📊 ADMIN CONTENT */

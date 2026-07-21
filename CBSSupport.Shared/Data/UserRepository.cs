@@ -17,7 +17,22 @@ namespace CBSSupport.Shared.Data
 
         public async Task<AdminUser?> GetByUsernameAsync(string username)
         {
-            var sql = "SELECT * FROM admin.users WHERE user_name = @Username";
+            const string sql = """
+                SELECT
+                    id,
+                    user_name,
+                    password_salt,
+                    password_hash,
+                    role_id,
+                    full_name,
+                    status,
+                    deactive_date
+                FROM admin.users
+                WHERE user_name = @Username
+                  AND status IS TRUE
+                  AND deactive_date IS NULL
+                """;
+
             using (var connection = new NpgsqlConnection(_connectionString))
             {
                 return await connection.QuerySingleOrDefaultAsync<AdminUser>(sql, new { Username = username });
@@ -26,10 +41,22 @@ namespace CBSSupport.Shared.Data
 
         public async Task<ClientUser?> GetClientUserAsync(long clientId, string username)
         {
-            var sql = @"
-                SELECT * 
+            const string sql = """
+                SELECT
+                    id,
+                    client_id,
+                    user_name,
+                    full_name,
+                    password_hash,
+                    password_salt,
+                    status,
+                    deactive_date
                 FROM internal.support_users
-                WHERE client_id = @ClientId AND user_name = @Username";
+                WHERE client_id = @ClientId
+                  AND user_name = @Username
+                  AND status IS TRUE
+                  AND deactive_date IS NULL
+                """;
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
@@ -40,12 +67,61 @@ namespace CBSSupport.Shared.Data
             }
         }
 
-        public async Task<AdminUser?> GetByIdAsync(long userId)
+        public async Task<AdminUser?> GetByIdAsync(
+            long userId,
+            CancellationToken cancellationToken = default)
         {
-            var sql = "SELECT * FROM admin.users WHERE id = @UserId";
+            const string sql = """
+                SELECT
+                    id,
+                    user_name,
+                    password_salt,
+                    password_hash,
+                    role_id,
+                    full_name,
+                    status,
+                    deactive_date
+                FROM admin.users
+                WHERE id = @UserId
+                """;
+
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QuerySingleOrDefaultAsync<AdminUser>(sql, new { UserId = userId });
+                var command = new CommandDefinition(
+                    sql,
+                    new { UserId = userId },
+                    cancellationToken: cancellationToken);
+                return await connection.QuerySingleOrDefaultAsync<AdminUser>(command);
+            }
+        }
+
+        public async Task<ClientUser?> GetClientUserByIdAsync(
+            long clientId,
+            long userId,
+            CancellationToken cancellationToken = default)
+        {
+            const string sql = """
+                SELECT
+                    id,
+                    client_id,
+                    user_name,
+                    full_name,
+                    password_hash,
+                    password_salt,
+                    status,
+                    deactive_date
+                FROM internal.support_users
+                WHERE id = @UserId
+                  AND client_id = @ClientId
+                """;
+
+            using (var connection = new NpgsqlConnection(_connectionString))
+            {
+                var command = new CommandDefinition(
+                    sql,
+                    new { UserId = userId, ClientId = clientId },
+                    cancellationToken: cancellationToken);
+                return await connection.QuerySingleOrDefaultAsync<ClientUser>(command);
             }
         }
     }

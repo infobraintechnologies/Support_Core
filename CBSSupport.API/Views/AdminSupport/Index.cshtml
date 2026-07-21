@@ -15,6 +15,8 @@
 </head>
 <body>
 
+    <div hidden aria-hidden="true">@Html.AntiForgeryToken()</div>
+
     <div class="admin-container">
         <aside class="admin-sidebar">
             <div class="sidebar-header">
@@ -32,9 +34,11 @@
                     <i class="fas fa-user-circle"></i>
                     <span id="admin-username-display">Loading...</span>
                 </div>
-                <a href="#" id="logout-button" class="logout-link" title="Logout">
-                    <i class="fas fa-sign-out-alt"></i>
-                </a>
+                <form asp-controller="Login" asp-action="Logout" method="post" class="m-0">
+                    <button type="submit" class="logout-link border-0 bg-transparent p-0" title="Logout" aria-label="Logout">
+                        <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+                    </button>
+                </form>
             </div>
         </aside>
 
@@ -654,6 +658,7 @@
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="~/js/security/antiforgery.js" asp-append-version="true"></script>
     <script src="~/js/admin/admin-utils.js" asp-append-version="true"></script>
     <script src="~/js/admin/admin-notifications.js" asp-append-version="true"></script>
     <script src="~/js/admin/admin-dashboard.js" asp-append-version="true"></script>

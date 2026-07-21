@@ -117,7 +117,7 @@ window.AdminChat = (() => {
 
             try {
                 if (window.AdminSignalR) {
-                    await window.AdminSignalR.joinPrivateChat(mainChatContext.id);
+                    await window.AdminSignalR.joinConversation(mainChatContext.id);
                     console.log(`💬 AdminChat: Successfully joined SignalR group for conversation ${mainChatContext.id}`);
                 }
             } catch (error) {
@@ -363,48 +363,11 @@ window.AdminChat = (() => {
         const text = mainMessageInput.value.trim();
         if (!text || !mainChatContext.id) return;
 
-        const currentUser = window.AdminCore?.getCurrentUser();
-        const currentClientId = window.AdminCore?.getCurrentClientId();
-
-        let postUrl;
-        if (mainChatContext.route === 'support-group') {
-            postUrl = "/v1/api/instructions/support-group";
-        } else {
-            postUrl = "/v1/api/instructions/reply";
-        }
-
-        const payload = {
-            Instruction: text,
-            InstructionId: parseInt(mainChatContext.id, 10),
-            ClientId: currentClientId,
-            InsertUser: currentUser?.id,
-            InstCategoryId: 100,
-            ServiceId: 3,
-            Remarks: "Message from admin panel"
-        };
-
-        console.log("💬 AdminChat: Sending message to", postUrl, "with payload:", payload);
-
         try {
-            const response = await fetch(postUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ message: "Unknown API error" }));
-                throw new Error(errorData.message || "API call failed");
-            }
-
-            const savedMessage = await response.json();
+            const savedMessage = await window.AdminSignalR.sendMessage(mainChatContext.id, text);
             console.log("💬 AdminChat: Message saved successfully:", savedMessage);
 
             displayMainChatMessage(savedMessage);
-
-            if (window.AdminSignalR) {
-                await window.AdminSignalR.sendAdminMessage(savedMessage);
-            }
 
             mainMessageInput.value = '';
 
@@ -432,7 +395,7 @@ window.AdminChat = (() => {
             InstChannel: "chat"
         };
 
-        const response = await fetch('/v1/api/instructions/support-group', {
+        const response = await fetch(`/v1/api/instructions/clients/${clientId}/support-group`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(initialMessage)
@@ -492,6 +455,9 @@ window.AdminChat = (() => {
 
         floatingChatContainer.appendChild(chatBox);
         loadAndRenderFloatingChatMessages(id, chatBox.querySelector('.chat-box-body'));
+        window.AdminSignalR?.joinConversation(id).catch(error => {
+            console.error(`Failed to join floating conversation ${id}:`, error);
+        });
 
         setupFloatingChatEvents(chatBox);
     }
@@ -508,51 +474,31 @@ window.AdminChat = (() => {
             chatBox.remove();
         });
 
-        $(chatBox).on('click', '.action-send', function () {
+        $(chatBox).on('click', '.action-send', async function () {
             const textarea = chatBox.querySelector('textarea');
             const text = textarea.value.trim();
             if (!text) return;
 
             const currentUser = window.AdminCore?.getCurrentUser();
-            const currentClientId = window.AdminCore?.getCurrentClientId();
-
-            const payload = {
-                Instruction: text,
-                InstructionId: parseInt(chatBox.dataset.id, 10),
-                ClientId: currentClientId,
-                InsertUser: currentUser?.id,
-                Remarks: "Message from admin panel (floating)"
-            };
-
-            fetch(`/v1/api/instructions/reply`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-                .then(res => res.json())
-                .then(savedMessage => {
-                    const container = chatBox.querySelector('.chat-box-body');
-                    const senderName = currentUser?.name || 'Admin';
-                    const msgRow = document.createElement('div');
-                    msgRow.className = 'message-row sent';
-                    msgRow.innerHTML = `
+            try {
+                await window.AdminSignalR.sendMessage(Number(chatBox.dataset.id), text);
+                const container = chatBox.querySelector('.chat-box-body');
+                const senderName = currentUser?.name || 'Admin';
+                const msgRow = document.createElement('div');
+                msgRow.className = 'message-row sent';
+                msgRow.innerHTML = `
                     <div class="message-content">
                         <div class="message-bubble">
                             <p class="message-text">${AdminUtils.escapeHtml(text)}</p>
                         </div>
                         <span class="message-timestamp">${senderName} - ${AdminUtils.formatTimestamp(new Date())}</span>
                     </div>`;
-                    container.appendChild(msgRow);
-                    AdminUtils.scrollToBottom(container);
-
-                    if (window.AdminSignalR) {
-                        window.AdminSignalR.sendAdminMessage(savedMessage);
-                    }
-                })
-                .catch(err => {
-                    console.error('💬 AdminChat: Error sending floating chat message:', err);
-                    AdminUtils.showNotification('Failed to send message. Please try again.', 'error');
-                });
+                container.appendChild(msgRow);
+                AdminUtils.scrollToBottom(container);
+            } catch (err) {
+                console.error('💬 AdminChat: Error sending floating chat message:', err);
+                AdminUtils.showNotification('Failed to send message. Please try again.', 'error');
+            }
 
             textarea.value = '';
         });

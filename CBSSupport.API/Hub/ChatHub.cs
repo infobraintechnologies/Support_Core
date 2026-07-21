@@ -1,238 +1,178 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.SignalR;
+using System.Security.Claims;
+using CBSSupport.API.Security;
+using CBSSupport.Shared.Contracts;
 using CBSSupport.Shared.Services;
-using CBSSupport.Shared.Models;
-using System;
-using System.Threading.Tasks;
-using System.Linq.Expressions;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.SignalR;
 
-namespace CBSSupport.API.Hubs
+namespace CBSSupport.API.Hubs;
+
+[Authorize(Policy = Policies.AdminOrClient)]
+public sealed class ChatHub(
+    IConversationService conversations,
+    ILogger<ChatHub> logger) : Hub
 {
-    [Authorize]
-    public class ChatHub : Hub
+    public override async Task OnConnectedAsync()
     {
-        private readonly IChatService _chatService;
-        private readonly ILogger<ChatHub> _logger;
+        var actor = GetRequiredActor();
+        var audienceGroup = actor.IsAdmin
+            ? RealtimeGroupNames.Admins
+            : RealtimeGroupNames.Tenant(actor.ClientId!.Value);
 
-        public ChatHub(IChatService chatService, ILogger<ChatHub> logger)
+        await Groups.AddToGroupAsync(
+            Context.ConnectionId,
+            audienceGroup,
+            Context.ConnectionAborted);
+        await base.OnConnectedAsync();
+    }
+
+    public async Task JoinConversation(long conversationId)
+    {
+        var actor = GetRequiredActor();
+        await RequireAccessAsync(conversationId, actor);
+
+        await Groups.AddToGroupAsync(
+            Context.ConnectionId,
+            RealtimeGroupNames.Conversation(conversationId),
+            Context.ConnectionAborted);
+
+        logger.LogInformation(
+            "User {UserId} joined conversation {ConversationId}",
+            actor.UserId,
+            conversationId);
+    }
+
+    public async Task LeaveConversation(long conversationId)
+    {
+        var actor = GetRequiredActor();
+        await RequireAccessAsync(conversationId, actor);
+
+        await Groups.RemoveFromGroupAsync(
+            Context.ConnectionId,
+            RealtimeGroupNames.Conversation(conversationId),
+            Context.ConnectionAborted);
+    }
+
+    public async Task<ConversationMessage> SendMessage(
+        long conversationId,
+        SendConversationMessageRequest request)
+    {
+        if (request is null
+            || string.IsNullOrWhiteSpace(request.Text)
+            || request.Text.Trim().Length > 4000)
         {
-            _chatService = chatService;
-            _logger = logger;
+            throw new HubException("Message text must be between 1 and 4000 characters.");
         }
 
-        public async Task SendPublicMessage(string senderName, string message, string fileUrl = null, string fileName = null, string fileType = null)
+        if (request.AttachmentIds is { Count: > 0 })
         {
-            long messageId = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            string initials = !string.IsNullOrEmpty(senderName) ? senderName.Substring(0, 1).ToUpper() : "?";
-            await Clients.All.SendAsync("ReceivePublicMessage", messageId, senderName, message, DateTime.UtcNow, initials, fileUrl, fileName, fileType);
+            throw new HubException("Attachments are not supported by this chat command.");
         }
 
-        public async Task MarkAsSeen(long messageId, string userName)
+        var actor = GetRequiredActor();
+        await RequireAccessAsync(conversationId, actor);
+
+        var message = await conversations.CreateMessageAsync(
+            conversationId,
+            actor,
+            request.Text,
+            Context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString(),
+            Context.ConnectionAborted);
+        if (message is null)
         {
-            await Clients.All.SendAsync("MessageSeen", messageId, userName, DateTime.UtcNow);
+            throw ConversationUnavailable();
         }
 
-        public async Task JoinPrivateChat(string groupName)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(groupName))
+        await Clients.GroupExcept(
+                RealtimeGroupNames.Conversation(conversationId),
+                Context.ConnectionId)
+            .SendAsync("MessageCreated", message, Context.ConnectionAborted);
+
+        logger.LogInformation(
+            "User {UserId} sent message {MessageId} to conversation {ConversationId}",
+            actor.UserId,
+            message.Id,
+            conversationId);
+
+        return message;
+    }
+
+    public async Task SetTyping(long conversationId, bool isTyping)
+    {
+        var actor = GetRequiredActor();
+        await RequireAccessAsync(conversationId, actor);
+
+        await Clients.GroupExcept(
+                RealtimeGroupNames.Conversation(conversationId),
+                Context.ConnectionId)
+            .SendAsync(
+                "TypingChanged",
+                new
                 {
-                    _logger.LogWarning("JoinPrivateChat called with empty groupName by connection {ConnectionId}", Context.ConnectionId);
-                    throw new HubException("Group name cannot be empty");
-                }
+                    ConversationId = conversationId,
+                    actor.UserId,
+                    actor.DisplayName,
+                    IsTyping = isTyping
+                },
+                Context.ConnectionAborted);
+    }
 
-                if (!System.Text.RegularExpressions.Regex.IsMatch(groupName, @"^[a-zA-Z0-9\-_]+$"))
-                {
-                    throw new HubException("Invalid group name format");
-                }
-
-                if (Context.User?.Identity == null || !Context.User.Identity.IsAuthenticated)
-                {
-                    _logger.LogWarning("JoinPrivateChat called by unauthenticated user with connection {ConnectionId}", Context.ConnectionId);
-                    throw new HubException("User must be authenticated to join private chat");
-                }
-
-                var userName = Context.User.Identity.Name ?? "Anonymous";
-                _logger.LogInformation("User '{UserName}' attempting to join group '{GroupName}' with connection ID {ConnectionId}", userName, groupName, Context.ConnectionId);
-
-                await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
-                _logger.LogInformation("SUCCESS: User '{UserName}' joined group '{GroupName}'", userName, groupName);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "CRITICAL ERROR in JoinPrivateChat for group {GroupName} and connection {ConnectionId}", groupName, Context.ConnectionId);
-                throw new HubException($"Failed to join chat: {ex.Message}");
-            }
+    private async Task RequireAccessAsync(
+        long conversationId,
+        ConversationActor actor)
+    {
+        if (conversationId <= 0)
+        {
+            throw ConversationUnavailable();
         }
 
-        //public async Task SendPrivateMessage(string groupName, string senderName, string message, string fileUrl = null, string fileName = null, string fileType = null)
-        //{
-        //    try
-        //    {
-        //        if (string.IsNullOrEmpty(groupName))
-        //        {
-        //            _logger.LogWarning("SendPrivateMessage was called with a null or empty groupName.");
-        //            return;
-        //        }
-
-        //        long messageId = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        //        string initials = !string.IsNullOrEmpty(senderName) ? senderName.Substring(0, 1).ToUpper() : "?";
-
-        //        await Clients.Group(groupName).SendAsync("ReceivePrivateMessage", messageId, groupName, senderName, message, DateTime.UtcNow, initials, fileUrl, fileName, fileType);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        _logger.LogError(ex, "Error occured in SendPrivateMessage for group {GroupName}", groupName);
-        //        throw;
-        //    }
-        //}
-
-        // In your ChatHub class
-
-        //public async Task SendPrivateMessage(string groupName, string message)
-        //{
-        //    try
-        //    {
-        //        if (string.IsNullOrEmpty(groupName))
-        //        {
-        //            _logger.LogWarning("SendPrivateMessage called with empty groupName.");
-        //            return;
-        //        }
-
-        //        // --- NEW LOGIC: The Hub now gets the user info from the connection context ---
-        //        // This is more secure because the client can't fake who they are.
-        //        string senderName = Context.User.FindFirst("FullName")?.Value ?? "Unknown User";
-        //        string senderIdStr = Context.User.FindFirst("UserId")?.Value;
-
-        //        // The Hub is now responsible for creating the full message object to broadcast.
-        //        var messageToBroadcast = new
-        //        {
-        //            id = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        //            groupName = groupName,
-        //            senderName = senderName,
-        //            instruction = message,
-        //            datetime = DateTime.UtcNow,
-        //            insertUser = int.TryParse(senderIdStr, out var senderId) ? senderId : 0
-        //        };
-
-        //        // Broadcast the full object.
-        //        await Clients.Group(message.InstructionId.ToString()).SendAsync("ReceivePrivateMessage", message);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        _logger.LogError(ex, "Error occurred in SendPrivateMessage for group {GroupName}", groupName);
-        //        throw;
-        //    }
-        //}
-
-        public async Task UserIsTyping(string groupName, string userName)
+        var access = await conversations.GetAccessAsync(
+            conversationId,
+            actor,
+            Context.ConnectionAborted);
+        if (access is null)
         {
-            await Clients.GroupExcept(groupName, Context.ConnectionId).SendAsync("ReceiveTypingNotification", groupName, userName, true);
-        }
-
-        public async Task UserStoppedTyping(string groupName, string userName)
-        {
-            await Clients.GroupExcept(groupName, Context.ConnectionId).SendAsync("ReceiveTypingNotification", groupName, userName, false);
-        }
-
-        public async Task GetMyConversations(long clientId)
-        {
-            try
-            {
-                var sidebarData = await _chatService.GetSidebarForUserAsync(0, clientId);
-                await Clients.Caller.SendAsync("ReceivesSidebarData", sidebarData);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("An error occurred in GetMyConversations for client ID {ClientId}", clientId);
-                _logger.LogError(ex, "Full exception details for the error above.");
-            }
-        }
-
-        public async Task CreateTicket(string subject)
-        {
-            var newTicket = new ChatMessage
-            {
-                Instruction = subject,
-                InstTypeId = 100, 
-                Status = true,
-                InstChannel = "chat",
-                IpAddress = Context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString()
-            };
-
-            ChatMessage savedTicket = await _chatService.CreateInstructionTicketAsync(newTicket);
-            await Clients.Caller.SendAsync("NewTicketCreated", savedTicket);
-        }
-
-        public async Task SendAdminMessage(ChatMessage message)
-        {
-            try
-            {
-                if (message == null || !message.InstructionId.HasValue)
-                {
-                    _logger.LogWarning("SendAdminMessage called with invalid message object");
-                    return;
-                }
-
-                _logger.LogInformation("HUB: Received Admin Message. Broadcasting to group {GroupId}", message.InstructionId.Value);
-
-                await Clients.Group(message.InstructionId.Value.ToString()).SendAsync("ReceivePrivateMessage", message);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in SendAdminMessage for ConversationId {ConversationId}", message?.InstructionId);
-            }
-        }
-
-        public async Task SendClientMessage(ChatMessage message)
-        {
-            try
-            {
-                if (message == null || !message.InstructionId.HasValue)
-                {
-                    _logger.LogWarning("SendClientMessage called with invalid message object");
-                    return;
-                }
-
-                _logger.LogInformation("HUB: Received Client Message. Broadcasting to group {GroupId}", message.InstructionId.Value);
-
-                await Clients.Group(message.InstructionId.Value.ToString()).SendAsync("ReceivePrivateMessage", message);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in SendClientMessage for ConversationId {ConversationId}", message?.InstructionId);
-            }
-        }
-
-        public async Task NotifyTicketStatusUpdate(long ticketId, string newStatus, long clientId)
-        {
-            await Clients.User(clientId.ToString()).SendAsync("TicketStatusUpdated", new
-            {
-                TicketId = ticketId,
-                NewStatus = newStatus,
-                UpdatedAt = DateTime.UtcNow
-            });
-        }
-
-        public async Task NotifyInquiryStatusUpdate(long inquiryId, string newStatus, long clientId)
-        {
-            await Clients.User(clientId.ToString()).SendAsync("InquiryStatusUpdated", new
-            {
-                InquiryId = inquiryId,
-                NewStatus = newStatus,
-                UpdatedAt = DateTime.UtcNow
-            });
-        }
-
-        public async Task NotifyTicketCreated(object ticketData)
-        {
-            await Clients.Group("AdminUsers").SendAsync("NewTicketCreated", ticketData);
-        }
-
-        public async Task NotifyInquiryCreated(object inquiryData)
-        {
-            await Clients.Group("AdminUsers").SendAsync("NewInquiryCreated", inquiryData);
+            logger.LogWarning(
+                "User {UserId} was denied access to conversation {ConversationId}",
+                actor.UserId,
+                conversationId);
+            throw ConversationUnavailable();
         }
     }
+
+    private ConversationActor GetRequiredActor()
+    {
+        var principal = Context.User;
+        if (principal is null || !principal.TryGetUserId(out var userId))
+        {
+            throw new HubException("Authenticated user identity is unavailable.");
+        }
+
+        var isAdmin = principal.IsInRole(Roles.Admin);
+        var isClient = principal.IsInRole(Roles.Client);
+        if (isAdmin == isClient)
+        {
+            throw new HubException("Authenticated user role is unavailable.");
+        }
+
+        long? clientId = null;
+        if (isClient)
+        {
+            if (!principal.TryGetClientId(out var requiredClientId))
+            {
+                throw new HubException("Authenticated tenant identity is unavailable.");
+            }
+
+            clientId = requiredClientId;
+        }
+
+        var displayName = principal.FindFirstValue(ClaimTypes.Name)
+            ?? principal.Identity?.Name
+            ?? $"User {userId}";
+
+        return new ConversationActor(userId, clientId, isAdmin, displayName);
+    }
+
+    private static HubException ConversationUnavailable() =>
+        new("Conversation unavailable.");
 }

@@ -179,12 +179,6 @@ window.AdminNavigation = (() => {
             navigateToInquiryManagement('Pending');
         });
 
-        // Logout button
-        $('#logout-button').on('click', function (e) {
-            e.preventDefault();
-            window.location.href = '/Login/Logout';
-        });
-
         console.log("AdminNavigation: Event handlers initialized");
     }
 

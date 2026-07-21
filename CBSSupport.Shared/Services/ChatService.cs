@@ -61,7 +61,9 @@ namespace CBSSupport.Shared.Services
 
         //}
 
-        public async Task<ChatMessage> CreateInstructionTicketAsync(ChatMessage newTicket)
+        public async Task<ChatMessage?> CreateInstructionTicketAsync(
+            ChatMessage newTicket,
+            CancellationToken cancellationToken = default)
         {
             if (newTicket.InstCategoryId == 101)
             {
@@ -94,7 +96,7 @@ namespace CBSSupport.Shared.Services
                 newTicket.Remarks = JsonSerializer.Serialize(remarksJson);
             }
 
-            var sqlInsert = @"
+            const string sqlInsert = @"
                 INSERT INTO digital.instructions (
                     datetime, inst_category_id, inst_type_id, instruction,
                     status, insert_user, client_auth_user_id, client_id,
@@ -109,11 +111,45 @@ namespace CBSSupport.Shared.Services
                 )
                 RETURNING id;";
 
-            var sqlUpdate = @"UPDATE digital.instructions SET instruction_id = @Id WHERE id = @Id;";
+            const string sqlInsertReply = @"
+                INSERT INTO digital.instructions (
+                    datetime, inst_category_id, inst_type_id, instruction,
+                    status, insert_user, client_auth_user_id, client_id,
+                    service_id, ip_address, geo_location, inst_channel,
+                    attachment_id, instruction_id, remarks, expiry_date
+                )
+                SELECT
+                    @DateTime, root.inst_category_id, root.inst_type_id, @Instruction,
+                    @Status, @InsertUser, @ClientAuthUserId, root.client_id,
+                    @ServiceId, @IpAddress, @GeoLocation, @InstChannel,
+                    @AttachmentId, root.id, @Remarks, @ExpiryDate
+                FROM digital.instructions root
+                WHERE root.id = @InstructionId
+                  AND root.instruction_id = root.id
+                  AND root.client_id IS NOT DISTINCT FROM @ClientId
+                RETURNING id;";
 
-            var sqlSelect = @"
+            const string sqlUpdate = @"
+                UPDATE digital.instructions
+                SET instruction_id = @Id
+                WHERE id = @Id AND client_id IS NOT DISTINCT FROM @ClientId;";
+
+            const string sqlSelect = @"
             SELECT 
-                i.*,
+                i.id,
+                i.datetime,
+                i.inst_category_id,
+                i.inst_type_id,
+                i.instruction,
+                i.status,
+                i.insert_date,
+                i.insert_user,
+                i.client_id,
+                i.client_auth_user_id,
+                i.instruction_id,
+                i.completed,
+                i.attachment_id,
+                i.inst_channel,
                 CASE 
                     WHEN i.client_auth_user_id IS NOT NULL THEN COALESCE(cu.full_name, cu.user_name, 'Unknown Client User')
                     ELSE COALESCE(au.full_name, au.user_name, 'Unknown Admin User')
@@ -121,26 +157,62 @@ namespace CBSSupport.Shared.Services
             FROM digital.instructions i
             LEFT JOIN admin.users au ON i.insert_user = au.id AND i.client_auth_user_id IS NULL
             LEFT JOIN internal.support_users cu ON i.client_auth_user_id = cu.id
-            WHERE i.id = @Id;";
+            WHERE i.id = @Id
+              AND i.client_id IS NOT DISTINCT FROM @ClientId;";
 
-            using (var connection = new NpgsqlConnection(_connectionString))
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            if (newTicket.InstructionId is > 0)
             {
-                long newId = await connection.ExecuteScalarAsync<long>(sqlInsert, newTicket);
-
-                if (newTicket.InstructionId == null || newTicket.InstructionId == 0)
+                var replyCommand = new CommandDefinition(
+                    sqlInsertReply,
+                    newTicket,
+                    cancellationToken: cancellationToken);
+                var replyId = await connection.QuerySingleOrDefaultAsync<long?>(replyCommand);
+                if (replyId is null)
                 {
-                    await connection.ExecuteAsync(sqlUpdate, new { Id = newId });
-                    newTicket.InstructionId = newId;
+                    return null;
                 }
 
-                var savedMessage = await connection.QueryFirstOrDefaultAsync<ChatMessage>(sqlSelect, new { Id = newId });
+                var replySelect = new CommandDefinition(
+                    sqlSelect,
+                    new { Id = replyId.Value, newTicket.ClientId },
+                    cancellationToken: cancellationToken);
+                return await connection.QuerySingleOrDefaultAsync<ChatMessage>(replySelect);
+            }
 
-                if (savedMessage != null && savedMessage.InstructionId == null)
-                {
-                    savedMessage.InstructionId = newTicket.InstructionId;
-                }
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                var insertCommand = new CommandDefinition(
+                    sqlInsert,
+                    newTicket,
+                    transaction,
+                    cancellationToken: cancellationToken);
+                var newId = await connection.QuerySingleAsync<long>(insertCommand);
 
+                var updateCommand = new CommandDefinition(
+                    sqlUpdate,
+                    new { Id = newId, newTicket.ClientId },
+                    transaction,
+                    cancellationToken: cancellationToken);
+                await connection.ExecuteAsync(updateCommand);
+
+                var selectCommand = new CommandDefinition(
+                    sqlSelect,
+                    new { Id = newId, newTicket.ClientId },
+                    transaction,
+                    cancellationToken: cancellationToken);
+                var savedMessage = await connection.QuerySingleOrDefaultAsync<ChatMessage>(selectCommand);
+
+                await transaction.CommitAsync(cancellationToken);
                 return savedMessage;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
             }
         }
 
@@ -232,29 +304,9 @@ namespace CBSSupport.Shared.Services
             }
         }
 
-        private async Task<long> GetClientIdForUserAsync(long userId)
-        {
-            if (userId <= 0)
-                return 1;
-
-            var sql = @"
-            SELECT client_id 
-            FROM internal.support_users 
-            WHERE id = @UserId 
-            LIMIT 1;";
-
-            using (var connection = new NpgsqlConnection(_connectionString))
-            {
-                var clientId = await connection.QueryFirstOrDefaultAsync<long?>(sql, new { UserId = userId });
-                return clientId ?? 1;
-            }
-        }
-
         public async Task<SidebarViewModel> GetSidebarForUserAsync(long fintechUserId, long viewingClientId)
         {
             var sidebar = new SidebarViewModel();
-
-            long actualClientId = await GetClientIdForUserAsync(fintechUserId);
 
             //using (var connection = new NpgsqlConnection(_connectionString))
             //{
@@ -384,7 +436,7 @@ namespace CBSSupport.Shared.Services
           AND i.inst_type_id = 101 
           AND i.instruction_id IS NOT NULL
         ORDER BY i.instruction_id, i.datetime DESC;";
-                sidebar.PrivateChats.AddRange(await connection.QueryAsync<SidebarChatItem>(privateChatSql, new { ViewingClientId = actualClientId }));
+                sidebar.PrivateChats.AddRange(await connection.QueryAsync<SidebarChatItem>(privateChatSql, new { ViewingClientId = viewingClientId }));
 
                 var internalChatSql = @"
         SELECT DISTINCT ON (i.instruction_id)
@@ -396,7 +448,7 @@ namespace CBSSupport.Shared.Services
         FROM digital.instructions i
         WHERE i.client_id = @ClientId AND i.inst_type_id = 105 AND i.instruction_id IS NOT NULL
         ORDER BY i.instruction_id, i.datetime DESC;";
-                sidebar.InternalChats.AddRange(await connection.QueryAsync<SidebarChatItem>(internalChatSql, new { ClientId = actualClientId }));
+                sidebar.InternalChats.AddRange(await connection.QueryAsync<SidebarChatItem>(internalChatSql, new { ClientId = viewingClientId }));
 
                 var ticketTypeIds = Enumerable.Range(110, 8).ToArray();
                 var ticketSql = @"
@@ -452,17 +504,18 @@ namespace CBSSupport.Shared.Services
             }
         }
 
-        public async Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId)
+        public async Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId, long? clientId = null)
         {
             var sql = @"
         SELECT id, datetime, instruction, assigned_to, status, completed, instruction_id
         FROM digital.instructions
         WHERE inst_type_id = @InstTypeId
+          AND (@ClientId IS NULL OR client_id = @ClientId)
         ORDER BY datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QueryAsync<ChatMessage>(sql, new { InstTypeId = instTypeId });
+                return await connection.QueryAsync<ChatMessage>(sql, new { InstTypeId = instTypeId, ClientId = clientId });
             }
         }
 
@@ -480,11 +533,24 @@ namespace CBSSupport.Shared.Services
                 return await connection.QueryFirstOrDefaultAsync<ChatMessage>(sql, new { InstructionId = instructionId });
             }
         }
-        public async Task<IEnumerable<ChatMessage>> GetMessagesByConversationIdAsync(long conversationId)
+        public async Task<IEnumerable<ChatMessage>> GetMessagesByConversationIdAsync(long conversationId, long? clientId = null)
         {
             var sql = @"
         SELECT 
-            i.*,
+            i.id,
+            i.datetime,
+            i.inst_category_id,
+            i.inst_type_id,
+            i.instruction,
+            i.status,
+            i.insert_date,
+            i.insert_user,
+            i.client_id,
+            i.client_auth_user_id,
+            i.instruction_id,
+            i.completed,
+            i.attachment_id,
+            i.inst_channel,
             CASE 
                 WHEN i.client_auth_user_id IS NOT NULL THEN COALESCE(cu.full_name, cu.user_name, 'Unknown Client User')
                 ELSE COALESCE(au.full_name, au.user_name, 'Unknown Admin User')
@@ -493,11 +559,12 @@ namespace CBSSupport.Shared.Services
         LEFT JOIN admin.users au ON i.insert_user = au.id AND i.client_auth_user_id IS NULL
         LEFT JOIN internal.support_users cu ON i.client_auth_user_id = cu.id
         WHERE i.instruction_id = @ConversationId
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)
         ORDER BY i.datetime ASC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QueryAsync<ChatMessage>(sql, new { ConversationId = conversationId });
+                return await connection.QueryAsync<ChatMessage>(sql, new { ConversationId = conversationId, ClientId = clientId });
             }
         }
 
@@ -675,7 +742,9 @@ namespace CBSSupport.Shared.Services
             expiry_date = @ExpiryDate,
             edit_date = @EditDate,
             edit_user = @EditUser
-        WHERE id = @Id AND (completed = false OR completed IS NULL)";
+        WHERE id = @Id
+          AND inst_category_id = 101
+          AND (completed = false OR completed IS NULL)";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
@@ -886,7 +955,7 @@ namespace CBSSupport.Shared.Services
             }
         }
 
-        public async Task<TicketViewModel> GetTicketDetailsByIdAsync(long ticketId)
+        public async Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null)
         {
             var sql = @"
         SELECT 
@@ -901,19 +970,22 @@ namespace CBSSupport.Shared.Services
             i.remarks AS Remarks,
             i.expiry_date AS ExpiryDate,
             i.completed_on AS ResolvedDate,
-            COALESCE(u.full_name, 'Unknown Client') AS ClientName
+            COALESCE(u.full_name, 'Unknown Client') AS ClientName,
+            i.client_id AS ClientId
         FROM digital.instructions i
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
-        WHERE i.id = @TicketId AND i.inst_category_id = 101";
+        WHERE i.id = @TicketId
+          AND i.inst_category_id = 101
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QueryFirstOrDefaultAsync<TicketViewModel>(sql, new { TicketId = ticketId });
+                return await connection.QuerySingleOrDefaultAsync<TicketViewModel>(sql, new { TicketId = ticketId, ClientId = clientId });
             }
         }
 
-        public async Task<InquiryViewModel> GetInquiryDetailsByIdAsync(long inquiryId)
+        public async Task<InquiryViewModel?> GetInquiryDetailsByIdAsync(long inquiryId, long? clientId = null)
         {
             var sql = @"
         SELECT
@@ -934,11 +1006,13 @@ namespace CBSSupport.Shared.Services
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users au ON i.insert_user = au.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
-        WHERE i.id = @InquiryId AND i.inst_category_id = 102";
+        WHERE i.id = @InquiryId
+          AND i.inst_category_id = 102
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QueryFirstOrDefaultAsync<InquiryViewModel>(sql, new { InquiryId = inquiryId });
+                return await connection.QuerySingleOrDefaultAsync<InquiryViewModel>(sql, new { InquiryId = inquiryId, ClientId = clientId });
             }
         }
 
@@ -995,13 +1069,14 @@ namespace CBSSupport.Shared.Services
             }
         }
 
-        public async Task<bool> MarkNotificationSeenByClientAsync(long instructionId)
+        public async Task<bool> MarkNotificationSeenByClientAsync(long instructionId, long clientId)
         {
             const string query = @"
         UPDATE digital.instructions 
         SET notification_seen_by_client = 1,
             edit_date = @EditDate
-        WHERE id = @InstructionId";
+        WHERE id = @InstructionId
+          AND client_id = @ClientId";
 
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
@@ -1009,13 +1084,14 @@ namespace CBSSupport.Shared.Services
             var rowsAffected = await connection.ExecuteAsync(query, new
             {
                 InstructionId = instructionId,
+                ClientId = clientId,
                 EditDate = DateTime.UtcNow
             });
 
             return rowsAffected > 0;
         }
 
-        public async Task<IEnumerable<object>> GetUnreadNotificationsForClientAsync(long? clientId)
+        public async Task<IEnumerable<object>> GetUnreadNotificationsForClientAsync(long clientId)
         {
             const string query = @"
         SELECT 
@@ -1041,7 +1117,7 @@ namespace CBSSupport.Shared.Services
             return result.Cast<object>();
         }
 
-        public async Task<int> MarkAllNotificationsSeenByClientAsync(long? clientId)
+        public async Task<int> MarkAllNotificationsSeenByClientAsync(long clientId)
         {
             const string query = @"
         UPDATE digital.instructions 
