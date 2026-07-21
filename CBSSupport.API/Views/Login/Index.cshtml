@@ -24,7 +24,7 @@
             <h2>Welcome Back</h2>
             <p class="text-muted mb-4">Please select your role and sign in.</p>
 
-            <form id="mainLoginForm" asp-controller="Login" asp-action="Index" method="post">
+            <form id="mainLoginForm" asp-controller="Login" asp-action="Index" method="post" asp-antiforgery="true">
 
                 <div class="role-selector" id="roleSelectorContainer">
                     <div class="role-selector-slider"></div>

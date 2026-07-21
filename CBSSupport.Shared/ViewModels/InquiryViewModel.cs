@@ -10,6 +10,9 @@ namespace CBSSupport.Shared.ViewModels
         public DateTime Date { get; set; }
         public string Outcome { get; set; }
         public string ClientName { get; set; }
-
+        public long ClientId { get; set; } 
+        public string Description { get; set; }
+        public string Priority { get; set; }
+        public DateTime? ResolvedDate { get; set; }
     }
 }

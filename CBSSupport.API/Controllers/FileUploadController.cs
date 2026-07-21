@@ -22,7 +22,7 @@ namespace CBSSupport.API.Controllers
             if (file == null || file.Length == 0)
                 return BadRequest("No file uploaded.");
 
-            long maxFileSize = 10 * 1024 * 1024; // 10 MB
+            long maxFileSize = 10 * 1024 * 1024; 
             if (file.Length > maxFileSize)
                 return BadRequest($"File size exceeds the limit of {maxFileSize / 1024 / 1024} MB.");
 

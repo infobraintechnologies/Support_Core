@@ -9,6 +9,6 @@ namespace CBSSupport.Shared.Services
 
         Task<ClientUser?> ValidateClientUserAsync(long clientCode, string username, string password);
 
-        Task<AdminUserDto>? GetAdminUserByIdAsync(long userId);
+        Task<AdminUserDto?> GetAdminUserByIdAsync(long userId);
     }
 }

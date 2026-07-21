@@ -1,5 +1,4 @@
-﻿
-@{
+﻿@{
     Layout = null;
 }
 <!DOCTYPE html>
@@ -16,9 +15,13 @@
 </head>
 <body>
 
+    <div hidden aria-hidden="true">@Html.AntiForgeryToken()</div>
+
     <div class="admin-container">
         <aside class="admin-sidebar">
-            <div class="sidebar-header"><i class="fas fa-shield-alt"></i> Admin Panel</div>
+            <div class="sidebar-header">
+                <i class="fas fa-shield-alt"></i> Admin Panel
+            </div>
             <ul class="sidebar-nav">
                 <li class="nav-item"><a class="nav-link active" data-page="dashboard"><i class="fas fa-fw fa-tachometer-alt"></i> Dashboard</a></li>
                 <li class="nav-item"><a class="nav-link" data-page="chats"><i class="fas fa-fw fa-comments"></i> Chats</a></li>
@@ -31,53 +34,230 @@
                     <i class="fas fa-user-circle"></i>
                     <span id="admin-username-display">Loading...</span>
                 </div>
-                <a href="#" id="logout-button" class="logout-link" title="Logout">
-                    <i class="fas fa-sign-out-alt"></i>
-                </a>
+                <form asp-controller="Login" asp-action="Logout" method="post" class="m-0">
+                    <button type="submit" class="logout-link border-0 bg-transparent p-0" title="Logout" aria-label="Logout">
+                        <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+                    </button>
+                </form>
             </div>
         </aside>
 
         <main class="admin-content">
 
-            <!-- PAGE 1: DASHBOARD -->
+            <!-- 🔔 DASHBOARD PAGE -->
             <div id="dashboard-page" class="admin-page active">
                 <div class="page-header">
                     <h1>Support Overview</h1>
-                    <div class="d-flex align-items-center">
-                        <label for="client-switcher-dashboard" class="form-label me-2 mb-0">Client:</label>
-                        <select id="client-switcher-dashboard" class="form-select client-switcher" style="width: 250px;">
-                            <option value="">All Clients</option>
-                        </select>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center">
+                            <label for="client-switcher-dashboard" class="form-label me-2 mb-0">Client:</label>
+                            <select id="client-switcher-dashboard" class="form-select client-switcher" style="width: 250px;">
+                                <option value="">All Clients</option>
+                            </select>
+                        </div>
+
+                        <div class="header-notification-container">
+                            <button class="btn btn-outline-secondary header-notification-btn" id="admin-notification-btn" title="Notifications">
+                                <i class="fas fa-bell"></i>
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                                      id="admin-notification-count" style="display: none;">0</span>
+                            </button>
+
+                            <!-- 🔔 MAIN NOTIFICATION DROPDOWN MENU -->
+                            <div class="header-notification-dropdown-menu" id="admin-notification-menu">
+                                <div class="notification-header">
+                                    <h6>Notifications</h6>
+                                    <button class="btn btn-sm btn-link" id="mark-all-read-btn">Mark all as read</button>
+                                </div>
+                                <div class="notification-list" id="admin-notification-list">
+                                    <div class="notification-loading">
+                                        <div class="spinner-border spinner-border-sm"></div>
+                                        <span>Loading notifications...</span>
+                                    </div>
+                                </div>
+                                <div class="notification-footer">
+                                    <a href="#" class="btn btn-sm btn-primary w-100" id="view-all-notifications-btn">View All</a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="page-content">
+
                     <div class="row g-4 mb-4">
-                        <div class="col-lg-3 col-md-6"><div class="dashboard-card stat-card"><h6>All tickets</h6><div class="stat-main"><h2 id="stat-total-tickets">0</h2><i class="fas fa-ticket-alt"></i></div></div></div>
-                        <div class="col-lg-3 col-md-6"><div class="dashboard-card stat-card"><h6>Open Tickets</h6><div class="stat-main"><h2 id="stat-open-tickets">0</h2><i class="far fa-comment-dots"></i></div></div></div>
-                        <div class="col-lg-3 col-md-6"><div class="dashboard-card stat-card"><h6>Resolved Tickets</h6><div class="stat-main"><h2 id="stat-resolved-tickets">0</h2><i class="fas fa-check-circle"></i></div></div></div>
-                        <div class="col-lg-3 col-md-6"><div class="dashboard-card stat-card"><h6>Total Inquiries</h6><div class="stat-main"><h2 id="stat-total-inquiries">0</h2><i class="fas fa-question-circle"></i></div></div></div>
+                        <div class="col-lg-2 col-md-4 col-sm-6">
+                            <div class="dashboard-card stat-card clickable-card shadow-hover" data-action="view-all-tickets">
+                                <div class="stat-icon bg-primary">
+                                    <i class="fas fa-ticket-alt"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <h3 id="stat-total-tickets" class="stat-number">0</h3>
+                                    <p class="stat-label">Total Tickets</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-6">
+                            <div class="dashboard-card stat-card clickable-card shadow-hover" data-action="view-all-inquiries">
+                                <div class="stat-icon bg-info">
+                                    <i class="fas fa-question-circle"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <h3 id="stat-total-inquiries" class="stat-number">0</h3>
+                                    <p class="stat-label">Total Inquiries</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-6">
+                            <div class="dashboard-card stat-card clickable-card shadow-hover" data-action="view-solved-tickets">
+                                <div class="stat-icon bg-success">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <h3 id="stat-resolved-tickets" class="stat-number">0</h3>
+                                    <p class="stat-label">Solved Tickets</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-6">
+                            <div class="dashboard-card stat-card clickable-card shadow-hover" data-action="view-solved-inquiries">
+                                <div class="stat-icon bg-success">
+                                    <i class="fas fa-check-square"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <h3 id="stat-solved-inquiries" class="stat-number">0</h3>
+                                    <p class="stat-label">Solved Inquiries</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-6">
+                            <div class="dashboard-card stat-card urgent-card clickable-card shadow-hover" data-action="view-unsolved-tickets">
+                                <div class="stat-icon bg-danger">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <h3 id="stat-open-tickets" class="stat-number text-danger">0</h3>
+                                    <p class="stat-label">Unsolved Tickets</p>
+                                    <span class="badge bg-danger urgent-badge" id="urgent-tickets-badge">URGENT</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-2 col-md-4 col-sm-6">
+                            <div class="dashboard-card stat-card urgent-card clickable-card shadow-hover" data-action="view-unsolved-inquiries">
+                                <div class="stat-icon bg-warning">
+                                    <i class="fas fa-question-circle"></i>
+                                </div>
+                                <div class="stat-content">
+                                    <h3 id="stat-unsolved-inquiries" class="stat-number text-warning">0</h3>
+                                    <p class="stat-label">Unsolved Inquiries</p>
+                                    <span class="badge bg-warning urgent-badge" id="urgent-inquiries-badge">PENDING</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-4 mb-4">
+                        <div class="col-lg-6">
+                            <div class="dashboard-card">
+                                <div class="card-header bg-danger text-white">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0"><i class="fas fa-fire me-2"></i>Critical Unsolved Tickets</h6>
+                                        <span class="badge bg-light text-danger" id="critical-tickets-badge">0 Critical</span>
+                                    </div>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div id="unsolved-tickets-list" class="critical-items-list">
+                                        <div class="loading-state p-4 text-center">
+                                            <div class="spinner-border spinner-border-sm me-2"></div>
+                                            Loading critical tickets...
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-light">
+                                    <a href="#" id="view-all-unsolved-tickets-link" class="btn btn-outline-danger btn-sm w-100">
+                                        <i class="fas fa-external-link-alt me-1"></i>View All Critical Tickets
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-6">
+                            <div class="dashboard-card">
+                                <div class="card-header bg-warning text-dark">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0"><i class="fas fa-clock me-2"></i>Pending Inquiries</h6>
+                                        <span class="badge bg-light text-warning" id="pending-inquiries-badge">0 Pending</span>
+                                    </div>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div id="unsolved-inquiries-list" class="critical-items-list">
+                                        <div class="loading-state p-4 text-center">
+                                            <div class="spinner-border spinner-border-sm me-2"></div>
+                                            Loading pending inquiries...
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-light">
+                                    <a href="#" id="view-all-unsolved-inquiries-link" class="btn btn-outline-warning btn-sm w-100">
+                                        <i class="fas fa-external-link-alt me-1"></i>View All Pending Inquiries
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="row g-4">
-                        <!-- Column for the Recent Tickets List -->
                         <div class="col-lg-8">
-                            <div class="dashboard-card list-card">
-                                <div class="list-card-header">
-                                    <h6>Recent tickets</h6>
-                                    <a href="#" id="view-all-tickets-link">View all <i class="fas fa-arrow-right"></i></a>
+                            <div class="dashboard-card">
+                                <div class="card-header bg-light">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0"><i class="fas fa-history me-2"></i>Recent Activity</h6>
+                                        <a href="#" id="view-all-tickets-link" class="btn btn-outline-primary btn-sm">
+                                            View All <i class="fas fa-arrow-right ms-1"></i>
+                                        </a>
+                                    </div>
                                 </div>
-                                <!-- The new, detailed list will be rendered here by JavaScript -->
-                                <div id="recent-tickets-list" class="list-card-body"></div>
+                                <div class="card-body">
+                                    <div id="recent-tickets-list"></div>
+                                </div>
                             </div>
                         </div>
-                        <!-- Column for the Ticket Priority Chart -->
+
                         <div class="col-lg-4">
-                            <div class="dashboard-card chart-card">
-                                <h6>Ticket priority</h6>
-                                <div class="chart-container">
-                                    <!-- This canvas is where Chart.js will draw the doughnut chart -->
-                                    <canvas id="ticketPriorityChart"></canvas>
+                            <div class="dashboard-card">
+                                <div class="card-header bg-light">
+                                    <h6 class="mb-0"><i class="fas fa-chart-doughnut me-2"></i>Priority Distribution</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chart-container" style="height: 300px;">
+                                        <canvas id="ticketPriorityChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <div class="dashboard-card">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0"><i class="fas fa-bolt me-2"></i>Quick Actions</h6>
+                                        <div class="quick-actions">
+                                            <button class="btn btn-primary btn-sm me-2" onclick="$('[data-page=ticket-management]').click()">
+                                                <i class="fas fa-ticket-alt me-1"></i>Manage Tickets
+                                            </button>
+                                            <button class="btn btn-info btn-sm me-2" onclick="$('[data-page=inquiry-management]').click()">
+                                                <i class="fas fa-question-circle me-1"></i>Manage Inquiries
+                                            </button>
+                                            <button class="btn btn-success btn-sm me-2" onclick="$('[data-page=chats]').click()">
+                                                <i class="fas fa-comments me-1"></i>Open Chats
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm" id="refresh-dashboard-btn">
+                                                <i class="fas fa-sync-alt me-1"></i>Refresh
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -85,53 +265,195 @@
                 </div>
             </div>
 
-            <!-- PAGE 2: CHATS -->
             <div id="chats-page" class="admin-page">
                 <div class="page-header">
                     <h1>Live Conversations</h1>
-                    <div class="d-flex align-items-center">
-                        <label for="client-switcher-chats" class="form-label me-2 mb-0">Client:</label>
-                        <select id="client-switcher-chats" class="form-select client-switcher" style="width: 250px;"></select>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center">
+                            <label for="client-switcher-chats" class="form-label me-2 mb-0">Client:</label>
+                            <select id="client-switcher-chats" class="form-select client-switcher" style="width: 250px;"></select>
+                        </div>
+
+                        <div class="header-notification-container">
+                            <button class="btn btn-outline-secondary header-notification-btn" id="admin-notification-btn-chats" title="Notifications">
+                                <i class="fas fa-bell"></i>
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                                      id="admin-notification-count-chats" style="display: none;">0</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="chat-container-full">
-                    <div class="chat-sidebar">
-                        <div class="chat-sidebar-header">
-                            <h5 class="mb-0">Conversations</h5>
+                <div class="chat-dashboard-container">
+                    <div id="admin-conversation-list-panel" class="admin-chat-sidebar">
+                        <div class="admin-chat-sidebar-header">
+                            <h5 class="mb-0"><i class="fas fa-comments me-2"></i>Conversations</h5>
+                            <button class="btn btn-sm btn-outline-primary" id="refresh-conversations-btn" title="Refresh">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
                         </div>
-                        <div class="panel-body" id="conversation-list-container">
 
+                        <div class="admin-chat-panel-body" id="admin-conversation-list-container">
+                            <div class="admin-chat-section">
+                                <div class="admin-chat-section-header">
+                                    <i class="fas fa-users me-2"></i>
+                                    <span>Group Chat</span>
+                                </div>
+                                <div class="admin-chat-section-content" id="group-chats">
+                                    <div class="admin-chat-loading">
+                                        <div class="spinner-border spinner-border-sm me-2"></div>
+                                        Loading group chat...
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="admin-chat-section">
+                                <div class="admin-chat-section-header">
+                                    <i class="fas fa-user me-2"></i>
+                                    <span>Private Chats</span>
+                                    <div class="admin-chat-section-toggle" data-target="private-chats">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                </div>
+                                <div class="admin-chat-section-content" id="private-chats">
+                                    <div class="admin-chat-loading">
+                                        <div class="spinner-border spinner-border-sm me-2"></div>
+                                        Loading private chats...
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="admin-chat-section">
+                                <div class="admin-chat-section-header">
+                                    <i class="fas fa-building me-2"></i>
+                                    <span>Internal Chats</span>
+                                    <div class="admin-chat-section-toggle" data-target="internal-chats">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                </div>
+                                <div class="admin-chat-section-content" id="internal-chats">
+                                    <div class="admin-chat-loading">
+                                        <div class="spinner-border spinner-border-sm me-2"></div>
+                                        Loading internal chats...
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="admin-chat-section">
+                                <div class="admin-chat-section-header">
+                                    <i class="fas fa-ticket-alt me-2"></i>
+                                    <span>Support Tickets</span>
+                                    <div class="admin-chat-section-toggle" data-target="ticket-chats">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                </div>
+                                <div class="admin-chat-section-content" id="ticket-chats">
+                                    <div class="admin-chat-loading">
+                                        <div class="spinner-border spinner-border-sm me-2"></div>
+                                        Loading support tickets...
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="admin-chat-section">
+                                <div class="admin-chat-section-header">
+                                    <i class="fas fa-question-circle me-2"></i>
+                                    <span>Inquiries</span>
+                                    <div class="admin-chat-section-toggle" data-target="inquiry-chats">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </div>
+                                </div>
+                                <div class="admin-chat-section-content" id="inquiry-chats">
+                                    <div class="admin-chat-loading">
+                                        <div class="spinner-border spinner-border-sm me-2"></div>
+                                        Loading inquiries...
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="chat-main">
-                        <div id="chat-header" class="chat-main-header">
-                        </div>
-
-                        <div id="chat-panel-body">
-                            <div class="placeholder-view">
-                                <i class="fas fa-comments placeholder-icon"></i>
-                                <h3>Select a Conversation</h3>
-                                <p class="text-muted">Choose a conversation from the list to start chatting.</p>
+                    <div class="admin-chat-main">
+                        <div id="chat-header" class="admin-chat-main-header">
+                            <div class="admin-chat-header-info">
+                                <div class="admin-chat-title">Select a Conversation</div>
+                                <div class="admin-chat-subtitle">Choose from the sidebar to start chatting</div>
+                            </div>
+                            <div class="admin-chat-header-actions">
+                                <button class="btn btn-outline-secondary btn-sm" id="chat-info-btn" title="Chat Info" style="display: none;">
+                                    <i class="fas fa-info-circle"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" id="chat-settings-btn" title="Settings" style="display: none;">
+                                    <i class="fas fa-cog"></i>
+                                </button>
                             </div>
                         </div>
 
-                        <div class="chat-footer">
-                            <input type="text" class="form-control" placeholder="Type a message..." id="message-input" disabled />
-                            <button class="btn btn-primary" type="button" id="send-button" disabled><i class="fas fa-paper-plane"></i></button>
+                        <div id="chat-panel-body" class="admin-chat-panel-body">
+                            <div class="admin-chat-placeholder">
+                                <div class="admin-chat-placeholder-content">
+                                    <i class="fas fa-comments admin-chat-placeholder-icon"></i>
+                                    <h3>Welcome to Admin Chat</h3>
+                                    <p class="text-muted">Select a conversation from the sidebar to start chatting with clients and team members.</p>
+                                    <div class="admin-chat-quick-actions">
+                                        <button class="btn btn-outline-primary btn-sm me-2" onclick="$('[data-page=ticket-management]').click()">
+                                            <i class="fas fa-ticket-alt me-1"></i>View All Tickets
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm" onclick="$('[data-page=inquiry-management]').click()">
+                                            <i class="fas fa-question-circle me-1"></i>View All Inquiries
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="admin-chat-footer">
+                            <div class="admin-typing-indicator" id="admin-typing-indicator" style="display: none;">
+                                <span class="admin-typing-dots">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </span>
+                                <span class="admin-typing-text">Someone is typing...</span>
+                            </div>
+                            <div class="admin-chat-input-container">
+                                <div class="admin-chat-input-actions">
+                                    <button class="btn btn-outline-secondary btn-sm" id="admin-attachment-button" title="Attach file" disabled>
+                                        <i class="fas fa-paperclip"></i>
+                                    </button>
+                                    <button class="btn btn-outline-secondary btn-sm" id="admin-emoji-button" title="Add emoji" disabled>
+                                        <i class="fas fa-smile"></i>
+                                    </button>
+                                </div>
+                                <input type="text" class="form-control" placeholder="Type your message..." id="message-input" disabled />
+                                <button class="btn btn-primary" type="button" id="send-button" disabled>
+                                    <i class="fas fa-paper-plane"></i>
+                                    <span class="d-none d-sm-inline ms-1">Send</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- PAGE 3: TICKET MANAGEMENT -->
             <div id="ticket-management-page" class="admin-page">
                 <div class="page-header">
                     <h1>All Support Tickets</h1>
-                    <div class="d-flex align-items-center">
-                        <label for="client-switcher-tickets" class="form-label me-2 mb-0">Client:</label>
-                        <select id="client-switcher-tickets" class="form-select client-switcher" style="width: 250px;"></select>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center">
+                            <label for="client-switcher-tickets" class="form-label me-2 mb-0">Client:</label>
+                            <select id="client-switcher-tickets" class="form-select client-switcher" style="width: 200px;">
+                                <option value="">All Clients</option>
+                            </select>
+                        </div>
+
+                        <div class="header-notification-container">
+                            <button class="btn btn-outline-secondary header-notification-btn" id="admin-notification-btn-tickets" title="Notifications">
+                                <i class="fas fa-bell"></i>
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                                      id="admin-notification-count-tickets" style="display: none;">0</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="page-content">
@@ -146,12 +468,72 @@
                         </div>
                         <div class="ticket-detail-panel">
                             <div id="ticket-detail-content" style="display: none;">
-                                <div class="ticket-detail-header"><span id="detail-ticket-id">#...</span><div id="detail-ticket-subject-container"></div></div>
+                                <div class="ticket-detail-header">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <span id="detail-ticket-id">#TKT-12345</span>
+                                            <h5 id="detail-ticket-subject">Training Request</h5>
+                                        </div>
+                                        <button type="button" id="btn-close-ticket-detail" class="btn btn-sm btn-outline-light" title="Close">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
                                 <div class="ticket-properties">
-                                    <div class="form-group"><label>Status</label><div id="detail-ticket-status-badge" class="mt-1"></div></div>
-                                    <div class="form-group"><label>Priority</label><select id="detail-priority" class="form-select"></select></div>
-                                    <div class="form-group"><label>Assignee</label><select id="detail-assignee" class="form-select"></select></div>
-                                    <div class="form-group"><label>Created By</label><input type="text" id="detail-createdby" class="form-control" disabled /></div>
+                                    <div class="form-group">
+                                        <label>Status</label>
+                                        <select id="detail-ticket-status" class="form-select">
+                                            <option value="Open">Open</option>
+                                            <option value="Resolved">Resolved</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Priority</label>
+                                        <select id="detail-ticket-priority" class="form-select" disabled>
+                                            <option value="Low">Low</option>
+                                            <option value="Normal">Normal</option>
+                                            <option value="High">High</option>
+                                            <option value="Urgent">Urgent</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Created By</label>
+                                        <input type="text" id="detail-ticket-created-by" class="form-control" disabled />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Client</label>
+                                        <input type="text" id="detail-ticket-client" class="form-control" disabled />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Date Created</label>
+                                        <input type="text" id="detail-ticket-date" class="form-control" disabled />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Description</label>
+                                        <textarea id="detail-ticket-description" class="form-control" rows="4" disabled></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Resolved By</label>
+                                        <input type="text" id="detail-ticket-resolved-by" class="form-control" disabled />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Resolved Date</label>
+                                        <input type="text" id="detail-ticket-resolved-date" class="form-control" disabled />
+                                    </div>
+                                    <div class="ticket-actions">
+                                        <button type="button" id="btn-update-ticket" class="btn btn-primary">
+                                            <i class="fas fa-save"></i> Update Status
+                                        </button>
+                                        <button type="button" id="btn-start-ticket-chat" class="btn btn-success">
+                                            <i class="fas fa-comments"></i> Open Chat
+                                        </button>
+                                    </div>
+                                    <div class="inquiry-conversation-notice">
+                                        <div class="d-flex align-items-center">
+                                            <i class="fas fa-comments me-2"></i>
+                                            <span>Conversations for this ticket will open in a floating chat window.</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             <div id="ticket-detail-placeholder" class="d-flex align-items-center justify-content-center h-100">
@@ -162,35 +544,132 @@
                 </div>
             </div>
 
-            <!-- PAGE 4: INQUIRY MANAGEMENT -->
             <div id="inquiry-management-page" class="admin-page">
                 <div class="page-header">
                     <h1>Inquiry Management</h1>
-                    <div class="d-flex align-items-center">
-                        <label for="client-switcher-inquiries" class="form-label me-2 mb-0">Client:</label>
-                        <select id="client-switcher-inquiries" class="form-select client-switcher" style="width: 250px;"></select>
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center">
+                            <label for="client-switcher-inquiries" class="form-label me-2 mb-0">Client:</label>
+                            <select id="client-switcher-inquiries" class="form-select client-switcher" style="width: 200px;">
+                                <option value="">All Clients</option>
+                            </select>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <label for="status-filter-inquiries" class="form-label me-2 mb-0">Status:</label>
+                            <select id="status-filter-inquiries" class="form-select" style="width: 150px;">
+                                <option value="">All Status</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                        </div>
+=
+                        <div class="header-notification-container">
+                            <button class="btn btn-outline-secondary header-notification-btn" id="admin-notification-btn-inquiries" title="Notifications">
+                                <i class="fas fa-bell"></i>
+                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                                      id="admin-notification-count-inquiries" style="display: none;">0</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="page-content">
-                    <table id="inquiriesDataTable" class="table table-hover" style="width:100%">
-                        <thead><tr><th>ID</th><th>Client</th><th>Topic</th><th>Inquired By</th><th>Date</th><th>Outcome</th></tr></thead>
-                        <tbody></tbody>
-                    </table>
+                    <div class="inquiry-management-layout">
+                        <div class="inquiry-list-panel">
+                            <div class="panel-body">
+                                <table id="inquiriesDataTable" class="table table-hover" style="width:100%">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Topic</th>
+                                            <th>Inquired By</th>
+                                            <th>Outcome</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="inquiry-detail-panel">
+                            <div id="inquiry-detail-content" style="display: none;">
+                                <div class="inquiry-detail-header">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <span id="detail-inquiry-id">#INQ-68915</span>
+                                            <div id="detail-inquiry-topic-container">
+                                                <h5 id="detail-inquiry-topic">Account Inquiry</h5>
+                                            </div>
+                                        </div>
+                                        <button type="button" id="btn-close-inquiry-detail" class="btn btn-sm btn-outline-secondary" title="Close">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="inquiry-properties">
+                                    <div class="form-group">
+                                        <label>Outcome</label>
+                                        <select id="detail-inquiry-outcome" class="form-select">
+                                            <option value="Pending">Pending</option>
+                                            <option value="Completed">Completed</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Inquired By</label>
+                                        <input type="text" id="detail-inquiry-inquired-by" class="form-control" disabled />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Date</label>
+                                        <input type="text" id="detail-inquiry-date" class="form-control" disabled />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Description</label>
+                                        <textarea id="detail-inquiry-description" class="form-control" rows="4" disabled></textarea>
+                                    </div>
+                                    <div class="inquiry-actions">
+                                        <button type="button" id="btn-update-inquiry" class="btn btn-primary">
+                                            <i class="fas fa-save"></i> Update Outcome
+                                        </button>
+                                        <button type="button" id="btn-start-inquiry-chat" class="btn btn-success">
+                                            <i class="fas fa-comments"></i> Open Chat
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="inquiry-conversation-notice">
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-comments me-2"></i>
+                                        <span>Conversations for this inquiry will open in a floating chat window.</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="inquiry-detail-placeholder" class="d-flex align-items-center justify-content-center h-100">
+                                <p class="text-muted">Select an inquiry to view its details.</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </main>
 
-        <!-- FLOATING CHAT UI CONTAINER -->
-        <div id="floating-chat-container"></div>
+            <div id="floating-chat-container"></div>
     </div>
 
-    <!-- SCRIPTS -->
     <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="~/js/admin.js" asp-append-version="true"></script>
+    <script src="~/js/security/antiforgery.js" asp-append-version="true"></script>
+    <script src="~/js/admin/admin-utils.js" asp-append-version="true"></script>
+    <script src="~/js/admin/admin-notifications.js" asp-append-version="true"></script>
+    <script src="~/js/admin/admin-dashboard.js" asp-append-version="true"></script>
+    <script src="~/js/admin/admin-navigation.js" asp-append-version="true"></script>
+    <script src="~/js/admin/admin-chat.js" asp-append-version="true"></script>
+    <script src="~/js/admin/admin-tickets.js" asp-append-version="true"></script>
+    <script src="~/js/admin/admin-inquiries.js" asp-append-version="true"></script>
+    <script src="~/js/admin/admin-signalr.js" asp-append-version="true"></script>
+
+    <script src="~/js/admin/admin-core.js" asp-append-version="true"></script>
+
+
 </body>
 </html>

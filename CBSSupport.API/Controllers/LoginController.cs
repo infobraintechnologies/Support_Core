@@ -4,8 +4,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
-using Microsoft.Extensions.Logging;
+using CBSSupport.API.Security;
 
 namespace CBSSupport.API.Controllers
 {
@@ -13,12 +14,17 @@ namespace CBSSupport.API.Controllers
     public class LoginController : Controller
     {
         private readonly IAuthService _authService;
-        private readonly ILogger<LoginController> _logger;
+        private readonly ILoginAttemptLimiter _loginAttemptLimiter;
+        private readonly IAccountSecurityStampService _securityStamps;
 
-        public LoginController(IAuthService authService, ILogger<LoginController> logger)
+        public LoginController(
+            IAuthService authService,
+            ILoginAttemptLimiter loginAttemptLimiter,
+            IAccountSecurityStampService securityStamps)
         {
             _authService = authService;
-            _logger = logger;
+            _loginAttemptLimiter = loginAttemptLimiter;
+            _securityStamps = securityStamps;
         }
 
         [HttpGet]
@@ -26,7 +32,7 @@ namespace CBSSupport.API.Controllers
         {
             if (User.Identity is { IsAuthenticated: true })
             {
-                if (User.IsInRole("Client"))
+                if (User.IsInRole(Roles.Client))
                 {
                     return RedirectToAction("Index", "Support");
                 }
@@ -36,6 +42,8 @@ namespace CBSSupport.API.Controllers
         }
 
         [HttpPost]
+        [ValidateAntiForgeryToken]
+        [EnableRateLimiting(LoginRateLimitPolicies.PerIp)]
         public async Task<IActionResult> Index(LoginViewModel model)
         {
             if (!ModelState.IsValid) return View(model);
@@ -48,35 +56,34 @@ namespace CBSSupport.API.Controllers
                     return View(model);
                 }
 
+                var accountKey = LoginAccountKey.ForAdministrator(model.Username);
+                if (!TryAcquireAccountAttempt(accountKey))
+                {
+                    return View(model);
+                }
+
                 var adminUser = await _authService.ValidateUserAsync(model.Username, model.Password);
                 if (adminUser != null)
                 {
+                    _loginAttemptLimiter.Reset(accountKey);
+
                     var claims = new List<Claim>
                 {
-                    new Claim(ClaimTypes.NameIdentifier, adminUser.Id.ToString()), 
+                    new Claim(ClaimTypes.NameIdentifier, adminUser.Id.ToString()),
                     new Claim(ClaimTypes.Name, adminUser.Username),
-                    new Claim(ClaimTypes.Role, "Admin"),
-                    new Claim("FullName", adminUser.FullName)
+                    new Claim(ClaimTypes.Role, Roles.Admin),
+                    new Claim("FullName", adminUser.FullName),
+                        new Claim(
+                            CustomClaimTypes.SecurityStamp,
+                            _securityStamps.Create(adminUser.PasswordHash, adminUser.PasswordSalt))
                 };
 
-                    var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-                    var authProperties = new AuthenticationProperties
-                    {
-                        IsPersistent = model.RememberMe,
-                        ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(60)
-                    };
-
-                    await HttpContext.SignInAsync(
-                        CookieAuthenticationDefaults.AuthenticationScheme,
-                        new ClaimsPrincipal(claimsIdentity),
-                        authProperties);
-
-                    HttpContext.Session.SetString("UserId", adminUser.Id.ToString());
-                    HttpContext.Session.SetString("Username", adminUser.Username);
-                    _logger.LogInformation("Session set for Admin UserId: {UserId}", adminUser.Id);
+                    await SignInUser(claims, model.RememberMe, "/AdminSupport");
 
                     return RedirectToAction("Index", "AdminSupport");
                 }
+
+                _loginAttemptLimiter.RecordFailure(accountKey);
             }
             else if (model.RoleType == "client" && model.ClientLogin != null)
             {
@@ -86,6 +93,15 @@ namespace CBSSupport.API.Controllers
                     ModelState.AddModelError(string.Empty, "Client Code, Username, and Password are required.");
                     return View(model);
                 }
+
+                var accountKey = LoginAccountKey.ForClient(
+                    model.ClientLogin.ClientCode.Value,
+                    model.ClientLogin.Username);
+                if (!TryAcquireAccountAttempt(accountKey))
+                {
+                    return View(model);
+                }
+
                 var clientUser = await _authService.ValidateClientUserAsync(
                     model.ClientLogin.ClientCode.Value,
                     model.ClientLogin.Username,
@@ -94,26 +110,49 @@ namespace CBSSupport.API.Controllers
 
                 if (clientUser != null)
                 {
+                    _loginAttemptLimiter.Reset(accountKey);
+
                     var claims = new List<Claim>
                     {
                         new Claim(ClaimTypes.NameIdentifier, clientUser.Id.ToString()),
                         new Claim(ClaimTypes.Name, clientUser.Username),
-                        new Claim(ClaimTypes.Role, "Client"),
+                        new Claim(ClaimTypes.Role, Roles.Client),
                         new Claim("FullName", clientUser.FullName),
-                        new Claim("ClientId", clientUser.ClientId.ToString())
+                        new Claim(CustomClaimTypes.ClientId, clientUser.ClientId.ToString()),
+                        new Claim(
+                            CustomClaimTypes.SecurityStamp,
+                            _securityStamps.Create(clientUser.PasswordHash, clientUser.PasswordSalt))
                     };
 
                     await SignInUser(claims, model.RememberMe, "/Support");
 
-                    HttpContext.Session.SetString("ClientId", clientUser.ClientId.ToString());
-
                     return RedirectToAction("Index", "Support");
                 }
+
+                _loginAttemptLimiter.RecordFailure(accountKey);
             }
 
             ModelState.AddModelError(string.Empty, "Invalid login attempt.");
             return View(model);
         }
+
+        private bool TryAcquireAccountAttempt(string accountKey)
+        {
+            var decision = _loginAttemptLimiter.Check(accountKey);
+            if (decision.IsAllowed)
+            {
+                return true;
+            }
+
+            Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(decision.RetryAfter.TotalSeconds))
+                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+            ModelState.AddModelError(
+                string.Empty,
+                "Too many login attempts. Wait before trying again.");
+            return false;
+        }
+
         private async Task SignInUser(List<Claim> claims, bool isPersistent, string redirectUri)
         {
             var claimsIdentity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -128,21 +167,14 @@ namespace CBSSupport.API.Controllers
                 CookieAuthenticationDefaults.AuthenticationScheme,
                 new ClaimsPrincipal(claimsIdentity),
                 authProperties);
-
-            var userIdClaim = claims.FirstOrDefault(c => c.Type == "UserId");
-            var userNameClaim = claims.FirstOrDefault(c => c.Type == ClaimTypes.Name);
-
-            if (userIdClaim != null) HttpContext.Session.SetString("UserId", userIdClaim.Value);
-            if (userNameClaim != null) HttpContext.Session.SetString("Username", userNameClaim.Value);
-
-            _logger.LogInformation("Session set for UserId: {UserId}", userIdClaim?.Value ?? "N/A");
         }
 
-        [HttpGet]
+        [HttpPost]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> Logout()
         {
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return RedirectToAction("Index", "Login");
         }
     }
-}   
+}

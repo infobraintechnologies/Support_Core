@@ -24,7 +24,10 @@ namespace CBSSupport.Shared.Models
         [Column("full_name")]
         public string FullName { get; set; } = string.Empty;
 
-        [Write(false)] 
-        public string Role { get; set; } = string.Empty;
+        public bool Status { get; set; }
+
+        [Column("deactive_date")]
+        public DateTimeOffset? DeactiveDate { get; set; }
+
     }
 }

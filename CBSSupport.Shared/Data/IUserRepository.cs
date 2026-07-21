@@ -9,6 +9,11 @@ namespace CBSSupport.Shared.Data
 
         Task<ClientUser?> GetClientUserAsync(long clientId, string username);
 
-        Task<AdminUser?> GetByIdAsync(long userId);
+        Task<AdminUser?> GetByIdAsync(long userId, CancellationToken cancellationToken = default);
+
+        Task<ClientUser?> GetClientUserByIdAsync(
+            long clientId,
+            long userId,
+            CancellationToken cancellationToken = default);
     }
 }

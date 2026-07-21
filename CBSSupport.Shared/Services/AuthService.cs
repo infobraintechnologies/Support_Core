@@ -1,9 +1,6 @@
 ﻿using CBSSupport.Shared.Data;
 using CBSSupport.Shared.Helpers;
 using CBSSupport.Shared.Models;
-using Npgsql;
-using System.Threading.Tasks;
-
 namespace CBSSupport.Shared.Services
 {
     public class AuthService : IAuthService
@@ -18,7 +15,7 @@ namespace CBSSupport.Shared.Services
         public async Task<AdminUser?> ValidateUserAsync(string username, string password)
         {
             var user = await _userRepository.GetByUsernameAsync(username);
-            if (user == null) return null;
+            if (user == null || !IsActive(user.Status, user.DeactiveDate)) return null;
 
             bool isPasswordValid = PasswordHelper.VerifyPassword(password, user.PasswordHash, user.PasswordSalt);
 
@@ -29,7 +26,7 @@ namespace CBSSupport.Shared.Services
         {
             var clientUser = await _userRepository.GetClientUserAsync(clientCode, username);
 
-            if (clientUser == null)
+            if (clientUser == null || !IsActive(clientUser.Status, clientUser.DeactiveDate))
             {
                 return null;
             }
@@ -54,5 +51,8 @@ namespace CBSSupport.Shared.Services
                 Name = user.FullName
             };
         }
+
+        private static bool IsActive(bool status, DateTimeOffset? deactiveDate) =>
+            status && deactiveDate is null;
     }
 }

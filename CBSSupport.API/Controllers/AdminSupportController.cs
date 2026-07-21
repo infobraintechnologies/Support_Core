@@ -1,6 +1,5 @@
 ﻿using CBSSupport.Shared.Services;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
+using CBSSupport.API.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
@@ -8,7 +7,7 @@ using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = Policies.AdminOnly)]
 public class AdminSupportController : Controller
 {
     private readonly IAuthService _authService;
@@ -31,11 +30,9 @@ public class AdminSupportController : Controller
     }
 
     [HttpGet("v1/api/accounts/me")]
-    [Authorize(AuthenticationSchemes = $"{JwtBearerDefaults.AuthenticationScheme},{CookieAuthenticationDefaults.AuthenticationScheme}")]
     public async Task<IActionResult> GetMe()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!long.TryParse(userIdClaim, out long userId))
+        if (!User.TryGetUserId(out var userId))
         {
             return Unauthorized(new { message = "User ID claim is missing or invalid." });
         }
@@ -53,15 +50,15 @@ public class AdminSupportController : Controller
     }
 
     [HttpGet("v1/api/clients")]
-    [Authorize(AuthenticationSchemes = $"{JwtBearerDefaults.AuthenticationScheme},{CookieAuthenticationDefaults.AuthenticationScheme}")]
     public async Task<IActionResult> GetClients()
     {
         try
         {
             var clients = await _chatService.GetAllClientsAsync();
 
-            var result = clients.Select(c => new {
-                Id = c.ClientId, 
+            var result = clients.Select(c => new
+            {
+                Id = c.ClientId,
                 Name = c.FullName ?? c.Username
             });
 
@@ -75,7 +72,6 @@ public class AdminSupportController : Controller
     }
 
     [HttpGet("v1/api/dashboard/stats/all")]
-    [Authorize(AuthenticationSchemes = $"{JwtBearerDefaults.AuthenticationScheme},{CookieAuthenticationDefaults.AuthenticationScheme}")]
     public async Task<IActionResult> GetDashboardStats()
     {
         try
