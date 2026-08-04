@@ -23,11 +23,9 @@ namespace CBSSupport.Shared.Models
         public int? UserId { get; set; }
         public long? ClientId { get; set; }
         public long? ClientUserId { get; set; }
-        public long? ClientAuthUserId { get; set; }
+        public int? ClientAuthUserId { get; set; }
 
-        [Required(ErrorMessage = "The ID of the user creating the record is required.")]
-        [Range(1, int.MaxValue, ErrorMessage = "InsertUser must be a valid user ID.")]
-        public int InsertUser { get; set; }
+        public int? InsertUser { get; set; }
         public long? IntroId { get; set; }
         public long? IdenId { get; set; }
         public long? AccountId { get; set; }
@@ -49,5 +47,7 @@ namespace CBSSupport.Shared.Models
         public long? ServiceId { get; set; }
         public string? AttachmentId { get; set; }
         public string? GeoLocation { get; set; }
+        public Guid? ClientMessageId { get; set; }
+        public long? ConversationSequence { get; set; }
     }
 }

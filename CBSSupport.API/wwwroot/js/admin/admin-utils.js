@@ -75,12 +75,22 @@ window.AdminUtils = (() => {
         const toast = document.createElement('div');
         toast.className = `toast align-items-center text-white bg-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'primary'} border-0`;
         toast.setAttribute('role', 'alert');
-        toast.innerHTML = `
-            <div class="d-flex">
-                <div class="toast-body">${message}</div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>
-        `;
+
+        const row = document.createElement('div');
+        row.className = 'd-flex';
+
+        const body = document.createElement('div');
+        body.className = 'toast-body';
+        body.textContent = message == null ? '' : String(message);
+
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'btn-close btn-close-white me-2 m-auto';
+        close.setAttribute('data-bs-dismiss', 'toast');
+        close.setAttribute('aria-label', 'Close');
+
+        row.append(body, close);
+        toast.appendChild(row);
 
         toastContainer.appendChild(toast);
         const toastBootstrap = new bootstrap.Toast(toast);

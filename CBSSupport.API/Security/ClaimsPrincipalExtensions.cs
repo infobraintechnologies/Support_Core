@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using CBSSupport.Shared.Contracts;
 
 namespace CBSSupport.API.Security;
 
@@ -45,6 +46,20 @@ public static class ClaimsPrincipalExtensions
         }
 
         throw new UnauthorizedAccessException("The authenticated principal has no valid user identifier claim.");
+    }
+
+    /// <summary>Builds the tenant-scoped conversation actor from trusted claims.</summary>
+    public static ConversationActor GetConversationActor(this ClaimsPrincipal principal)
+    {
+        var userId = principal.GetRequiredUserId();
+        var isAdmin = principal.IsInRole(Roles.Admin);
+        return new ConversationActor(
+            userId,
+            isAdmin ? null : principal.GetRequiredClientId(),
+            isAdmin,
+            principal.FindFirstValue(ClaimTypes.Name)
+                ?? principal.Identity?.Name
+                ?? $"User {userId}");
     }
 
     private static bool TryGetConsistentPositiveInt64(

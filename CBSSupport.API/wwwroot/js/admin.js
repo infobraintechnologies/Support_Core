@@ -205,35 +205,58 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log('🔔 Rendering notifications to container:', container.id);
 
+        container.replaceChildren();
+
         if (!notifications || notifications.length === 0) {
-            container.innerHTML = `
-            <div class="notification-empty">
-                <i class="fas fa-bell-slash fa-2x mb-2"></i>
-                <p>No notifications yet</p>
-            </div>
-        `;
+            const empty = document.createElement('div');
+            empty.className = 'notification-empty';
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-bell-slash fa-2x mb-2';
+            const text = document.createElement('p');
+            text.textContent = 'No notifications yet';
+            empty.append(icon, text);
+            container.appendChild(empty);
             return;
         }
 
-        container.innerHTML = notifications.map(notification => `
-        <div class="notification-item ${!notification.isRead ? 'unread' : ''}" 
-             data-id="${notification.id}" 
-             data-entity-id="${notification.entityId}" 
-             data-entity-type="${notification.entityType}">
-            <div class="notification-content">
-                <div class="notification-icon ${notification.type}">
-                    <i class="${notification.icon}"></i>
-                </div>
-                <div class="notification-text">
-                    <div class="notification-title">${escapeHtml(notification.title)}</div>
-                    <div class="notification-message">${escapeHtml(notification.message)}</div>
-                    <div class="notification-time">${notification.timeAgo}</div>
-                </div>
-            </div>
-        </div>
-    `).join('');
+        notifications.forEach(notification => {
+            const item = document.createElement('div');
+            item.className = `notification-item${notification.isRead ? '' : ' unread'}`;
+            item.dataset.id = String(notification.id);
+            item.dataset.entityId = String(notification.entityId);
+            item.dataset.entityType = String(notification.entityType);
 
-        console.log(`🔔 Rendered ${notifications.length} notifications`);
+            const content = document.createElement('div');
+            content.className = 'notification-content';
+
+            const iconWrapper = document.createElement('div');
+            iconWrapper.className = `notification-icon ${notification.type}`;
+            const icon = document.createElement('i');
+            icon.className = notification.icon;
+            iconWrapper.appendChild(icon);
+
+            const text = document.createElement('div');
+            text.className = 'notification-text';
+
+            const title = document.createElement('div');
+            title.className = 'notification-title';
+            title.textContent = notification.title;
+
+            const message = document.createElement('div');
+            message.className = 'notification-message';
+            message.textContent = notification.message;
+
+            const time = document.createElement('div');
+            time.className = 'notification-time';
+            time.textContent = notification.timeAgo;
+
+            text.append(title, message, time);
+            content.append(iconWrapper, text);
+            item.appendChild(content);
+            container.appendChild(item);
+
+            console.log(`🔔 Rendered notification ${notification.id}`);
+        });
     }
 
     async function markNotificationAsRead(instructionId) {
@@ -507,12 +530,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const toast = document.createElement('div');
         toast.className = `toast align-items-center text-white bg-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'primary'} border-0`;
         toast.setAttribute('role', 'alert');
-        toast.innerHTML = `
-            <div class="d-flex">
-                <div class="toast-body">${message}</div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>
-        `;
+
+        const row = document.createElement('div');
+        row.className = 'd-flex';
+
+        const body = document.createElement('div');
+        body.className = 'toast-body';
+        body.textContent = message == null ? '' : String(message);
+
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'btn-close btn-close-white me-2 m-auto';
+        close.setAttribute('data-bs-dismiss', 'toast');
+        close.setAttribute('aria-label', 'Close');
+
+        row.append(body, close);
+        toast.appendChild(row);
 
         toastContainer.appendChild(toast);
         const toastBootstrap = new bootstrap.Toast(toast);
@@ -1276,7 +1309,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('Error loading messages:', error);
-            chatBody.html(`<div class="text-center text-danger p-4">Error loading messages: ${error.message}</div>`);
+            const errorEl = document.createElement('div');
+            errorEl.className = 'text-center text-danger p-4';
+            errorEl.textContent = `Error loading messages: ${error.message}`;
+            chatBody.empty().append(errorEl);
         }
     }
 

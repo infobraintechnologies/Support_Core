@@ -1,5 +1,10 @@
 using CBSSupport.API.Hubs;
+using CBSSupport.API.Controllers;
+using CBSSupport.API.Middleware;
+using CBSSupport.API.Realtime;
+using CBSSupport.API.Configuration;
 using CBSSupport.API.Security;
+using CBSSupport.API.Attachments;
 using CBSSupport.Shared.Data;
 using CBSSupport.Shared.Helpers;
 using CBSSupport.Shared.Services;
@@ -7,8 +12,10 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation;
+using Microsoft.AspNetCore.Server.IIS;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 using System.Globalization;
@@ -18,7 +25,16 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(options =>
+    options.Limits.MaxRequestBodySize = RequestSizeLimits.MaximumBodySizeBytes);
+builder.Services.Configure<IISServerOptions>(options =>
+    options.MaxRequestBodySize = RequestSizeLimits.MaximumBodySizeBytes);
+builder.Services.Configure<FormOptions>(options =>
+    options.MultipartBodyLengthLimit = RequestSizeLimits.MaximumBodySizeBytes);
+
 var mvcBuilder = builder.Services.AddControllersWithViews(SecurityMvcOptions.ConfigureMvc);
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddAntiforgery(SecurityMvcOptions.ConfigureAntiforgery);
 
 if (builder.Environment.IsDevelopment())
@@ -28,7 +44,12 @@ if (builder.Environment.IsDevelopment())
 
 
 builder.Services.AddSignalR(options =>
-    options.AddFilter(typeof(HubPrincipalValidationFilter)));
+{
+    options.AddFilter(typeof(HubPrincipalValidationFilter));
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    options.MaximumReceiveMessageSize = 16 * 1024;
+    options.MaximumParallelInvocationsPerClient = 1;
+});
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -69,6 +90,27 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit = loginSecurityOptions.PerIpPermitLimit,
                 Window = loginSecurityOptions.PerIpWindow,
                 SegmentsPerWindow = loginSecurityOptions.PerIpSegments,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy(MessagingRateLimitPolicies.MessageSend, httpContext =>
+        RateLimitPartition.GetTokenBucketLimiter(
+            GetMessagingRateLimitKey(httpContext),
+            _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = 10,
+                TokensPerPeriod = 30,
+                ReplenishmentPeriod = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy(MessagingRateLimitPolicies.ConversationCreation, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            GetMessagingRateLimitKey(httpContext),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(10),
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
@@ -117,10 +159,65 @@ if (string.IsNullOrEmpty(connectionString))
 }
 
 // --- 3. Register your custom services---
-builder.Services.AddSingleton<IChatService>(provider => new ChatService(connectionString));
+var attachmentOptions = builder.Configuration
+    .GetSection(AttachmentOptions.SectionName)
+    .Get<AttachmentOptions>() ?? new AttachmentOptions();
+attachmentOptions.Validate();
+builder.Services.AddSingleton(attachmentOptions);
+builder.Services.AddSingleton<IChatService>(provider => new ChatService(
+    connectionString,
+    provider.GetRequiredService<ILogger<ChatService>>()));
 builder.Services.AddSingleton<IConversationRepository>(
-    new ConversationRepository(connectionString));
+    new ConversationRepository(connectionString, attachmentOptions.Enabled));
+builder.Services.AddSingleton<IConversationOutboxRepository>(
+    new ConversationOutboxRepository(connectionString, attachmentOptions.Enabled));
 builder.Services.AddSingleton<IConversationService, ConversationService>();
+builder.Services.AddSingleton<IAttachmentRepository>(
+    new AttachmentRepository(connectionString));
+if (attachmentOptions.SecurityMode == AttachmentSecurityMode.MalwareScanning)
+{
+    builder.Services.AddSingleton<IFileScanner>(provider => new ClamAvFileScanner(
+        attachmentOptions.Scanning,
+        provider.GetRequiredService<TimeProvider>()));
+}
+builder.Services.AddSingleton(provider => new AttachmentUiCapability(
+    attachmentOptions,
+    provider.GetService<IFileScanner>(),
+    provider.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton<IFileStorage>(_ =>
+    attachmentOptions.Enabled
+        ? new R2FileStorage(attachmentOptions.R2)
+        : new DisabledFileStorage());
+builder.Services.AddSingleton<IAttachmentService>(provider => new AttachmentService(
+    provider.GetRequiredService<IAttachmentRepository>(),
+    provider.GetRequiredService<IConversationService>(),
+    provider.GetRequiredService<IFileStorage>(),
+    provider.GetService<IFileScanner>(),
+    attachmentOptions,
+    provider.GetRequiredService<TimeProvider>()));
+if (attachmentOptions.Enabled)
+{
+    builder.Services.AddHostedService<AttachmentCleanupWorker>();
+    if (attachmentOptions.SecurityMode == AttachmentSecurityMode.StructuralValidationOnly)
+    {
+        builder.Services.AddHostedService<AttachmentValidationWorker>();
+    }
+    else
+    {
+        builder.Services.AddHostedService<ClamAvHealthMonitor>();
+        if (attachmentOptions.Scanning.WorkerEnabled)
+        {
+            builder.Services.AddHostedService<AttachmentScanWorker>();
+        }
+    }
+}
+builder.Services.Configure<MessagingFeatureOptions>(
+    builder.Configuration.GetSection(MessagingFeatureOptions.SectionName));
+builder.Services.AddSingleton<IUserIdProvider, NamespacedUserIdProvider>();
+builder.Services.AddSingleton<IConversationRealtimePublisher, SignalRConversationRealtimePublisher>();
+builder.Services.Configure<ConversationOutboxDispatcherOptions>(
+    builder.Configuration.GetSection("Messaging:Outbox"));
+builder.Services.AddHostedService<ConversationOutboxDispatcher>();
 builder.Services.AddSingleton<IUserRepository>(provider => new UserRepository(connectionString));
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IAccountSecurityStampService, DataProtectionAccountSecurityStampService>();
@@ -212,17 +309,24 @@ builder.Services.AddAuthorization(options =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+app.UseMiddleware<RequestSizeLimitMiddleware>();
+app.UseMiddleware<AttachmentContainmentMiddleware>();
 
-if (!app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment())
 {
-    app.UseExceptionHandler("/Home/Error");
+    app.UseDeveloperExceptionPage();
+}
+else
+{
+    app.UseExceptionHandler();
     app.UseHsts();
 }
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseRouting();
-app.UseRateLimiter();
 app.UseAuthentication();
+// Messaging partitions depend on authenticated user and tenant claims.
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapControllerRoute(
@@ -232,5 +336,17 @@ app.MapControllerRoute(
 app.MapControllers();
 app.MapHub<ChatHub>("/chathub");
 app.Run();
+
+static string GetMessagingRateLimitKey(HttpContext context)
+{
+    var role = context.User.IsInRole(Roles.Admin) ? "admin" : "client";
+    var userId = context.User.TryGetUserId(out var parsedUserId)
+        ? parsedUserId.ToString(CultureInfo.InvariantCulture)
+        : "anonymous";
+    var clientId = context.User.TryGetClientId(out var parsedClientId)
+        ? parsedClientId.ToString(CultureInfo.InvariantCulture)
+        : "global";
+    return $"{role}:{clientId}:{userId}";
+}
 
 public partial class Program;

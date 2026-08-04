@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -39,6 +40,9 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
     }
 
     public const long ConversationId = 9001;
+    public const long TicketConversationId = 9002;
+    public const long InquiryConversationId = 9003;
+    public const long TicketReplyId = 9004;
 
     public static SeededClient RevokedClient { get; } =
         new(101, ClientId, "integration-client-a", "Integration Client A");
@@ -177,7 +181,7 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
 
             CREATE TABLE internal.support_users (
                 id integer PRIMARY KEY,
-                client_id bigint NOT NULL,
+                client_id integer NOT NULL,
                 user_name text NOT NULL,
                 full_name text NOT NULL,
                 password_hash text NOT NULL,
@@ -194,6 +198,16 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
                 instruction_id bigint NULL
             );
 
+            CREATE TABLE digital.conversation_access (
+                conversation_id bigint PRIMARY KEY,
+                client_id bigint NOT NULL,
+                conversation_kind varchar(16) NOT NULL,
+                state varchar(16) NOT NULL,
+                client_user_id integer NULL,
+                admin_user_id integer NULL,
+                version bigint NOT NULL
+            );
+
             INSERT INTO internal.support_users (
                 id, client_id, user_name, full_name,
                 password_hash, password_salt, status, deactive_date)
@@ -205,7 +219,16 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
 
             INSERT INTO digital.instructions (
                 id, client_id, inst_type_id, inst_category_id, instruction_id)
-            VALUES (9001, 501, 101, 101, 9001);
+            VALUES
+                (9001, 501, 100, 100, 9001),
+                (9002, 501, 110, 101, 9002),
+                (9003, 501, 121, 102, 9003),
+                (9004, 501, 110, 101, 9002);
+
+            INSERT INTO digital.conversation_access (
+                conversation_id, client_id, conversation_kind, state,
+                client_user_id, admin_user_id, version)
+            VALUES (9001, 501, 'Group', 'Active', NULL, NULL, 1);
             """;
 
         await using var connection = new NpgsqlConnection(connectionString);
@@ -240,8 +263,11 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
                 services.RemoveAll<IChatService>();
                 services.AddSingleton<IUserRepository>(new UserRepository(connectionString));
                 services.AddSingleton<IConversationRepository>(
-                    new ConversationRepository(connectionString));
-                services.AddSingleton<IChatService>(new ChatService(connectionString));
+                    new ConversationRepository(
+                        connectionString,
+                        attachmentsEnabled: false));
+                services.AddSingleton<IChatService>(
+                    new ChatService(connectionString, NullLogger<ChatService>.Instance));
                 services.AddDataProtection().UseEphemeralDataProtectionProvider();
             });
             builder.ConfigureAppConfiguration((_, configuration) =>
@@ -255,7 +281,7 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
     }
 
     internal sealed record SeededClient(
-        long UserId,
+        int UserId,
         long ClientId,
         string Username,
         string DisplayName);

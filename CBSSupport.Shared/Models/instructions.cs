@@ -28,13 +28,13 @@ namespace CBSSupport.Shared.Models
         public string CompletedRemarks { get; set; }
         public bool Status { get; set; }
         public string Remarks { get; set; }
-        public int InsertUser { get; set; }
+        public int? InsertUser { get; set; }
         public DateTime InsertDate { get; set; }
         public int? EditUser { get; set; }
         public DateTime? EditDate { get; set; }
         public long? ClientId { get; set; }
         public long? ClientUserId { get; set; }
-        public long? ClientAuthUserId { get; set; }
+        public int? ClientAuthUserId { get; set; }
         public long? ServiceId { get; set; }
 
         public string AttachmentId { get; set; }

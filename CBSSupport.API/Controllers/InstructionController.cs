@@ -16,56 +16,35 @@ namespace CBSSupport.API.Controllers;
 public sealed class InstructionsController : ControllerBase
 {
     private readonly IChatService _service;
+    private readonly IConversationService _conversations;
     private readonly IAuthorizationService _authorizationService;
     private readonly IHubContext<ChatHub> _hubContext;
 
     public InstructionsController(
         IChatService service,
+        IConversationService conversations,
         IAuthorizationService authorizationService,
         IHubContext<ChatHub> hubContext)
     {
         _service = service;
+        _conversations = conversations;
         _authorizationService = authorizationService;
         _hubContext = hubContext;
     }
 
     [HttpPost("support-group")]
-    public async Task<IActionResult> SaveSupportGroupChat(CreateInstructionRequest request)
-    {
-        if (User.IsInRole(Roles.Client))
-        {
-            return await SaveInstructionAsync(request, 100, 100, User.GetRequiredClientId());
-        }
-
-        if (request.InstructionId is not > 0)
-        {
-            return BadRequest(new
-            {
-                message = "Administrators must select a client when starting a group conversation."
-            });
-        }
-
-        return await SaveReplyAsync(request);
-    }
+    public IActionResult SaveSupportGroupChat(CreateInstructionRequest request) => NotFound();
 
     [HttpPost("clients/{clientId:long}/support-group")]
     [Authorize(Policy = Policies.AdminOnly)]
-    public async Task<IActionResult> SaveAdminSupportGroupChat(
+    public IActionResult SaveAdminSupportGroupChat(
         long clientId,
-        CreateInstructionRequest request)
-    {
-        if (!await CanAccessTenantAsync(clientId))
-        {
-            return NotFound();
-        }
-
-        return await SaveInstructionAsync(request with { InstructionId = null }, 100, 100, clientId);
-    }
+        CreateInstructionRequest request) => NotFound();
 
     [HttpPost("support-private")]
     [Authorize(Policy = Policies.ClientOnly)]
-    public Task<IActionResult> SaveSupportPrivateChat(CreateInstructionRequest request) =>
-        SaveInstructionAsync(request, 101, 100, User.GetRequiredClientId());
+    public IActionResult SaveSupportPrivateChat(CreateInstructionRequest request) =>
+        NotFound();
 
     [HttpPost("internal-team-chat")]
     [Authorize(Policy = Policies.AdminOnly)]
@@ -134,6 +113,11 @@ public sealed class InstructionsController : ControllerBase
             return BadRequest(new { message = "Invalid chat type specified." });
         }
 
+        if (instructionTypeId == ConversationTypes.SupportPrivate)
+        {
+            return NotFound();
+        }
+
         var conversations = await _service.GetConversationsByInstTypeAsync(instructionTypeId);
         return Ok(conversations);
     }
@@ -144,6 +128,13 @@ public sealed class InstructionsController : ControllerBase
         if (conversationId <= 0)
         {
             return BadRequest(new { message = "A valid conversation ID must be provided." });
+        }
+
+
+        var root = await _service.GetInstructionByIdAsync(conversationId);
+        if (root is null || root.InstTypeId == ConversationTypes.SupportPrivate)
+        {
+            return NotFound();
         }
 
         var messages = (await _service.GetMessagesByConversationIdAsync(
@@ -161,7 +152,9 @@ public sealed class InstructionsController : ControllerBase
             return NotFound();
         }
 
-        return Ok(await _service.GetSidebarForUserAsync(0, clientId));
+        var sidebar = await _service.GetSidebarForUserAsync(0, clientId);
+        sidebar.PrivateChats.Clear();
+        return Ok(sidebar);
     }
 
     [HttpGet("tickets/{clientId:long}")]
@@ -382,22 +375,52 @@ public sealed class InstructionsController : ControllerBase
             return BadRequest(new { message = "A valid conversation ID is required." });
         }
 
-        var conversation = (await _service.GetMessagesByConversationIdAsync(
+        var actor = GetRequiredConversationActor();
+        var access = await _conversations.GetAccessAsync(
             request.InstructionId.Value,
-            GetClientScope())).ToList();
-
-        var root = conversation.FirstOrDefault(message => message.Id == request.InstructionId.Value)
-            ?? conversation.FirstOrDefault();
-        if (root is null || root.ClientId is not > 0)
+            actor,
+            HttpContext.RequestAborted);
+        if (access is null || !access.IsCase)
         {
             return NotFound();
         }
 
-        return await SaveInstructionAsync(
-            request with { InstructionId = root.InstructionId ?? root.Id },
-            root.InstTypeId,
-            root.InstCategoryId,
-            root.ClientId.Value);
+        var result = await _conversations.SendMessageAsync(
+            request.InstructionId.Value,
+            actor,
+            Guid.NewGuid(),
+            request.Instruction,
+            [],
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            HttpContext.RequestAborted);
+        if (result.Status is ConversationCommandStatus.Unavailable)
+        {
+            return NotFound();
+        }
+        if (result.Status is not ConversationCommandStatus.Created || result.Value is null)
+        {
+            return result.Status is ConversationCommandStatus.Conflict
+                ? Conflict(new { code = result.ErrorCode ?? "message_conflict" })
+                : ValidationProblem("Message text is required.");
+        }
+
+        var message = result.Value;
+        return Ok(new
+        {
+            message.Id,
+            InstructionId = message.ConversationId,
+            Instruction = message.Text,
+            DateTime = message.SentAt,
+            InsertUser = actor.IsAdmin ? checked((int)actor.UserId) : (int?)null,
+            ClientAuthUserId = actor.IsAdmin ? (int?)null : checked((int)actor.UserId),
+            SenderName = actor.DisplayName,
+            ClientId = access.ClientId,
+            InstTypeId = access.InstructionTypeId,
+            InstCategoryId = access.InstructionCategoryId,
+            message.ClientMessageId,
+            ConversationSequence = message.Sequence,
+            Attachments = Array.Empty<AttachmentSummary>()
+        });
     }
 
     private async Task<IActionResult> SaveInstructionAsync(
@@ -406,6 +429,29 @@ public sealed class InstructionsController : ControllerBase
         short instructionCategoryId,
         long? clientId)
     {
+        if (ConversationTypes.IsCase(instructionTypeId))
+        {
+            var result = await _conversations.CreateCaseAsync(
+                GetRequiredConversationActor(),
+                instructionTypeId,
+                instructionCategoryId,
+                request.Instruction,
+                request.Priority,
+                request.Remarks,
+                request.ExpiryDate,
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                HttpContext.RequestAborted);
+            return result.Status switch
+            {
+                ConversationCommandStatus.Created when result.Value is not null =>
+                    Ok(result.Value),
+                ConversationCommandStatus.Unavailable => NotFound(),
+                ConversationCommandStatus.Conflict =>
+                    Conflict(new { code = result.ErrorCode ?? "case_conflict" }),
+                _ => ValidationProblem("The ticket or inquiry request is invalid.")
+            };
+        }
+
         var userId = User.GetRequiredUserId();
         var isClient = User.IsInRole(Roles.Client);
         var now = DateTime.UtcNow;
@@ -424,11 +470,11 @@ public sealed class InstructionsController : ControllerBase
             Status = true,
             InstChannel = "chat",
             IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            InsertUser = checked((int)userId),
+            InsertUser = isClient ? null : checked((int)userId),
             UserId = isClient ? null : checked((int)userId),
             ClientId = clientId,
-            ClientAuthUserId = isClient ? userId : null,
-            ClientUserId = isClient ? userId : null,
+            ClientAuthUserId = isClient ? checked((int)userId) : null,
+            ClientUserId = null,
             ServiceId = 3
         };
 
@@ -466,8 +512,7 @@ public sealed class InstructionsController : ControllerBase
                 new ConversationSender(
                     userId,
                     User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? $"User {userId}",
-                    isAdmin ? Roles.Admin : Roles.Client),
-                savedInstruction.AttachmentId);
+                    isAdmin ? Roles.Admin : Roles.Client));
 
             await _hubContext.Clients
                 .Group(RealtimeGroupNames.Conversation(requestedConversationId.Value))
@@ -500,6 +545,19 @@ public sealed class InstructionsController : ControllerBase
 
     private long? GetClientScope() =>
         User.IsInRole(Roles.Admin) ? null : User.GetRequiredClientId();
+
+    private ConversationActor GetRequiredConversationActor()
+    {
+        var userId = User.GetRequiredUserId();
+        var isAdmin = User.IsInRole(Roles.Admin);
+        return new ConversationActor(
+            userId,
+            isAdmin ? null : User.GetRequiredClientId(),
+            isAdmin,
+            User.FindFirstValue(ClaimTypes.Name)
+                ?? User.Identity?.Name
+                ?? $"User {userId}");
+    }
 
     private async Task<bool> CanAccessTenantAsync(long clientId)
     {

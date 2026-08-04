@@ -13,6 +13,7 @@ obj/
 appsettings.Development.json
 appsettings.Local.json
 appsettings.json
+CBSSupport.API/wwwroot/uploads/
 
 # Rider
 .idea/
