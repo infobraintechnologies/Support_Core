@@ -44,3 +44,7 @@ node_modules/
 # .NET
 project.lock.json
 project.fragment.lock.json
+.gitattributes
+CBSSupport.API/Properties/launchSettings.json
+Database/Operations/r2-cors.example.json
+CBSSupport.API/Properties/launchSettings.json

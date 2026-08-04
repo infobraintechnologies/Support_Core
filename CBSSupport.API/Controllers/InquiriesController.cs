@@ -56,13 +56,24 @@ public sealed class InquiriesController(
 
     [HttpGet]
     [Authorize(Policy = Policies.ClientOnly)]
-    public async Task<ActionResult<IReadOnlyList<InquiryResponse>>> List(
+    public async Task<ActionResult<CasePage<InquiryResponse>>> List(
+        [FromQuery] CaseListQuery query,
         CancellationToken cancellationToken)
     {
-        var inquiries = await chatService.GetInquiriesByClientIdAsync(
-            User.GetRequiredClientId(),
+        if (!CasePagination.TryCreateInquiryCriteria(query, allowClientFilter: false, out var criteria, out var error))
+        {
+            return ValidationProblem(
+                statusCode: StatusCodes.Status400BadRequest,
+                detail: error);
+        }
+
+        var page = await chatService.ListInquiriesAsync(
+            criteria! with { ClientId = User.GetRequiredClientId() },
             cancellationToken);
-        return Ok(inquiries.Select(CaseDtoMapper.ToInquiry).ToList());
+        return Ok(new CasePage<InquiryResponse>(
+            page.Items.Select(CaseDtoMapper.ToInquiry).ToArray(),
+            page.PageSize,
+            page.NextCursor));
     }
 
     [HttpGet("{caseId:long}")]
@@ -90,11 +101,22 @@ public sealed class InquiriesController(
 public sealed class AdminInquiriesController(IChatService chatService) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<InquiryResponse>>> List(
+    public async Task<ActionResult<CasePage<InquiryResponse>>> List(
+        [FromQuery] CaseListQuery query,
         CancellationToken cancellationToken)
     {
-        var inquiries = await chatService.GetAllInquiriesAsync(cancellationToken);
-        return Ok(inquiries.Select(CaseDtoMapper.ToInquiry).ToList());
+        if (!CasePagination.TryCreateInquiryCriteria(query, allowClientFilter: true, out var criteria, out var error))
+        {
+            return ValidationProblem(
+                statusCode: StatusCodes.Status400BadRequest,
+                detail: error);
+        }
+
+        var page = await chatService.ListInquiriesAsync(criteria!, cancellationToken);
+        return Ok(new CasePage<InquiryResponse>(
+            page.Items.Select(CaseDtoMapper.ToInquiry).ToArray(),
+            page.PageSize,
+            page.NextCursor));
     }
 
     [HttpPut("{caseId:long}/status")]

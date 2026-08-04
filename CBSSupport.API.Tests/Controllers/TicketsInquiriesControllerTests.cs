@@ -212,14 +212,120 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         };
         var controller = CreateTicketsController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
 
-        var result = await controller.List(CancellationToken.None);
+        var result = await controller.List(new CaseListQuery(), CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        var list = Assert.IsAssignableFrom<IReadOnlyList<TicketResponse>>(ok.Value);
-        var item = Assert.Single(list);
+        var page = Assert.IsType<CasePage<TicketResponse>>(ok.Value);
+        var item = Assert.Single(page.Items);
         Assert.Equal(CaseTypes.Migration, item.Type);
-        var call = Assert.Single(chat.Calls, c => c.Method == "GetTicketsByClientIdAsync");
-        Assert.Equal(ClientId, call.GetArg<long>(0));
+        Assert.Equal(CaseListQuery.DefaultPageSize, page.PageSize);
+        Assert.Equal(ClientId, chat.LastTicketCriteria!.ClientId);
+    }
+
+    [Fact]
+    public async Task ListTickets_MaximumPageSizeAndUnknownSort_AreRejected()
+    {
+        var chat = new RecordingChatService();
+        var controller = CreateTicketsController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
+
+        var overLimit = await controller.List(
+            new CaseListQuery { PageSize = CaseListQuery.MaximumPageSize + 1 },
+            CancellationToken.None);
+        var invalidSort = await controller.List(
+            new CaseListQuery { Sort = "insertUser" },
+            CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(overLimit.Result);
+        Assert.IsType<BadRequestObjectResult>(invalidSort.Result);
+        Assert.Empty(chat.Calls);
+    }
+
+    [Fact]
+    public async Task ListTickets_CombinedFilters_AreAllowlistedAndClaimScoped()
+    {
+        var chat = new RecordingChatService
+        {
+            TicketPage = new CasePage<TicketViewModel>([], 10, null)
+        };
+        var controller = CreateTicketsController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
+
+        var result = await controller.List(
+            new CaseListQuery
+            {
+                PageSize = 10,
+                Status = "resolved",
+                Type = CaseTypes.Migration,
+                Priority = "high",
+                Sort = CasePagination.TypeSort,
+                Direction = CasePagination.Ascending
+            },
+            CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        var criteria = chat.LastTicketCriteria!;
+        Assert.Equal(ClientId, criteria.ClientId);
+        Assert.True(criteria.IsCompleted);
+        Assert.Equal(ConversationTypes.MigrationTicket, criteria.TypeCode);
+        Assert.Equal(CasePriorities.High, criteria.Priority);
+        Assert.Equal(CasePagination.TypeSort, criteria.Sort);
+        Assert.Equal(CasePagination.Ascending, criteria.Direction);
+    }
+
+    [Fact]
+    public async Task ListTickets_ClientCannotOverrideClaimTenant()
+    {
+        var chat = new RecordingChatService();
+        var controller = CreateTicketsController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
+
+        var result = await controller.List(
+            new CaseListQuery { ClientId = ClientId + 1 },
+            CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Null(chat.LastTicketCriteria);
+    }
+
+    [Fact]
+    public async Task ListTickets_CursorPagesWithEqualSortValues_RemainDisjoint()
+    {
+        var firstCursor = CasePagination.EncodeCursor(new CaseListCursor(
+            CasePagination.StatusSort,
+            CasePagination.Ascending,
+            20,
+            null,
+            0,
+            null,
+            null));
+        var chat = new RecordingChatService
+        {
+            TicketPage = new CasePage<TicketViewModel>(
+                [new TicketViewModel { Id = 20, Status = "Open", Date = DateTime.UtcNow }],
+                1,
+                firstCursor)
+        };
+        var controller = CreateTicketsController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
+
+        var first = await controller.List(
+            new CaseListQuery { PageSize = 1, Sort = CasePagination.StatusSort, Direction = CasePagination.Ascending },
+            CancellationToken.None);
+        chat.TicketPage = new CasePage<TicketViewModel>(
+            [new TicketViewModel { Id = 21, Status = "Open", Date = DateTime.UtcNow }],
+            1,
+            null);
+        var firstPage = Assert.IsType<OkObjectResult>(first.Result).Value as CasePage<TicketResponse>;
+        var second = await controller.List(
+            new CaseListQuery
+            {
+                PageSize = 1,
+                Sort = CasePagination.StatusSort,
+                Direction = CasePagination.Ascending,
+                Cursor = firstPage!.NextCursor
+            },
+            CancellationToken.None);
+
+        var secondPage = Assert.IsType<OkObjectResult>(second.Result).Value as CasePage<TicketResponse>;
+        Assert.DoesNotContain(secondPage!.Items[0].Id, firstPage.Items.Select(item => item.Id));
+        Assert.Equal(20, chat.LastTicketCriteria!.Cursor!.Id);
     }
 
     [Fact]
@@ -232,7 +338,7 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         using var source = new CancellationTokenSource();
         source.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => controller.List(source.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => controller.List(new CaseListQuery(), source.Token));
     }
 
     // ---- Admin status updates ----
@@ -384,6 +490,27 @@ public sealed class TicketsInquiriesApiV1ControllerTests
     }
 
     [Fact]
+    public async Task ListInquiries_DefaultPageAndFilters_AreClaimScoped()
+    {
+        var chat = new RecordingChatService
+        {
+            InquiryPage = new CasePage<InquiryViewModel>([], CaseListQuery.DefaultPageSize, null)
+        };
+        var controller = CreateInquiriesController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
+
+        var result = await controller.List(
+            new CaseListQuery { Status = "Completed", Type = CaseTypes.Accounts, Priority = "Normal" },
+            CancellationToken.None);
+
+        var page = Assert.IsType<CasePage<InquiryResponse>>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(CaseListQuery.DefaultPageSize, page.PageSize);
+        Assert.Equal(ClientId, chat.LastInquiryCriteria!.ClientId);
+        Assert.True(chat.LastInquiryCriteria.IsCompleted);
+        Assert.Equal(ConversationTypes.AccountsInquiry, chat.LastInquiryCriteria.TypeCode);
+        Assert.Equal(CasePriorities.Normal, chat.LastInquiryCriteria.Priority);
+    }
+
+    [Fact]
     public async Task GetInquiryDetail_CrossTenantResource_IsNotFound()
     {
         var chat = new RecordingChatService
@@ -463,6 +590,10 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         public Func<long, long?, InquiryViewModel?> InquiryDetail { get; set; } = (_, _) => null;
         public IEnumerable<TicketViewModel> ClientTickets { get; set; } = [];
         public IEnumerable<InquiryViewModel> ClientInquiries { get; set; } = [];
+        public CasePage<TicketViewModel>? TicketPage { get; set; }
+        public CasePage<InquiryViewModel>? InquiryPage { get; set; }
+        public CaseListCriteria? LastTicketCriteria { get; private set; }
+        public CaseListCriteria? LastInquiryCriteria { get; private set; }
         public IEnumerable<TicketViewModel> AllTickets { get; set; } = [];
         public IEnumerable<InquiryViewModel> AllInquiries { get; set; } = [];
         public bool StatusUpdateResult { get; set; } = true;
@@ -485,10 +616,36 @@ public sealed class TicketsInquiriesApiV1ControllerTests
             return Task.FromResult(ClientTickets);
         }
 
+        public Task<CasePage<TicketViewModel>> ListTicketsAsync(
+            CaseListCriteria criteria,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastTicketCriteria = criteria;
+            Calls.Add(new RecordedCall(nameof(ListTicketsAsync), [criteria]));
+            return Task.FromResult(TicketPage ?? new CasePage<TicketViewModel>(
+                ClientTickets.ToArray(),
+                criteria.PageSize,
+                null));
+        }
+
         public Task<IEnumerable<InquiryViewModel>> GetInquiriesByClientIdAsync(long clientId)
         {
             Calls.Add(new RecordedCall(nameof(GetInquiriesByClientIdAsync), [clientId]));
             return Task.FromResult(ClientInquiries);
+        }
+
+        public Task<CasePage<InquiryViewModel>> ListInquiriesAsync(
+            CaseListCriteria criteria,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastInquiryCriteria = criteria;
+            Calls.Add(new RecordedCall(nameof(ListInquiriesAsync), [criteria]));
+            return Task.FromResult(InquiryPage ?? new CasePage<InquiryViewModel>(
+                ClientInquiries.ToArray(),
+                criteria.PageSize,
+                null));
         }
 
         public Task<IEnumerable<TicketViewModel>> GetAllTicketsAsync()

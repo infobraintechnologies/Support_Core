@@ -56,13 +56,24 @@ public sealed class TicketsController(
 
     [HttpGet]
     [Authorize(Policy = Policies.ClientOnly)]
-    public async Task<ActionResult<IReadOnlyList<TicketResponse>>> List(
+    public async Task<ActionResult<CasePage<TicketResponse>>> List(
+        [FromQuery] CaseListQuery query,
         CancellationToken cancellationToken)
     {
-        var tickets = await chatService.GetTicketsByClientIdAsync(
-            User.GetRequiredClientId(),
+        if (!CasePagination.TryCreateTicketCriteria(query, allowClientFilter: false, out var criteria, out var error))
+        {
+            return ValidationProblem(
+                statusCode: StatusCodes.Status400BadRequest,
+                detail: error);
+        }
+
+        var page = await chatService.ListTicketsAsync(
+            criteria! with { ClientId = User.GetRequiredClientId() },
             cancellationToken);
-        return Ok(tickets.Select(CaseDtoMapper.ToTicket).ToList());
+        return Ok(new CasePage<TicketResponse>(
+            page.Items.Select(CaseDtoMapper.ToTicket).ToArray(),
+            page.PageSize,
+            page.NextCursor));
     }
 
     [HttpGet("{caseId:long}")]
@@ -90,11 +101,22 @@ public sealed class TicketsController(
 public sealed class AdminTicketsController(IChatService chatService) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<TicketResponse>>> List(
+    public async Task<ActionResult<CasePage<TicketResponse>>> List(
+        [FromQuery] CaseListQuery query,
         CancellationToken cancellationToken)
     {
-        var tickets = await chatService.GetAllTicketsAsync(cancellationToken);
-        return Ok(tickets.Select(CaseDtoMapper.ToTicket).ToList());
+        if (!CasePagination.TryCreateTicketCriteria(query, allowClientFilter: true, out var criteria, out var error))
+        {
+            return ValidationProblem(
+                statusCode: StatusCodes.Status400BadRequest,
+                detail: error);
+        }
+
+        var page = await chatService.ListTicketsAsync(criteria!, cancellationToken);
+        return Ok(new CasePage<TicketResponse>(
+            page.Items.Select(CaseDtoMapper.ToTicket).ToArray(),
+            page.PageSize,
+            page.NextCursor));
     }
 
     [HttpPut("{caseId:long}/status")]

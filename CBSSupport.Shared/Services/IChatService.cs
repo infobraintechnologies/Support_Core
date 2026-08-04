@@ -23,6 +23,10 @@ namespace CBSSupport.Shared.Services
 
         Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(long clientId);
 
+        Task<CBSSupport.Shared.Contracts.CasePage<TicketViewModel>> ListTicketsAsync(
+            CBSSupport.Shared.Contracts.CaseListCriteria criteria,
+            CancellationToken cancellationToken = default);
+
         Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(
             long clientId,
             CancellationToken cancellationToken)
@@ -32,6 +36,10 @@ namespace CBSSupport.Shared.Services
         }
 
         Task<IEnumerable<InquiryViewModel>> GetInquiriesByClientIdAsync(long clientId);
+
+        Task<CBSSupport.Shared.Contracts.CasePage<InquiryViewModel>> ListInquiriesAsync(
+            CBSSupport.Shared.Contracts.CaseListCriteria criteria,
+            CancellationToken cancellationToken = default);
 
         Task<IEnumerable<InquiryViewModel>> GetInquiriesByClientIdAsync(
             long clientId,

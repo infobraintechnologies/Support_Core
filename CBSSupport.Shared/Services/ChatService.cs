@@ -1,5 +1,6 @@
 ﻿using CBSSupport.Shared.Models;
 using CBSSupport.Shared.ViewModels;
+using CBSSupport.Shared.Contracts;
 using Dapper;
 using Npgsql;
 using Microsoft.Extensions.Logging;
@@ -586,6 +587,80 @@ namespace CBSSupport.Shared.Services
             }
         }
 
+
+        public async Task<CasePage<TicketViewModel>> ListTicketsAsync(
+            CaseListCriteria criteria,
+            CancellationToken cancellationToken = default)
+        {
+            const string select = @"
+        SELECT
+            i.id AS Id,
+            COALESCE(public.try_get_json_value(i.remarks, 'subject'), 'General Support') AS Subject,
+            i.datetime AS Date,
+            u.full_name AS CreatedBy,
+            res.full_name AS ResolvedBy,
+            CASE WHEN COALESCE(i.completed, false) THEN 'Resolved' ELSE 'Open' END AS Status,
+            COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
+            i.instruction AS Description,
+            i.remarks AS Remarks,
+            i.expiry_date AS ExpiryDate,
+            i.completed_on AS ResolvedDate,
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId
+        FROM digital.instructions i
+        LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
+        LEFT JOIN admin.users res ON i.completed_by = res.id
+        WHERE i.inst_category_id = 101
+          AND i.inst_type_id BETWEEN 110 AND 117
+          AND i.instruction_id = i.id
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)
+          AND (@IsCompleted IS NULL OR COALESCE(i.completed, false) = @IsCompleted)
+          AND (@TypeCode IS NULL OR i.inst_type_id = @TypeCode)
+          AND (@Priority IS NULL OR COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') = @Priority)";
+
+            await using var connection = new NpgsqlConnection(_connectionString);
+            var rows = (await connection.QueryAsync<TicketViewModel>(new CommandDefinition(
+                select + BuildCaseCursorPredicate(criteria) + BuildCaseOrderBy(criteria) + "\nLIMIT @Take;",
+                CaseListParameters(criteria),
+                cancellationToken: cancellationToken))).AsList();
+            return ToCasePage(rows, criteria, ToTicketCursor);
+        }
+
+        public async Task<CasePage<InquiryViewModel>> ListInquiriesAsync(
+            CaseListCriteria criteria,
+            CancellationToken cancellationToken = default)
+        {
+            const string select = @"
+        SELECT
+            i.id AS Id,
+            COALESCE(t.inst_type_name, 'Unknown Topic') AS Topic,
+            COALESCE(au.full_name, u.full_name, 'Unknown') AS InquiredBy,
+            i.datetime AS Date,
+            CASE WHEN COALESCE(i.completed, false) THEN 'Completed' ELSE 'Pending' END AS Outcome,
+            i.instruction AS Description,
+            COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
+            i.completed_on AS ResolvedDate,
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId
+        FROM digital.instructions i
+        LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
+        LEFT JOIN admin.users au ON i.insert_user = au.id
+        LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
+        WHERE i.inst_category_id = 102
+          AND i.inst_type_id IN (121, 122)
+          AND i.instruction_id = i.id
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)
+          AND (@IsCompleted IS NULL OR COALESCE(i.completed, false) = @IsCompleted)
+          AND (@TypeCode IS NULL OR i.inst_type_id = @TypeCode)
+          AND (@Priority IS NULL OR COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') = @Priority)";
+
+            await using var connection = new NpgsqlConnection(_connectionString);
+            var rows = (await connection.QueryAsync<InquiryViewModel>(new CommandDefinition(
+                select + BuildCaseCursorPredicate(criteria) + BuildCaseOrderBy(criteria) + "\nLIMIT @Take;",
+                CaseListParameters(criteria),
+                cancellationToken: cancellationToken))).AsList();
+            return ToCasePage(rows, criteria, ToInquiryCursor);
+        }
 
         public Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(long clientId) =>
             GetTicketsByClientIdAsync(clientId, CancellationToken.None);
@@ -1214,5 +1289,101 @@ namespace CBSSupport.Shared.Services
 
             return rowsAffected;
         }
+
+        private static object CaseListParameters(CaseListCriteria criteria) => new
+        {
+            criteria.ClientId,
+            criteria.IsCompleted,
+            criteria.TypeCode,
+            criteria.Priority,
+            CursorSortValue = GetCursorSortValue(criteria),
+            CursorId = criteria.Cursor?.Id,
+            Take = checked(criteria.PageSize + 1)
+        };
+
+        private static object? GetCursorSortValue(CaseListCriteria criteria) => criteria.Sort switch
+        {
+            CasePagination.CreatedAtSort => criteria.Cursor?.CreatedAt,
+            CasePagination.StatusSort => criteria.Cursor?.StatusRank,
+            CasePagination.TypeSort => criteria.Cursor?.TypeCode,
+            CasePagination.PrioritySort => criteria.Cursor?.Priority,
+            _ => null
+        };
+
+        private static string BuildCaseCursorPredicate(CaseListCriteria criteria)
+        {
+            if (criteria.Cursor is null)
+            {
+                return string.Empty;
+            }
+
+            var comparison = criteria.Direction == CasePagination.Ascending ? ">" : "<";
+            var expression = CaseSortExpression(criteria.Sort);
+            return $"\n          AND ({expression} {comparison} @CursorSortValue OR ({expression} = @CursorSortValue AND i.id {comparison} @CursorId))";
+        }
+
+        private static string BuildCaseOrderBy(CaseListCriteria criteria)
+        {
+            var direction = criteria.Direction == CasePagination.Ascending ? "ASC" : "DESC";
+            return $"\n        ORDER BY {CaseSortExpression(criteria.Sort)} {direction}, i.id {direction}";
+        }
+
+        private static string CaseSortExpression(string sort) => sort switch
+        {
+            CasePagination.CreatedAtSort => "i.datetime",
+            CasePagination.StatusSort => "CASE WHEN COALESCE(i.completed, false) THEN 1 ELSE 0 END",
+            CasePagination.TypeSort => "i.inst_type_id",
+            CasePagination.PrioritySort => "COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal')",
+            _ => throw new ArgumentOutOfRangeException(nameof(sort), sort, "Unsupported case sort field.")
+        };
+
+        private static CasePage<T> ToCasePage<T>(
+            IReadOnlyList<T> rows,
+            CaseListCriteria criteria,
+            Func<T, CaseListCriteria, CaseListCursor> toCursor)
+        {
+            var hasNextPage = rows.Count > criteria.PageSize;
+            var items = rows.Take(criteria.PageSize).ToArray();
+            var nextCursor = hasNextPage
+                ? CasePagination.EncodeCursor(toCursor(items[^1], criteria))
+                : null;
+            return new CasePage<T>(items, criteria.PageSize, nextCursor);
+        }
+
+        private static CaseListCursor ToTicketCursor(TicketViewModel item, CaseListCriteria criteria) =>
+            ToCursor(
+                criteria,
+                item.Id,
+                item.Date,
+                string.Equals(item.Status, CaseDtoMapper.TicketResolvedStatus, StringComparison.OrdinalIgnoreCase) ? 1 : 0,
+                item.InstTypeId,
+                item.Priority);
+
+        private static CaseListCursor ToInquiryCursor(InquiryViewModel item, CaseListCriteria criteria) =>
+            ToCursor(
+                criteria,
+                item.Id,
+                item.Date,
+                string.Equals(item.Outcome, CaseDtoMapper.InquiryCompletedStatus, StringComparison.OrdinalIgnoreCase) ? 1 : 0,
+                item.InstTypeId,
+                item.Priority);
+
+        private static CaseListCursor ToCursor(
+            CaseListCriteria criteria,
+            long id,
+            DateTime createdAt,
+            int statusRank,
+            short typeCode,
+            string? priority) =>
+            new(
+                criteria.Sort,
+                criteria.Direction,
+                id,
+                criteria.Sort == CasePagination.CreatedAtSort ? createdAt : null,
+                criteria.Sort == CasePagination.StatusSort ? statusRank : null,
+                criteria.Sort == CasePagination.TypeSort ? typeCode : null,
+                criteria.Sort == CasePagination.PrioritySort
+                    ? string.IsNullOrWhiteSpace(priority) ? CasePriorities.Normal : priority.Trim()
+                    : null);
     }
 }
