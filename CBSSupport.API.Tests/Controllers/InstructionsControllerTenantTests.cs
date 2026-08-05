@@ -24,7 +24,7 @@ public sealed class InstructionsControllerTenantTests
     public async Task TenantSelectedEndpoint_ClientRequestsAnotherTenant_ReturnsNotFoundBeforeService(
         string actionName)
     {
-        var (controller, service) = CreateClientController();
+        var (controller, service, _) = CreateClientController();
 
         var result = actionName switch
         {
@@ -44,24 +44,22 @@ public sealed class InstructionsControllerTenantTests
     [Fact]
     public async Task GetMessagesForConversation_ClientRequest_PassesClaimTenantToService()
     {
-        var (controller, service) = CreateClientController();
-        service.ReturnValues[nameof(IChatService.GetInstructionByIdAsync)] =
-            Task.FromResult(new ChatMessage
+        var (controller, _, queries) = CreateClientController();
+        queries.Instruction = new ChatMessage
             {
                 Id = 10,
                 ClientId = ClientId,
                 InstTypeId = ConversationTypes.TrainingTicket
-            });
-        service.ReturnValues[nameof(IChatService.GetMessagesByConversationIdAsync)] =
-            Task.FromResult<IEnumerable<ChatMessage>>(
-                [new ChatMessage { Id = 10, ClientId = ClientId }]);
+            };
+        queries.Messages = [new ChatMessage { Id = 10, ClientId = ClientId }];
 
         var result = await controller.GetMessagesForConversation(10);
 
         Assert.IsType<OkObjectResult>(result);
-        var call = Assert.Single(service.Calls, call =>
-            call.MethodName == nameof(IChatService.GetMessagesByConversationIdAsync));
-        Assert.Equal(nameof(IChatService.GetMessagesByConversationIdAsync), call.MethodName);
+        var rootCall = Assert.Single(queries.Calls, call => call.MethodName == nameof(IConversationQueryService.GetInstructionByIdAsync));
+        Assert.Equal(ClientId, rootCall.Arguments[1]);
+        var call = Assert.Single(queries.Calls, call => call.MethodName == nameof(IConversationQueryService.GetMessagesAsync));
+        Assert.Equal(nameof(IConversationQueryService.GetMessagesAsync), call.MethodName);
         Assert.Equal(10L, call.Arguments[0]);
         Assert.Equal(ClientId, call.Arguments[1]);
     }
@@ -69,27 +67,26 @@ public sealed class InstructionsControllerTenantTests
     [Fact]
     public async Task GetMessagesForConversation_LegacyPrivateRoot_ReturnsNotFoundBeforeHistoryRead()
     {
-        var (controller, service) = CreateClientController();
-        service.ReturnValues[nameof(IChatService.GetInstructionByIdAsync)] =
-            Task.FromResult(new ChatMessage
+        var (controller, _, queries) = CreateClientController();
+        queries.Instruction = new ChatMessage
             {
                 Id = 10,
                 ClientId = ClientId,
                 InstTypeId = ConversationTypes.SupportPrivate
-            });
+            };
 
         var result = await controller.GetMessagesForConversation(10);
 
         Assert.IsType<NotFoundResult>(result);
         Assert.DoesNotContain(
-            service.Calls,
-            call => call.MethodName == nameof(IChatService.GetMessagesByConversationIdAsync));
+            queries.Calls,
+            call => call.MethodName == nameof(IConversationQueryService.GetMessagesAsync));
     }
 
     [Fact]
     public async Task GetTicketDetails_ClientRequest_PassesClaimTenantToService()
     {
-        var (controller, service) = CreateClientController();
+        var (controller, service, _) = CreateClientController();
         service.ReturnValues[nameof(IChatService.GetTicketDetailsByIdAsync)] =
             Task.FromResult<TicketViewModel?>(new TicketViewModel { Id = 10 });
 
@@ -102,7 +99,7 @@ public sealed class InstructionsControllerTenantTests
     [Fact]
     public async Task GetInquiryDetails_ClientRequest_PassesClaimTenantToService()
     {
-        var (controller, service) = CreateClientController();
+        var (controller, service, _) = CreateClientController();
         service.ReturnValues[nameof(IChatService.GetInquiryDetailsByIdAsync)] =
             Task.FromResult<InquiryViewModel?>(new InquiryViewModel { Id = 10 });
 
@@ -115,7 +112,7 @@ public sealed class InstructionsControllerTenantTests
     [Fact]
     public async Task GetUnreadNotifications_ClientRequest_PassesClaimTenantToService()
     {
-        var (controller, service) = CreateClientController();
+        var (controller, service, _) = CreateClientController();
         service.ReturnValues[nameof(IChatService.GetUnreadNotificationsForClientAsync)] =
             Task.FromResult<IEnumerable<object>>(Array.Empty<object>());
 
@@ -133,7 +130,7 @@ public sealed class InstructionsControllerTenantTests
     public async Task CurrentTenantCollectionEndpoint_ClientRequest_PassesClaimTenantToService(
         string actionName)
     {
-        var (controller, service) = CreateClientController();
+        var (controller, service, _) = CreateClientController();
         service.ReturnValues[nameof(IChatService.GetTicketsByClientIdAsync)] =
             Task.FromResult<IEnumerable<TicketViewModel>>(Array.Empty<TicketViewModel>());
         service.ReturnValues[nameof(IChatService.GetInquiriesByClientIdAsync)] =
@@ -156,7 +153,7 @@ public sealed class InstructionsControllerTenantTests
     [Fact]
     public async Task MarkAllNotificationsSeenByClient_ClientRequest_PassesClaimTenantToService()
     {
-        var (controller, service) = CreateClientController();
+        var (controller, service, _) = CreateClientController();
         service.ReturnValues[nameof(IChatService.MarkAllNotificationsSeenByClientAsync)] =
             Task.FromResult(0);
 
@@ -171,7 +168,7 @@ public sealed class InstructionsControllerTenantTests
     [Fact]
     public async Task MarkNotificationSeenByClient_ClientRequest_PassesClaimTenantToService()
     {
-        var (controller, service) = CreateClientController();
+        var (controller, service, _) = CreateClientController();
         service.ReturnValues[nameof(IChatService.MarkNotificationSeenByClientAsync)] =
             Task.FromResult(true);
 
@@ -192,13 +189,15 @@ public sealed class InstructionsControllerTenantTests
         Assert.Equal(ClientId, call.Arguments[1]);
     }
 
-    private static (InstructionsController Controller, RecordingChatServiceProxy Service)
+    private static (InstructionsController Controller, RecordingChatServiceProxy Service, RecordingConversationQueryService Queries)
         CreateClientController()
     {
         var chatService = DispatchProxy.Create<IChatService, RecordingChatServiceProxy>();
         var recordingService = (RecordingChatServiceProxy)(object)chatService;
+        var queries = new RecordingConversationQueryService();
         var controller = new InstructionsController(
             chatService,
+            queries,
             null!,
             null!,
             null!,
@@ -213,7 +212,7 @@ public sealed class InstructionsControllerTenantTests
             }
         };
 
-        return (controller, recordingService);
+        return (controller, recordingService, queries);
     }
 
     private static ClaimsPrincipal CreateClientPrincipal()
@@ -232,6 +231,46 @@ public sealed class InstructionsControllerTenantTests
 }
 
 public sealed record RecordedServiceCall(string MethodName, IReadOnlyList<object?> Arguments);
+
+public sealed class RecordingConversationQueryService : IConversationQueryService
+{
+    public List<RecordedServiceCall> Calls { get; } = [];
+    public ChatMessage? Instruction { get; set; }
+    public IEnumerable<ChatMessage> Messages { get; set; } = [];
+
+    public Task<SidebarViewModel> GetSidebarAsync(long clientId, CancellationToken cancellationToken = default)
+    {
+        Calls.Add(new RecordedServiceCall(nameof(GetSidebarAsync), [clientId]));
+        return Task.FromResult(new SidebarViewModel());
+    }
+
+    public Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(long clientId, int clientAuthUserId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task<IEnumerable<ChatMessage>> GetConversationsByInstructionTypeAsync(
+        short instructionTypeId,
+        long? clientId = null,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    public Task<ChatMessage?> GetInstructionByIdAsync(
+        long instructionId,
+        long? clientId = null,
+        CancellationToken cancellationToken = default)
+    {
+        Calls.Add(new RecordedServiceCall(nameof(GetInstructionByIdAsync), [instructionId, clientId]));
+        return Task.FromResult(Instruction);
+    }
+
+    public Task<IEnumerable<ChatMessage>> GetMessagesAsync(
+        long conversationId,
+        long? clientId = null,
+        CancellationToken cancellationToken = default)
+    {
+        Calls.Add(new RecordedServiceCall(nameof(GetMessagesAsync), [conversationId, clientId]));
+        return Task.FromResult(Messages);
+    }
+}
 
 public class RecordingChatServiceProxy : DispatchProxy
 {
