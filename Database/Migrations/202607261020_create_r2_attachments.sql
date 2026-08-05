@@ -1,0 +1,158 @@
+-- CBS Support database migration
+-- Version: 202607261020_create_r2_attachments
+-- Purpose: authoritative attachment lifecycle, quota reservations, audit, leases,
+--          message binding, retry, and retention metadata for private R2 objects.
+-- migration-transaction: true
+-- Rollback/forward-fix: do not drop after upload intents are issued. Disable the
+-- Attachments feature and apply an ordered forward-fix.
+
+CREATE TABLE digital.attachment_tenant_quotas (
+    client_id bigint PRIMARY KEY,
+    active_storage_limit_bytes bigint NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT ck_attachment_tenant_quota_minimum
+        CHECK (active_storage_limit_bytes >= 1073741824)
+);
+
+CREATE TABLE digital.attachments (
+    id uuid NOT NULL,
+    client_id bigint NOT NULL,
+    conversation_id bigint NOT NULL,
+    message_id bigint,
+    position smallint,
+    admin_user_id integer,
+    client_user_id integer,
+    state varchar(32) NOT NULL,
+    quarantine_key varchar(512),
+    ready_key varchar(512),
+    display_name varchar(255) NOT NULL,
+    declared_media_type varchar(128) NOT NULL,
+    detected_media_type varchar(128),
+    declared_size bigint NOT NULL,
+    actual_size bigint,
+    reservation_bytes bigint NOT NULL,
+    source_etag varchar(256),
+    expected_ready_etag varchar(256),
+    sha256 bytea,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    upload_completed_at timestamptz,
+    ready_at timestamptz,
+    bound_at timestamptz,
+    expires_at timestamptz,
+    deleted_at timestamptz,
+    lease_owner varchar(128),
+    lease_until timestamptz,
+    attempt_count integer NOT NULL DEFAULT 0,
+    next_attempt_at timestamptz NOT NULL DEFAULT now(),
+    rejection_code varchar(64),
+    delete_target_state varchar(32),
+    CONSTRAINT pk_attachments PRIMARY KEY (id),
+    CONSTRAINT fk_attachments_conversation
+        FOREIGN KEY (conversation_id) REFERENCES digital.conversation_access(conversation_id),
+    CONSTRAINT fk_attachments_message
+        FOREIGN KEY (message_id) REFERENCES digital.instructions(id),
+    CONSTRAINT fk_attachments_admin_user
+        FOREIGN KEY (admin_user_id) REFERENCES admin.users(id),
+    CONSTRAINT fk_attachments_client_user
+        FOREIGN KEY (client_user_id) REFERENCES internal.support_users(id),
+    CONSTRAINT ck_attachments_state
+        CHECK (state IN (
+            'PendingUpload','Scanning','Promoting','Ready','Rejected','ScanFailed',
+            'DeletePending','Deleted','Expired')),
+    CONSTRAINT ck_attachments_uploader
+        CHECK (
+            (admin_user_id IS NOT NULL AND client_user_id IS NULL)
+            OR (admin_user_id IS NULL AND client_user_id IS NOT NULL)),
+    CONSTRAINT ck_attachments_sizes
+        CHECK (
+            declared_size BETWEEN 1 AND 10485760
+            AND (actual_size IS NULL OR actual_size BETWEEN 0 AND 10485760)
+            AND reservation_bytes BETWEEN 0 AND 10485760),
+    CONSTRAINT ck_attachments_position
+        CHECK (
+            (message_id IS NULL AND position IS NULL AND bound_at IS NULL)
+            OR (message_id IS NOT NULL AND position BETWEEN 1 AND 5 AND bound_at IS NOT NULL)),
+    CONSTRAINT ck_attachments_lease_pair
+        CHECK ((lease_owner IS NULL) = (lease_until IS NULL)),
+    CONSTRAINT ck_attachments_attempt_nonnegative
+        CHECK (attempt_count >= 0),
+    CONSTRAINT ck_attachments_rejection_code
+        CHECK (rejection_code IS NULL OR btrim(rejection_code) <> ''),
+    CONSTRAINT ck_attachments_delete_target
+        CHECK (
+            (state = 'DeletePending'
+                AND delete_target_state IN ('Deleted','Expired','Rejected','ScanFailed'))
+            OR (state <> 'DeletePending' AND delete_target_state IS NULL)),
+    CONSTRAINT ck_attachments_ready_shape
+        CHECK (
+            state NOT IN ('Ready','Promoting')
+            OR (
+                ready_key IS NOT NULL
+                AND source_etag IS NOT NULL
+                AND sha256 IS NOT NULL
+                AND actual_size IS NOT NULL
+                AND detected_media_type IS NOT NULL
+            )),
+    CONSTRAINT ck_attachments_terminal_reservation
+        CHECK (
+            state NOT IN ('Rejected','ScanFailed','Deleted','Expired')
+            OR reservation_bytes = 0)
+);
+
+CREATE UNIQUE INDEX uq_attachments_message_position
+ON digital.attachments (message_id, position)
+WHERE message_id IS NOT NULL;
+
+CREATE INDEX ix_attachments_conversation_state
+ON digital.attachments (conversation_id, state, created_at);
+
+CREATE INDEX ix_attachments_client_active_storage
+ON digital.attachments (client_id, state)
+WHERE state IN (
+    'PendingUpload','Scanning','Promoting','Ready','DeletePending');
+
+CREATE INDEX ix_attachments_user_rolling_quota
+ON digital.attachments (
+    client_id, client_user_id, admin_user_id, created_at DESC);
+
+CREATE INDEX ix_attachments_scan_claim
+ON digital.attachments (next_attempt_at, created_at)
+WHERE state IN ('Scanning','Promoting');
+
+CREATE INDEX ix_attachments_cleanup_claim
+ON digital.attachments (state, expires_at, created_at)
+WHERE state IN ('PendingUpload','Ready','DeletePending');
+
+CREATE TABLE digital.attachment_audit (
+    audit_id bigint GENERATED BY DEFAULT AS IDENTITY,
+    attachment_id uuid NOT NULL,
+    client_id bigint NOT NULL,
+    action varchar(64) NOT NULL,
+    actor_kind varchar(16) NOT NULL,
+    admin_user_id integer,
+    client_user_id integer,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    details jsonb NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT pk_attachment_audit PRIMARY KEY (audit_id),
+    CONSTRAINT fk_attachment_audit_attachment
+        FOREIGN KEY (attachment_id) REFERENCES digital.attachments(id),
+    CONSTRAINT fk_attachment_audit_admin_user
+        FOREIGN KEY (admin_user_id) REFERENCES admin.users(id),
+    CONSTRAINT fk_attachment_audit_client_user
+        FOREIGN KEY (client_user_id) REFERENCES internal.support_users(id),
+    CONSTRAINT ck_attachment_audit_action
+        CHECK (btrim(action) <> ''),
+    CONSTRAINT ck_attachment_audit_actor_kind
+        CHECK (actor_kind IN ('Admin','Client','System')),
+    CONSTRAINT ck_attachment_audit_actor
+        CHECK (
+            (actor_kind = 'Admin' AND admin_user_id IS NOT NULL AND client_user_id IS NULL)
+            OR (actor_kind = 'Client' AND admin_user_id IS NULL AND client_user_id IS NOT NULL)
+            OR (actor_kind = 'System' AND admin_user_id IS NULL AND client_user_id IS NULL)),
+    CONSTRAINT ck_attachment_audit_details
+        CHECK (jsonb_typeof(details) = 'object')
+);
+
+CREATE INDEX ix_attachment_audit_attachment_time
+ON digital.attachment_audit (attachment_id, occurred_at, audit_id);

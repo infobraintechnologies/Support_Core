@@ -134,37 +134,59 @@ window.AdminNotifications = (() => {
             document.getElementById('dynamic-notification-list');
 
         if (!container) {
-            console.warn('⚠️ No notification container found');
             return;
         }
+
+        container.replaceChildren();
 
         if (!notifications || notifications.length === 0) {
-            container.innerHTML = `
-                <div class="notification-empty">
-                    <i class="fas fa-bell-slash fa-2x mb-2"></i>
-                    <p>No notifications yet</p>
-                </div>
-            `;
+            const empty = document.createElement('div');
+            empty.className = 'notification-empty';
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-bell-slash fa-2x mb-2';
+            const text = document.createElement('p');
+            text.textContent = 'No notifications yet';
+            empty.append(icon, text);
+            container.appendChild(empty);
             return;
         }
 
-        container.innerHTML = notifications.map(notification => `
-            <div class="notification-item ${!notification.isRead ? 'unread' : ''}" 
-                 data-id="${notification.id}" 
-                 data-entity-id="${notification.entityId}" 
-                 data-entity-type="${notification.entityType}">
-                <div class="notification-content">
-                    <div class="notification-icon ${notification.type}">
-                        <i class="${notification.icon}"></i>
-                    </div>
-                    <div class="notification-text">
-                        <div class="notification-title">${AdminUtils.escapeHtml(notification.title)}</div>
-                        <div class="notification-message">${AdminUtils.escapeHtml(notification.message)}</div>
-                        <div class="notification-time">${notification.timeAgo}</div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        notifications.forEach(notification => {
+            const item = document.createElement('div');
+            item.className = `notification-item${notification.isRead ? '' : ' unread'}`;
+            item.dataset.id = String(notification.id);
+            item.dataset.entityId = String(notification.entityId);
+            item.dataset.entityType = String(notification.entityType);
+
+            const content = document.createElement('div');
+            content.className = 'notification-content';
+
+            const iconWrapper = document.createElement('div');
+            iconWrapper.className = `notification-icon ${notification.type}`;
+            const icon = document.createElement('i');
+            icon.className = notification.icon;
+            iconWrapper.appendChild(icon);
+
+            const text = document.createElement('div');
+            text.className = 'notification-text';
+
+            const title = document.createElement('div');
+            title.className = 'notification-title';
+            title.textContent = notification.title;
+
+            const message = document.createElement('div');
+            message.className = 'notification-message';
+            message.textContent = notification.message;
+
+            const time = document.createElement('div');
+            time.className = 'notification-time';
+            time.textContent = notification.timeAgo;
+
+            text.append(title, message, time);
+            content.append(iconWrapper, text);
+            item.appendChild(content);
+            container.appendChild(item);
+        });
     }
 
     // ============================================

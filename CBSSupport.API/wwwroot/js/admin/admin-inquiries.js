@@ -189,7 +189,7 @@ window.AdminInquiries = (() => {
             const response = await fetch(`/v1/api/instructions/inquiries/${currentInquiryData.id}/status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isCompleted: isCompleted })
+                body: JSON.stringify({ isCompleted: isCompleted, expectedVersion: currentInquiryData.version })
             });
 
             if (!response.ok) {
@@ -201,6 +201,7 @@ window.AdminInquiries = (() => {
             console.log('❓ AdminInquiries: Update response:', result);
 
             if (result.success) {
+                currentInquiryData.version = result.version;
                 currentInquiryData.outcome = newOutcome;
 
                 if (inquiriesTable) {
@@ -346,7 +347,7 @@ window.AdminInquiries = (() => {
                 fetch(`/v1/api/instructions/inquiries/${inquiry.id}/status`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ isCompleted: newStatus === 'Completed' })
+                    body: JSON.stringify({ isCompleted: newStatus === 'Completed', expectedVersion: inquiry.version })
                 })
             );
 

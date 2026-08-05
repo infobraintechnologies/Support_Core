@@ -1,6 +1,8 @@
 ﻿@{
     Layout = null;
+    var attachmentsEnabled = AttachmentCapability.CanCreateUploadIntents;
 }
+@inject CBSSupport.API.Attachments.AttachmentUiCapability AttachmentCapability
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,7 +14,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link rel="stylesheet" href="~/css/chat.css" asp-append-version="true" />
 </head>
-<body>
+<body data-attachments-enabled="@attachmentsEnabled.ToString().ToLowerInvariant()">
 
     <div hidden aria-hidden="true">@Html.AntiForgeryToken()</div>
 
@@ -61,61 +63,93 @@
     </header>
 
     <div class="dashboard-container">
-        <div id="conversation-list-panel" class="dashboard-panel">
-
-            <div class="panel-body" id="conversation-list-container">
-                <a href="#" class="list-group-item list-group-item-action conversation-item"
-                   data-id="@ViewBag.GroupChatId"
-                   data-name="Group Chat"
-                   data-type="group"
-                   data-route="support-group">
-                    <div class="d-flex w-100 align-items-center">
-                        <div class="avatar-initials avatar-bg-success me-3">G</div>
-                        <div class="flex-grow-1">
-                            <div class="fw-bold">Group Chat</div>
-                            <small class="text-muted">Company-wide discussion</small>
-                        </div>
-                    </div>
-                </a>
-
-                <div class="accordion" id="sidebarAccordion">
-
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingPrivate">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePrivate">Private</button>
-                        </h2>
-                        <div id="collapsePrivate" class="accordion-collapse collapse">
-                            <div class="list-group list-group-flush conversation-list" id="private-chat-list">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="accordion-item">
-                        <h2 class="accordion-header" id="headingInternal">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseInternal">Internal</button>
-                        </h2>
-                        <div id="collapseInternal" class="accordion-collapse collapse">
-                            <div class="list-group list-group-flush conversation-list" id="internal-chat-list">
-                            </div>
-                        </div>
-                    </div>
+        <div id="conversation-list-panel" class="dashboard-panel client-conversation-panel">
+            <div class="panel-header client-conversation-heading">
+                <div>
+                    <h1 class="client-conversation-title">Messages</h1>
+                    <span id="connection-status"
+                          class="client-connection-status"
+                          role="status"
+                          aria-live="polite">Connecting…</span>
                 </div>
+                <button class="btn btn-sm btn-primary"
+                        id="new-private-chat-btn"
+                        type="button"
+                        data-bs-toggle="modal"
+                        data-bs-target="#newPrivateChatModal">
+                    <i class="fas fa-pen-to-square" aria-hidden="true"></i>
+                    <span>New private chat</span>
+                </button>
+            </div>
+            <div class="client-conversation-tools">
+                <label for="conversation-search" class="visually-hidden">Search conversations</label>
+                <input type="search" id="conversation-search" class="form-control form-control-sm"
+                       autocomplete="off" placeholder="Search conversations" />
+                <label for="conversation-kind-filter" class="visually-hidden">Conversation type</label>
+                <select id="conversation-kind-filter" class="form-select form-select-sm">
+                    <option value="all">All chats</option>
+                    <option value="group">Group</option>
+                    <option value="private">Private</option>
+                    <option value="ticket">Tickets</option>
+                    <option value="inquiry">Inquiries</option>
+                </select>
+            </div>
+            <div class="panel-body" id="conversation-list-container"
+                 aria-live="polite"
+                 aria-busy="true">
+                <div class="client-chat-state" id="conversation-list-state">
+                    <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+                    <span>Loading conversations…</span>
+                </div>
+                <div class="list-group list-group-flush conversation-list"
+                     id="client-conversation-list"
+                     aria-label="Your conversations"></div>
             </div>
         </div>
 
-        <div id="chat-panel" class="dashboard-panel">
-            <div class="panel-header" id="chat-header"></div>
-            <div id="chat-panel-body" class="panel-body"></div>
-            <div class="chat-footer">
-                <div id="typing-indicator" class="typing-indicator"></div>
-                <div class="chat-input-container">
-                    <input type="file" id="file-input" style="display: none;" />
-                    <div class="chat-input-actions">
-                        <button class="btn btn-icon" id="attachment-button" aria-label="Attach file"><i class="fas fa-paperclip"></i></button>
-                    </div>
-                    <input type="text" class="form-control" placeholder="Type a message..." id="message-input">
-                    <button class="btn btn-primary" type="button" id="send-button" aria-label="Send Message"><i class="fas fa-paper-plane"></i></button>
+        <div id="chat-panel" class="dashboard-panel client-chat-detail">
+            <div class="panel-header" id="chat-header">
+                <button type="button" id="mobile-conversation-back"
+                        class="btn btn-sm btn-outline-secondary client-chat-back"
+                        aria-label="Back to conversations">
+                    <i class="fas fa-arrow-left" aria-hidden="true"></i>
+                </button>
+                <div>
+                    <div class="fw-bold" id="chat-heading">Select a conversation</div>
+                    <small class="text-muted" id="chat-subheading">Choose a chat to read messages.</small>
                 </div>
+            </div>
+            <div id="chat-panel-body" class="panel-body" aria-live="polite">
+                <div class="client-chat-state client-chat-empty">
+                    <i class="fas fa-comments" aria-hidden="true"></i>
+                    <span>Select a conversation to start messaging.</span>
+                </div>
+            </div>
+            <div class="chat-footer" id="chat-footer">
+                <div id="typing-indicator" class="typing-indicator"></div>
+                <div id="send-state" class="client-send-state" role="status" aria-live="polite"></div>
+                <div id="attachment-upload-list" class="attachment-upload-list" aria-live="polite"></div>
+                <div class="chat-input-container">
+                    <input id="attachment-file-input" type="file" class="visually-hidden"
+                           aria-label="Choose attachments" />
+                    <button class="btn btn-outline-secondary" type="button"
+                            id="attachment-button" aria-label="Add attachments"
+                            hidden disabled>
+                        <i class="fas fa-paperclip" aria-hidden="true"></i>
+                    </button>
+                    <label for="message-input" class="visually-hidden">Message</label>
+                    <textarea class="form-control"
+                              placeholder="Type a message…"
+                              id="message-input"
+                              rows="1"
+                              maxlength="4000"
+                              disabled></textarea>
+                    <button class="btn btn-primary" type="button" id="send-button"
+                            aria-label="Send message" disabled>
+                        <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <small class="client-composer-hint">Enter to send · Shift+Enter for a new line</small>
             </div>
         </div>
 
@@ -150,6 +184,32 @@
                         </thead>
                         <tbody></tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="newPrivateChatModal" tabindex="-1"
+         aria-labelledby="newPrivateChatModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="newPrivateChatModalLabel">New private chat</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Choose an available support administrator.</p>
+                    <label for="available-admins-search" class="form-label">Search administrators</label>
+                    <input type="search" id="available-admins-search" class="form-control mb-3"
+                           autocomplete="off" placeholder="Search by name" />
+                    <div id="available-admins-state" class="client-chat-state" role="status" aria-live="polite"></div>
+                    <div id="available-admins-list"
+                         class="list-group client-admin-picker"
+                         role="list"
+                         aria-label="Available administrators"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 </div>
             </div>
         </div>
@@ -475,18 +535,24 @@
         </div>
     </div>
 
-    <script>
-        const serverData = {
-        currentUserId: parseInt('@ViewBag.UserId', 10),
-        currentUserName: '@ViewBag.UserFullName',
-        currentClientId: parseInt('@ViewBag.ClientId', 10)
-        };
+    <script id="client-bootstrap-data" type="application/json">
+        @Html.Raw(Json.Serialize(new
+        {
+            currentUserId = ViewBag.UserId,
+            currentUserName = ViewBag.UserFullName,
+            currentClientId = ViewBag.ClientId
+        }))
     </script>
     <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script src="~/js/signalr/dist/browser/signalr.min.js"></script>
+    <script src="~/js/messaging/store.js" asp-append-version="true"></script>
+    <script src="~/js/messaging/api.js" asp-append-version="true"></script>
+    <script src="~/js/messaging/transport.js" asp-append-version="true"></script>
+    <script src="~/js/messaging/client.js" asp-append-version="true"></script>
+    <script src="~/js/messaging/attachments.js" asp-append-version="true"></script>
     <script src="~/js/security/antiforgery.js" asp-append-version="true"></script>
     <script src="~/js/chat.js" asp-append-version="true"></script>
 </body>

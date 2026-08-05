@@ -7,7 +7,7 @@ namespace CBSSupport.Shared.Services
 {
     public interface IChatService
     {
-        Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(long clientAuthUserId);
+        Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(int clientAuthUserId);
 
         Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId, long? clientId = null);
 
@@ -23,13 +23,49 @@ namespace CBSSupport.Shared.Services
 
         Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(long clientId);
 
+        Task<CBSSupport.Shared.Contracts.CasePage<TicketViewModel>> ListTicketsAsync(
+            CBSSupport.Shared.Contracts.CaseListCriteria criteria,
+            CancellationToken cancellationToken = default);
+
+        Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(
+            long clientId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return GetTicketsByClientIdAsync(clientId);
+        }
+
         Task<IEnumerable<InquiryViewModel>> GetInquiriesByClientIdAsync(long clientId);
+
+        Task<CBSSupport.Shared.Contracts.CasePage<InquiryViewModel>> ListInquiriesAsync(
+            CBSSupport.Shared.Contracts.CaseListCriteria criteria,
+            CancellationToken cancellationToken = default);
+
+        Task<IEnumerable<InquiryViewModel>> GetInquiriesByClientIdAsync(
+            long clientId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return GetInquiriesByClientIdAsync(clientId);
+        }
 
         Task<IEnumerable<ClientUser>> GetAllClientsAsync();
 
         Task<IEnumerable<TicketViewModel>> GetAllTicketsAsync();
 
+        Task<IEnumerable<TicketViewModel>> GetAllTicketsAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return GetAllTicketsAsync();
+        }
+
         Task<IEnumerable<InquiryViewModel>> GetAllInquiriesAsync();
+
+        Task<IEnumerable<InquiryViewModel>> GetAllInquiriesAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return GetAllInquiriesAsync();
+        }
 
 
         Task<IEnumerable<TicketViewModel>> GetSolvedTicketsAsync();
@@ -42,19 +78,31 @@ namespace CBSSupport.Shared.Services
 
         Task<DashboardStatsViewModel> GetDashboardStatsAsync();
 
-        Task<bool> UpdateInstructionAsync(ChatMessage instruction);
+        Task<long?> GetOrCreateGroupChatConversationIdAsync(long clientId, int clientAuthUserId);
 
-        Task<long> GetOrCreateGroupChatConversationIdAsync(long clientId, int loggedInUserId);
-
-        Task<ChatMessage> CreateGroupChatMessageAsync(ChatMessage newMessage);
-
-        Task<bool> UpdateTicketStatusAsync(long ticketId, bool isCompleted, long? completedByUserId = null);
-
-        Task<bool> UpdateInquiryStatusAsync(long inquiryId, bool isCompleted, long? completedByUserId = null);
+        Task<ChatMessage?> CreateGroupChatMessageAsync(ChatMessage newMessage);
 
         Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null);
 
+        Task<TicketViewModel?> GetTicketDetailsByIdAsync(
+            long ticketId,
+            long? clientId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return GetTicketDetailsByIdAsync(ticketId, clientId);
+        }
+
         Task<InquiryViewModel?> GetInquiryDetailsByIdAsync(long inquiryId, long? clientId = null);
+
+        Task<InquiryViewModel?> GetInquiryDetailsByIdAsync(
+            long inquiryId,
+            long? clientId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return GetInquiryDetailsByIdAsync(inquiryId, clientId);
+        }
 
         Task<IEnumerable<object>> GetUnreadNotificationsForAdminAsync();
 

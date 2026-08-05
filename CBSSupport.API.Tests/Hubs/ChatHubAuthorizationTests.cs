@@ -1,19 +1,22 @@
 using System.Reflection;
 using System.Security.Claims;
 using CBSSupport.API.Hubs;
+using CBSSupport.API.Realtime;
 using CBSSupport.API.Security;
+using CBSSupport.API.Configuration;
 using CBSSupport.Shared.Contracts;
 using CBSSupport.Shared.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace CBSSupport.API.Tests.Hubs;
 
 public sealed class ChatHubAuthorizationTests
 {
-    private const long UserId = 7;
+    private const int UserId = 7;
     private const long ClientId = 42;
     private const long ConversationId = 123;
 
@@ -41,7 +44,6 @@ public sealed class ChatHubAuthorizationTests
             {
                 nameof(ChatHub.JoinConversation),
                 nameof(ChatHub.LeaveConversation),
-                nameof(ChatHub.SendMessage),
                 nameof(ChatHub.SetTyping)
             }.OrderBy(name => name, StringComparer.Ordinal),
             methodNames);
@@ -85,6 +87,30 @@ public sealed class ChatHubAuthorizationTests
         Assert.Equal(
             new[] { "AttachmentIds", "Text" },
             propertyNames);
+    }
+
+    [Fact]
+    public async Task OnConnected_Client_JoinsTrustedTenantAudience()
+    {
+        var fixture = CreateFixture(CreateClientPrincipal());
+
+        await fixture.Hub.OnConnectedAsync();
+
+        var groupCall = Assert.Single(fixture.Groups.AddCalls);
+        Assert.Equal("connection-1", groupCall.ConnectionId);
+        Assert.Equal(RealtimeGroupNames.Tenant(ClientId), groupCall.GroupName);
+    }
+
+    [Fact]
+    public async Task OnConnected_Admin_JoinsTrustedAdminAudience()
+    {
+        var fixture = CreateFixture(CreateAdminPrincipal());
+
+        await fixture.Hub.OnConnectedAsync();
+
+        var groupCall = Assert.Single(fixture.Groups.AddCalls);
+        Assert.Equal("connection-1", groupCall.ConnectionId);
+        Assert.Equal(RealtimeGroupNames.Admins, groupCall.GroupName);
     }
 
     [Fact]
@@ -162,11 +188,16 @@ public sealed class ChatHubAuthorizationTests
     }
 
     [Fact]
-    public async Task SetTyping_Authorized_UsesClaimIdentityAndExcludesCallerConnection()
+    public async Task SetTyping_GroupConversation_UsesClaimIdentityAndExcludesCallerConnection()
     {
         var fixture = CreateFixture(CreateClientPrincipal("trusted-user"));
         fixture.Service.AccessResolver = (conversationId, _) =>
-            CreateAccess(conversationId, ClientId);
+            new ConversationAccess(
+                conversationId,
+                ClientId,
+                ConversationTypes.SupportGroup,
+                100,
+                ClientUserId: UserId);
 
         await fixture.Hub.SetTyping(ConversationId, true);
 
@@ -174,13 +205,57 @@ public sealed class ChatHubAuthorizationTests
         Assert.Equal("conversation:123", selection.GroupName);
         Assert.Equal(["connection-1"], selection.ExcludedConnectionIds);
 
-        var send = Assert.Single(fixture.Clients.Proxy.Calls);
-        Assert.Equal("TypingChanged", send.Method);
-        var payload = Assert.Single(send.Arguments);
-        Assert.Equal(ConversationId, ReadProperty<long>(payload, "ConversationId"));
-        Assert.Equal(UserId, ReadProperty<long>(payload, "UserId"));
-        Assert.Equal("trusted-user", ReadProperty<string>(payload, "DisplayName"));
-        Assert.True(ReadProperty<bool>(payload, "IsTyping"));
+        var payload = Assert.Single(fixture.Clients.Proxy.TypingCalls);
+        Assert.Equal(ConversationId, payload.ConversationId);
+        Assert.Equal(UserId, payload.UserId);
+        Assert.Equal("trusted-user", payload.DisplayName);
+        Assert.True(payload.IsTyping);
+    }
+
+    [Fact]
+    public async Task SetTyping_PrivateClient_RoutesOnlyToAssignedAdminUser()
+    {
+        const long assignedAdminId = 91;
+        var fixture = CreateFixture(CreateClientPrincipal("trusted-user"));
+        fixture.Service.AccessResolver = (conversationId, _) =>
+            new ConversationAccess(
+                conversationId,
+                ClientId,
+                ConversationTypes.SupportPrivate,
+                100,
+                ClientUserId: UserId,
+                AdminUserId: assignedAdminId);
+
+        await fixture.Hub.SetTyping(ConversationId, true);
+
+        Assert.Equal(
+            [RealtimeUserIds.Admin(assignedAdminId)],
+            fixture.Clients.UserSelections);
+        Assert.Empty(fixture.Clients.GroupExceptSelections);
+        Assert.Single(fixture.Clients.Proxy.TypingCalls);
+    }
+
+    [Fact]
+    public async Task SetTyping_PrivateAdmin_RoutesOnlyToExactTenantClientUser()
+    {
+        const int clientUserId = 82;
+        var fixture = CreateFixture(CreateAdminPrincipal());
+        fixture.Service.AccessResolver = (conversationId, _) =>
+            new ConversationAccess(
+                conversationId,
+                ClientId,
+                ConversationTypes.SupportPrivate,
+                100,
+                ClientUserId: clientUserId,
+                AdminUserId: UserId);
+
+        await fixture.Hub.SetTyping(ConversationId, false);
+
+        Assert.Equal(
+            [RealtimeUserIds.Client(ClientId, clientUserId)],
+            fixture.Clients.UserSelections);
+        Assert.Empty(fixture.Clients.GroupExceptSelections);
+        Assert.False(Assert.Single(fixture.Clients.Proxy.TypingCalls).IsTyping);
     }
 
     [Fact]
@@ -195,7 +270,7 @@ public sealed class ChatHubAuthorizationTests
         Assert.Equal("Conversation unavailable.", exception.Message);
         Assert.Single(fixture.Service.AccessCalls);
         Assert.Empty(fixture.Clients.GroupExceptSelections);
-        Assert.Empty(fixture.Clients.Proxy.Calls);
+        Assert.Empty(fixture.Clients.Proxy.TypingCalls);
     }
 
     [Fact]
@@ -213,66 +288,78 @@ public sealed class ChatHubAuthorizationTests
     }
 
     [Fact]
-    public async Task SendMessage_Authorized_PersistsWithClaimActorAndBroadcastsTrustedResponse()
+    public async Task JoinConversation_PrivateFeatureDisabled_DeniesMappedPrivateConversation()
     {
-        var fixture = CreateFixture(CreateClientPrincipal("trusted-user"));
-        fixture.Service.AccessResolver = (conversationId, _) =>
-            CreateAccess(conversationId, ClientId);
-        var trustedMessage = new ConversationMessage(
-            501,
-            ConversationId,
-            "Persisted text",
-            new DateTime(2026, 7, 15, 12, 0, 0, DateTimeKind.Utc),
-            new ConversationSender(UserId, "trusted-user", Roles.Client),
-            null);
-        fixture.Service.CreateResult = trustedMessage;
+        var fixture = CreateFixture(CreateClientPrincipal(), privateEnabled: false);
+        fixture.Service.AccessResolver = (_, _) => CreateAccess(ConversationId, ClientId) with
+        {
+            InstructionTypeId = ConversationTypes.SupportPrivate,
+            ClientUserId = UserId,
+            AdminUserId = 8
+        };
 
-        var result = await fixture.Hub.SendMessage(
-            ConversationId,
-            new SendConversationMessageRequest("Caller text"));
+        var exception = await Assert.ThrowsAsync<HubException>(
+            () => fixture.Hub.JoinConversation(ConversationId));
 
-        Assert.Same(trustedMessage, result);
-        var createCall = Assert.Single(fixture.Service.CreateCalls);
-        Assert.Equal(ConversationId, createCall.ConversationId);
-        Assert.Equal("Caller text", createCall.Text);
-        Assert.Null(createCall.IpAddress);
-        Assert.Equal(UserId, createCall.Actor.UserId);
-        Assert.Equal(ClientId, createCall.Actor.ClientId);
-        Assert.False(createCall.Actor.IsAdmin);
-        Assert.Equal("trusted-user", createCall.Actor.DisplayName);
-
-        var selection = Assert.Single(fixture.Clients.GroupExceptSelections);
-        Assert.Equal("conversation:123", selection.GroupName);
-        Assert.Equal(["connection-1"], selection.ExcludedConnectionIds);
-        var send = Assert.Single(fixture.Clients.Proxy.Calls);
-        Assert.Equal("MessageCreated", send.Method);
-        Assert.Same(trustedMessage, Assert.Single(send.Arguments));
+        Assert.Equal("Conversation unavailable.", exception.Message);
+        Assert.Empty(fixture.Groups.AddCalls);
     }
 
     [Fact]
-    public async Task SendMessage_ClientOtherTenant_DoesNotPersistOrBroadcast()
+    public async Task LeaveConversation_PrivateFeatureDisabled_DeniesWithoutRemovingGroupMembership()
     {
-        var fixture = CreateFixture(CreateClientPrincipal());
-        fixture.Service.AccessResolver = (_, _) => null;
+        var fixture = CreateFixture(CreateClientPrincipal(), privateEnabled: false);
+        fixture.Service.AccessResolver = (_, _) => CreateAccess(ConversationId, ClientId) with
+        {
+            InstructionTypeId = ConversationTypes.SupportPrivate,
+            ClientUserId = UserId,
+            AdminUserId = 8
+        };
 
         var exception = await Assert.ThrowsAsync<HubException>(
-            () => fixture.Hub.SendMessage(
-                ConversationId,
-                new SendConversationMessageRequest("Do not send")));
+            () => fixture.Hub.LeaveConversation(ConversationId));
 
         Assert.Equal("Conversation unavailable.", exception.Message);
         Assert.Single(fixture.Service.AccessCalls);
-        Assert.Empty(fixture.Service.CreateCalls);
-        Assert.Empty(fixture.Clients.GroupExceptSelections);
-        Assert.Empty(fixture.Clients.Proxy.Calls);
+        Assert.Empty(fixture.Groups.RemoveCalls);
     }
 
-    private static HubFixture CreateFixture(ClaimsPrincipal principal)
+    [Fact]
+    public async Task SetTyping_PrivateFeatureDisabled_DeniesWithoutBroadcasting()
+    {
+        var fixture = CreateFixture(CreateClientPrincipal(), privateEnabled: false);
+        fixture.Service.AccessResolver = (_, _) => CreateAccess(ConversationId, ClientId) with
+        {
+            InstructionTypeId = ConversationTypes.SupportPrivate,
+            ClientUserId = UserId,
+            AdminUserId = 8
+        };
+
+        var exception = await Assert.ThrowsAsync<HubException>(
+            () => fixture.Hub.SetTyping(ConversationId, true));
+
+        Assert.Equal("Conversation unavailable.", exception.Message);
+        Assert.Single(fixture.Service.AccessCalls);
+        Assert.Empty(fixture.Clients.UserSelections);
+        Assert.Empty(fixture.Clients.GroupExceptSelections);
+        Assert.Empty(fixture.Clients.Proxy.TypingCalls);
+    }
+
+    private static HubFixture CreateFixture(
+        ClaimsPrincipal principal,
+        bool privateEnabled = true)
     {
         var service = new RecordingConversationService();
         var groups = new RecordingGroupManager();
         var clients = new RecordingHubCallerClients();
-        var hub = new ChatHub(service, NullLogger<ChatHub>.Instance)
+        var hub = new ChatHub(
+            service,
+            Options.Create(new MessagingFeatureOptions
+            {
+                GroupEnabled = true,
+                PrivateEnabled = privateEnabled
+            }),
+            NullLogger<ChatHub>.Instance)
         {
             Context = new TestHubCallerContext("connection-1", principal),
             Groups = groups,
@@ -341,14 +428,6 @@ public sealed class ChatHubAuthorizationTests
     private static ConversationAccess CreateAccess(long conversationId, long clientId) =>
         new(conversationId, clientId, 110, 101);
 
-    private static T ReadProperty<T>(object? value, string propertyName)
-    {
-        Assert.NotNull(value);
-        var property = value.GetType().GetProperty(propertyName);
-        Assert.NotNull(property);
-        return Assert.IsType<T>(property.GetValue(value));
-    }
-
     private sealed record HubFixture(
         ChatHub Hub,
         RecordingConversationService Service,
@@ -357,22 +436,12 @@ public sealed class ChatHubAuthorizationTests
 
     private sealed record AccessCall(long ConversationId, ConversationActor Actor);
 
-    private sealed record CreateCall(
-        long ConversationId,
-        ConversationActor Actor,
-        string Text,
-        string? IpAddress);
-
     private sealed class RecordingConversationService : IConversationService
     {
         public Func<long, ConversationActor, ConversationAccess?> AccessResolver { get; set; } =
             (_, _) => null;
 
-        public ConversationMessage? CreateResult { get; set; }
-
         public List<AccessCall> AccessCalls { get; } = [];
-
-        public List<CreateCall> CreateCalls { get; } = [];
 
         public Task<ConversationAccess?> GetAccessAsync(
             long conversationId,
@@ -390,8 +459,7 @@ public sealed class ChatHubAuthorizationTests
             string? ipAddress,
             CancellationToken cancellationToken = default)
         {
-            CreateCalls.Add(new CreateCall(conversationId, actor, text, ipAddress));
-            return Task.FromResult(CreateResult);
+            return Task.FromResult<ConversationMessage?>(null);
         }
     }
 
@@ -422,27 +490,25 @@ public sealed class ChatHubAuthorizationTests
         }
     }
 
-    private sealed record ClientSend(string Method, IReadOnlyList<object?> Arguments);
-
-    private sealed class RecordingClientProxy : ISingleClientProxy
+    private sealed class RecordingChatClient : IChatClient
     {
-        public List<ClientSend> Calls { get; } = [];
+        public List<RealtimeEnvelope<ConversationMessage>> MessageCalls { get; } = [];
 
-        public Task SendCoreAsync(
-            string method,
-            object?[] args,
-            CancellationToken cancellationToken = default)
+        public List<TypingChangedEvent> TypingCalls { get; } = [];
+
+        public Task MessageCreated(RealtimeEnvelope<ConversationMessage> message)
         {
-            Calls.Add(new ClientSend(method, args));
+            MessageCalls.Add(message);
             return Task.CompletedTask;
         }
 
-        public Task<T> InvokeCoreAsync<T>(
-            string method,
-            object?[] args,
-            CancellationToken cancellationToken)
+        public Task ConversationChanged(
+            RealtimeEnvelope<ConversationChangedEvent> conversation) => Task.CompletedTask;
+
+        public Task TypingChanged(TypingChangedEvent typing)
         {
-            throw new NotSupportedException();
+            TypingCalls.Add(typing);
+            return Task.CompletedTask;
         }
     }
 
@@ -450,29 +516,30 @@ public sealed class ChatHubAuthorizationTests
         string GroupName,
         IReadOnlyList<string> ExcludedConnectionIds);
 
-    private sealed class RecordingHubCallerClients : IHubCallerClients
+    private sealed class RecordingHubCallerClients : IHubCallerClients<IChatClient>
     {
-        public RecordingClientProxy Proxy { get; } = new();
+        public RecordingChatClient Proxy { get; } = new();
 
         public List<GroupExceptSelection> GroupExceptSelections { get; } = [];
+        public List<string> UserSelections { get; } = [];
 
-        public IClientProxy All => Proxy;
+        public IChatClient All => Proxy;
 
-        public IClientProxy Others => Proxy;
+        public IChatClient Others => Proxy;
 
-        public IClientProxy Caller => Proxy;
+        public IChatClient Caller => Proxy;
 
-        public IClientProxy OthersInGroup(string groupName) => Proxy;
+        public IChatClient OthersInGroup(string groupName) => Proxy;
 
-        public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => Proxy;
+        public IChatClient AllExcept(IReadOnlyList<string> excludedConnectionIds) => Proxy;
 
-        public IClientProxy Client(string connectionId) => Proxy;
+        public IChatClient Client(string connectionId) => Proxy;
 
-        public IClientProxy Clients(IReadOnlyList<string> connectionIds) => Proxy;
+        public IChatClient Clients(IReadOnlyList<string> connectionIds) => Proxy;
 
-        public IClientProxy Group(string groupName) => Proxy;
+        public IChatClient Group(string groupName) => Proxy;
 
-        public IClientProxy GroupExcept(
+        public IChatClient GroupExcept(
             string groupName,
             IReadOnlyList<string> excludedConnectionIds)
         {
@@ -481,11 +548,15 @@ public sealed class ChatHubAuthorizationTests
             return Proxy;
         }
 
-        public IClientProxy Groups(IReadOnlyList<string> groupNames) => Proxy;
+        public IChatClient Groups(IReadOnlyList<string> groupNames) => Proxy;
 
-        public IClientProxy User(string userId) => Proxy;
+        public IChatClient User(string userId)
+        {
+            UserSelections.Add(userId);
+            return Proxy;
+        }
 
-        public IClientProxy Users(IReadOnlyList<string> userIds) => Proxy;
+        public IChatClient Users(IReadOnlyList<string> userIds) => Proxy;
     }
 
     private sealed class TestHubCallerContext : HubCallerContext

@@ -93,5 +93,5 @@ public sealed class SignalRRevocationIntegrationTests
                 SignalRPostgreSqlFixture.ObserverClient.UserId,
                 SignalRPostgreSqlFixture.ObserverClient.DisplayName,
                 "client"),
-            AttachmentId: null);
+            Attachments: []);
 }

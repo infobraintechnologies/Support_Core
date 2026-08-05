@@ -131,11 +131,6 @@ window.AdminCore = (() => {
         console.log("🚀 AdminCore: Starting initialization...");
 
         try {
-            if (window.AdminSignalR) {
-                connection = await window.AdminSignalR.initialize();
-                console.log("✅ SignalR connection established");
-            }
-
             try {
                 const meResp = await fetch('/v1/api/accounts/me');
                 if (meResp.ok) {
@@ -145,6 +140,11 @@ window.AdminCore = (() => {
                 }
             } catch (error) {
                 console.warn("⚠️ Could not load user info:", error);
+            }
+
+            if (window.AdminSignalR) {
+                connection = await window.AdminSignalR.initialize();
+                console.log("✅ SignalR connection established");
             }
 
             try {

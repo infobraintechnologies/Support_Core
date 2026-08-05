@@ -18,5 +18,8 @@ namespace CBSSupport.Shared.ViewModels
         public string Description { get; set; }  
         public string Remarks { get; set; }     
         public DateTime? ExpiryDate { get; set; }
+        public DateTime? ResolvedDate { get; set; }
+        public short InstTypeId { get; set; }
+        public long Version { get; set; }
     }
 }

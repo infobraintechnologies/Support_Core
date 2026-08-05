@@ -7,7 +7,10 @@
       "launchBrowser": true,
       "applicationUrl": "http://localhost:5075",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Attachments__Enabled": "true",
+        "Attachments__SecurityMode": "StructuralValidationOnly",
+        "Attachments__Scanning__WorkerEnabled": "false"
       }
     },
     "https": {
@@ -16,7 +19,10 @@
       "launchBrowser": true,
       "applicationUrl": "https://localhost:7243;http://localhost:5075",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Attachments__Enabled": "true",
+        "Attachments__SecurityMode": "StructuralValidationOnly",
+        "Attachments__Scanning__WorkerEnabled": "false"
       }
     }
   }

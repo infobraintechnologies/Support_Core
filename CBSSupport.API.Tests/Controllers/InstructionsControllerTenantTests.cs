@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Security.Claims;
 using CBSSupport.API.Controllers;
 using CBSSupport.API.Security;
+using CBSSupport.Shared.Contracts;
 using CBSSupport.Shared.Models;
 using CBSSupport.Shared.Services;
 using CBSSupport.Shared.ViewModels;
@@ -44,6 +45,13 @@ public sealed class InstructionsControllerTenantTests
     public async Task GetMessagesForConversation_ClientRequest_PassesClaimTenantToService()
     {
         var (controller, service) = CreateClientController();
+        service.ReturnValues[nameof(IChatService.GetInstructionByIdAsync)] =
+            Task.FromResult(new ChatMessage
+            {
+                Id = 10,
+                ClientId = ClientId,
+                InstTypeId = ConversationTypes.TrainingTicket
+            });
         service.ReturnValues[nameof(IChatService.GetMessagesByConversationIdAsync)] =
             Task.FromResult<IEnumerable<ChatMessage>>(
                 [new ChatMessage { Id = 10, ClientId = ClientId }]);
@@ -51,10 +59,31 @@ public sealed class InstructionsControllerTenantTests
         var result = await controller.GetMessagesForConversation(10);
 
         Assert.IsType<OkObjectResult>(result);
-        var call = Assert.Single(service.Calls);
+        var call = Assert.Single(service.Calls, call =>
+            call.MethodName == nameof(IChatService.GetMessagesByConversationIdAsync));
         Assert.Equal(nameof(IChatService.GetMessagesByConversationIdAsync), call.MethodName);
         Assert.Equal(10L, call.Arguments[0]);
         Assert.Equal(ClientId, call.Arguments[1]);
+    }
+
+    [Fact]
+    public async Task GetMessagesForConversation_LegacyPrivateRoot_ReturnsNotFoundBeforeHistoryRead()
+    {
+        var (controller, service) = CreateClientController();
+        service.ReturnValues[nameof(IChatService.GetInstructionByIdAsync)] =
+            Task.FromResult(new ChatMessage
+            {
+                Id = 10,
+                ClientId = ClientId,
+                InstTypeId = ConversationTypes.SupportPrivate
+            });
+
+        var result = await controller.GetMessagesForConversation(10);
+
+        Assert.IsType<NotFoundResult>(result);
+        Assert.DoesNotContain(
+            service.Calls,
+            call => call.MethodName == nameof(IChatService.GetMessagesByConversationIdAsync));
     }
 
     [Fact]
@@ -170,6 +199,9 @@ public sealed class InstructionsControllerTenantTests
         var recordingService = (RecordingChatServiceProxy)(object)chatService;
         var controller = new InstructionsController(
             chatService,
+            null!,
+            null!,
+            null!,
             new TenantAuthorizationService(),
             null!);
 

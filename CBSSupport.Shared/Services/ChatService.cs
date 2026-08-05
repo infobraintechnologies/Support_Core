@@ -1,9 +1,11 @@
-﻿using System.Text.Json;
-using CBSSupport.Shared.Models;
+﻿using CBSSupport.Shared.Models;
 using CBSSupport.Shared.ViewModels;
+using CBSSupport.Shared.Contracts;
 using Dapper;
 using Npgsql;
+using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Linq;
 
@@ -12,10 +14,12 @@ namespace CBSSupport.Shared.Services
     public class ChatService : IChatService
     {
         private readonly string _connectionString;
+        private readonly ILogger<ChatService> _logger;
 
-        public ChatService(string connectionString)
+        public ChatService(string connectionString, ILogger<ChatService> logger)
         {
             _connectionString = connectionString;
+            _logger = logger;
             DefaultTypeMap.MatchNamesWithUnderscores = true;
         }
 
@@ -65,35 +69,22 @@ namespace CBSSupport.Shared.Services
             ChatMessage newTicket,
             CancellationToken cancellationToken = default)
         {
-            if (newTicket.InstCategoryId == 101)
+            // Ticket and Inquiry roots/replies are Messaging V2 commands. Keeping this
+            // legacy compatibility insert limited to non-case conversations prevents an
+            // unsequenced, non-outboxed case write from bypassing IConversationService.
+            if (ConversationTypes.IsCase(newTicket.InstTypeId)
+                || newTicket.InstCategoryId is InstructionCategories.Ticket or InstructionCategories.Inquiry)
             {
-                var priority = newTicket.Priority ?? "Normal";
-                var userRemarks = newTicket.Remarks ?? "";
+                _logger.LogWarning(
+                    "Rejected legacy case insert for instruction type {InstructionTypeId} and category {InstructionCategoryId}",
+                    newTicket.InstTypeId,
+                    newTicket.InstCategoryId);
+                return null;
+            }
 
-                var subjectMap = new Dictionary<short, string>
-                {
-                    { 110, "Training" },
-                    { 111, "Migration" },
-                    { 112, "Setup" },
-                    { 113, "Correction" },
-                    { 114, "Bug Fix" },
-                    { 115, "New Feature Request" },
-                    { 116, "Feature Enhancement" },
-                    { 117, "Backend Workaround" }
-                };
-
-                var subject = subjectMap.TryGetValue(newTicket.InstTypeId, out var mappedSubject)
-                    ? mappedSubject
-                    : "General Support";
-
-                var remarksJson = new
-                {
-                    priority = priority,
-                    userremarks = userRemarks,
-                    subject = subject
-                };
-
-                newTicket.Remarks = JsonSerializer.Serialize(remarksJson);
+            if (newTicket.InsertUser.HasValue == newTicket.ClientAuthUserId.HasValue)
+            {
+                return null;
             }
 
             const string sqlInsert = @"
@@ -101,14 +92,23 @@ namespace CBSSupport.Shared.Services
                     datetime, inst_category_id, inst_type_id, instruction,
                     status, insert_user, client_auth_user_id, client_id,
                     service_id, ip_address, geo_location, inst_channel,
-                    attachment_id, instruction_id, remarks, expiry_date
+                    attachment_id, instruction_id, remarks, expiry_date,
+                    client_message_id, conversation_sequence
                 )
-                VALUES (
+                SELECT
                     @DateTime, @InstCategoryId, @InstTypeId, @Instruction,
                     @Status, @InsertUser, @ClientAuthUserId, @ClientId,
                     @ServiceId, @IpAddress, @GeoLocation, @InstChannel,
-                    @AttachmentId, @InstructionId, @Remarks, @ExpiryDate
-                )
+                    @AttachmentId, @InstructionId, @Remarks, @ExpiryDate,
+                    @ClientMessageId, @ConversationSequence
+                WHERE @ClientAuthUserId IS NULL
+                   OR EXISTS (
+                        SELECT 1
+                        FROM internal.support_users authenticated_client
+                        WHERE authenticated_client.id = @ClientAuthUserId
+                          AND authenticated_client.client_id = @ClientId
+                          AND authenticated_client.status IS TRUE
+                          AND authenticated_client.deactive_date IS NULL)
                 RETURNING id;";
 
             const string sqlInsertReply = @"
@@ -127,6 +127,13 @@ namespace CBSSupport.Shared.Services
                 WHERE root.id = @InstructionId
                   AND root.instruction_id = root.id
                   AND root.client_id IS NOT DISTINCT FROM @ClientId
+                  AND (@ClientAuthUserId IS NULL OR EXISTS (
+                        SELECT 1
+                        FROM internal.support_users authenticated_client
+                        WHERE authenticated_client.id = @ClientAuthUserId
+                          AND authenticated_client.client_id = root.client_id
+                          AND authenticated_client.status IS TRUE
+                          AND authenticated_client.deactive_date IS NULL))
                 RETURNING id;";
 
             const string sqlUpdate = @"
@@ -149,6 +156,8 @@ namespace CBSSupport.Shared.Services
                 i.instruction_id,
                 i.completed,
                 i.attachment_id,
+                i.client_message_id,
+                i.conversation_sequence,
                 i.inst_channel,
                 CASE 
                     WHEN i.client_auth_user_id IS NOT NULL THEN COALESCE(cu.full_name, cu.user_name, 'Unknown Client User')
@@ -190,18 +199,23 @@ namespace CBSSupport.Shared.Services
                     newTicket,
                     transaction,
                     cancellationToken: cancellationToken);
-                var newId = await connection.QuerySingleAsync<long>(insertCommand);
+                var newId = await connection.QuerySingleOrDefaultAsync<long?>(insertCommand);
+                if (newId is null)
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return null;
+                }
 
                 var updateCommand = new CommandDefinition(
                     sqlUpdate,
-                    new { Id = newId, newTicket.ClientId },
+                    new { Id = newId.Value, newTicket.ClientId },
                     transaction,
                     cancellationToken: cancellationToken);
                 await connection.ExecuteAsync(updateCommand);
 
                 var selectCommand = new CommandDefinition(
                     sqlSelect,
-                    new { Id = newId, newTicket.ClientId },
+                    new { Id = newId.Value, newTicket.ClientId },
                     transaction,
                     cancellationToken: cancellationToken);
                 var savedMessage = await connection.QuerySingleOrDefaultAsync<ChatMessage>(selectCommand);
@@ -216,8 +230,13 @@ namespace CBSSupport.Shared.Services
             }
         }
 
-        public async Task<ChatMessage> CreateGroupChatMessageAsync(ChatMessage newMessage)
+        public async Task<ChatMessage?> CreateGroupChatMessageAsync(ChatMessage newMessage)
         {
+            if (newMessage.InsertUser.HasValue == newMessage.ClientAuthUserId.HasValue)
+            {
+                return null;
+            }
+
             var sqlInsert = @"
             INSERT INTO digital.instructions (
                 datetime, inst_category_id, inst_type_id, instruction,
@@ -225,12 +244,19 @@ namespace CBSSupport.Shared.Services
                 service_id, ip_address, geo_location, inst_channel,
                 attachment_id, instruction_id, remarks, expiry_date
             )
-            VALUES (
+            SELECT
                 @DateTime, @InstCategoryId, @InstTypeId, @Instruction,
                 @Status, @InsertUser, @ClientAuthUserId, @ClientId,
                 @ServiceId, @IpAddress, @GeoLocation, @InstChannel,
                 @AttachmentId, NULL, @Remarks, @ExpiryDate
-            )
+            WHERE @ClientAuthUserId IS NULL
+               OR EXISTS (
+                    SELECT 1
+                    FROM internal.support_users authenticated_client
+                    WHERE authenticated_client.id = @ClientAuthUserId
+                      AND authenticated_client.client_id = @ClientId
+                      AND authenticated_client.status IS TRUE
+                      AND authenticated_client.deactive_date IS NULL)
             RETURNING id;";
 
             var sqlUpdate = @"UPDATE digital.instructions SET instruction_id = @Id WHERE id = @Id;";
@@ -249,22 +275,26 @@ namespace CBSSupport.Shared.Services
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                long newId = await connection.ExecuteScalarAsync<long>(sqlInsert, newMessage);
+                var newId = await connection.QuerySingleOrDefaultAsync<long?>(sqlInsert, newMessage);
+                if (newId is null)
+                {
+                    return null;
+                }
 
-                await connection.ExecuteAsync(sqlUpdate, new { Id = newId });
+                await connection.ExecuteAsync(sqlUpdate, new { Id = newId.Value });
 
-                var savedMessage = await connection.QueryFirstOrDefaultAsync<ChatMessage>(sqlSelect, new { Id = newId });
+                var savedMessage = await connection.QuerySingleOrDefaultAsync<ChatMessage>(sqlSelect, new { Id = newId.Value });
 
                 if (savedMessage != null)
                 {
-                    savedMessage.InstructionId = newId;
+                    savedMessage.InstructionId = newId.Value;
                 }
 
                 return savedMessage;
             }
         }
 
-        public async Task<long> GetOrCreateGroupChatConversationIdAsync(long clientId, int loggedInUserId)
+        public async Task<long?> GetOrCreateGroupChatConversationIdAsync(long clientId, int clientAuthUserId)
         {
             var sql = @"
         SELECT i.instruction_id 
@@ -292,15 +322,18 @@ namespace CBSSupport.Shared.Services
                     InstCategoryId = 100,
                     Instruction = "Group chat conversation started",
                     Status = true,
-                    InsertUser = loggedInUserId,
+                    InsertUser = null,
                     ClientId = clientId,
+                    ClientAuthUserId = clientAuthUserId,
                     ServiceId = 3,
                     InstChannel = "chat",
                     Remarks = "System generated group chat conversation"
                 };
 
                 var createdMessage = await CreateGroupChatMessageAsync(newGroupChatMessage);
-                return createdMessage.InstructionId ?? createdMessage.Id;
+                return createdMessage is null
+                    ? null
+                    : createdMessage.InstructionId ?? createdMessage.Id;
             }
         }
 
@@ -489,7 +522,7 @@ namespace CBSSupport.Shared.Services
             }
             return sidebar;
         }
-        public async Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(long clientAuthUserId)
+        public async Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(int clientAuthUserId)
         {
             var sql = @"
         SELECT DISTINCT ON (instruction_id)
@@ -507,11 +540,13 @@ namespace CBSSupport.Shared.Services
         public async Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId, long? clientId = null)
         {
             var sql = @"
-        SELECT id, datetime, instruction, assigned_to, status, completed, instruction_id
-        FROM digital.instructions
-        WHERE inst_type_id = @InstTypeId
-          AND (@ClientId IS NULL OR client_id = @ClientId)
-        ORDER BY datetime DESC;";
+        SELECT i.id, i.datetime, i.instruction, i.assigned_to, i.status, i.completed, i.instruction_id,
+               ca.version AS Version
+        FROM digital.instructions i
+        LEFT JOIN digital.conversation_access ca ON ca.conversation_id = i.id
+        WHERE i.inst_type_id = @InstTypeId
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)
+        ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
@@ -523,8 +558,8 @@ namespace CBSSupport.Shared.Services
         {
             var sql = @"
         SELECT 
-            id, datetime, instruction, assigned_to, status, 
-            completed, attachment_id
+            id, datetime, inst_category_id, inst_type_id, instruction_id,
+            instruction, assigned_to, status, completed, attachment_id, client_id
         FROM digital.instructions
         WHERE id = @InstructionId;";
 
@@ -569,7 +604,90 @@ namespace CBSSupport.Shared.Services
         }
 
 
-        public async Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(long clientId)
+        public async Task<CasePage<TicketViewModel>> ListTicketsAsync(
+            CaseListCriteria criteria,
+            CancellationToken cancellationToken = default)
+        {
+            const string select = @"
+        SELECT
+            i.id AS Id,
+            COALESCE(public.try_get_json_value(i.remarks, 'subject'), 'General Support') AS Subject,
+            i.datetime AS Date,
+            u.full_name AS CreatedBy,
+            res.full_name AS ResolvedBy,
+            CASE WHEN COALESCE(i.completed, false) THEN 'Resolved' ELSE 'Open' END AS Status,
+            COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
+            i.instruction AS Description,
+            i.remarks AS Remarks,
+            i.expiry_date AS ExpiryDate,
+            i.completed_on AS ResolvedDate,
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
+        FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
+        LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
+        LEFT JOIN admin.users res ON i.completed_by = res.id
+        WHERE i.inst_category_id = 101
+          AND i.inst_type_id BETWEEN 110 AND 117
+          AND i.instruction_id = i.id
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)
+          AND (@IsCompleted IS NULL OR COALESCE(i.completed, false) = @IsCompleted)
+          AND (@TypeCode IS NULL OR i.inst_type_id = @TypeCode)
+          AND (@Priority IS NULL OR COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') = @Priority)";
+
+            await using var connection = new NpgsqlConnection(_connectionString);
+            var rows = (await connection.QueryAsync<TicketViewModel>(new CommandDefinition(
+                select + BuildCaseCursorPredicate(criteria) + BuildCaseOrderBy(criteria) + "\nLIMIT @Take;",
+                CaseListParameters(criteria),
+                cancellationToken: cancellationToken))).AsList();
+            return ToCasePage(rows, criteria, ToTicketCursor);
+        }
+
+        public async Task<CasePage<InquiryViewModel>> ListInquiriesAsync(
+            CaseListCriteria criteria,
+            CancellationToken cancellationToken = default)
+        {
+            const string select = @"
+        SELECT
+            i.id AS Id,
+            COALESCE(t.inst_type_name, 'Unknown Topic') AS Topic,
+            COALESCE(au.full_name, u.full_name, 'Unknown') AS InquiredBy,
+            i.datetime AS Date,
+            CASE WHEN COALESCE(i.completed, false) THEN 'Completed' ELSE 'Pending' END AS Outcome,
+            i.instruction AS Description,
+            COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
+            i.completed_on AS ResolvedDate,
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
+        FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
+        LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
+        LEFT JOIN admin.users au ON i.insert_user = au.id
+        LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
+        WHERE i.inst_category_id = 102
+          AND i.inst_type_id IN (121, 122)
+          AND i.instruction_id = i.id
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)
+          AND (@IsCompleted IS NULL OR COALESCE(i.completed, false) = @IsCompleted)
+          AND (@TypeCode IS NULL OR i.inst_type_id = @TypeCode)
+          AND (@Priority IS NULL OR COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') = @Priority)";
+
+            await using var connection = new NpgsqlConnection(_connectionString);
+            var rows = (await connection.QueryAsync<InquiryViewModel>(new CommandDefinition(
+                select + BuildCaseCursorPredicate(criteria) + BuildCaseOrderBy(criteria) + "\nLIMIT @Take;",
+                CaseListParameters(criteria),
+                cancellationToken: cancellationToken))).AsList();
+            return ToCasePage(rows, criteria, ToInquiryCursor);
+        }
+
+        public Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(long clientId) =>
+            GetTicketsByClientIdAsync(clientId, CancellationToken.None);
+
+        public async Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(
+            long clientId,
+            CancellationToken cancellationToken)
         {
             var sql = @"
         SELECT 
@@ -582,20 +700,35 @@ namespace CBSSupport.Shared.Services
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
             i.instruction AS Description,  
             i.remarks AS Remarks,  
-            i.expiry_date AS ExpiryDate  
+            i.expiry_date AS ExpiryDate,
+            i.completed_on AS ResolvedDate,
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
-        WHERE i.client_id = @ClientId AND i.inst_category_id = 101
+        WHERE i.client_id = @ClientId
+          AND i.inst_category_id = 101
+          AND i.instruction_id = i.id
         ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QueryAsync<TicketViewModel>(sql, new { ClientId = clientId });
+                return await connection.QueryAsync<TicketViewModel>(new CommandDefinition(
+                    sql,
+                    new { ClientId = clientId },
+                    cancellationToken: cancellationToken));
             }
         }
 
-        public async Task<IEnumerable<InquiryViewModel>> GetInquiriesByClientIdAsync(long clientId)
+        public Task<IEnumerable<InquiryViewModel>> GetInquiriesByClientIdAsync(long clientId) =>
+            GetInquiriesByClientIdAsync(clientId, CancellationToken.None);
+
+        public async Task<IEnumerable<InquiryViewModel>> GetInquiriesByClientIdAsync(
+            long clientId,
+            CancellationToken cancellationToken)
         {
             var sql = @"
         SELECT
@@ -606,16 +739,28 @@ namespace CBSSupport.Shared.Services
             CASE 
                 WHEN i.completed = true THEN 'Completed'
                 ELSE 'Pending'
-            END AS Outcome
+            END AS Outcome,
+            i.instruction AS Description,
+            COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
+            i.completed_on AS ResolvedDate,
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
-        WHERE i.client_id = @ClientId AND i.inst_category_id = 102
+        WHERE i.client_id = @ClientId
+          AND i.inst_category_id = 102
+          AND i.instruction_id = i.id
         ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QueryAsync<InquiryViewModel>(sql, new { ClientId = clientId });
+                return await connection.QueryAsync<InquiryViewModel>(new CommandDefinition(
+                    sql,
+                    new { ClientId = clientId },
+                    cancellationToken: cancellationToken));
             }
         }
 
@@ -635,7 +780,10 @@ namespace CBSSupport.Shared.Services
             }
         }
 
-        public async Task<IEnumerable<TicketViewModel>> GetAllTicketsAsync()
+        public Task<IEnumerable<TicketViewModel>> GetAllTicketsAsync() =>
+            GetAllTicketsAsync(CancellationToken.None);
+
+        public async Task<IEnumerable<TicketViewModel>> GetAllTicketsAsync(CancellationToken cancellationToken)
         {
             var sql = @"
         SELECT 
@@ -646,26 +794,35 @@ namespace CBSSupport.Shared.Services
             res.full_name AS ResolvedBy,
             CASE WHEN i.completed = true THEN 'Resolved' ELSE 'Open' END AS Status,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
-            COALESCE(u.full_name, 'Unknown Client') AS ClientName
+            COALESCE(u.full_name, 'Unknown Client') AS ClientName,
+            i.instruction AS Description,
+            i.remarks AS Remarks,
+            i.expiry_date AS ExpiryDate,
+            i.completed_on AS ResolvedDate,
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
         WHERE i.inst_category_id = 101
+          AND i.instruction_id = i.id
         ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QueryAsync<TicketViewModel>(sql, new { });
+                return await connection.QueryAsync<TicketViewModel>(new CommandDefinition(
+                    sql,
+                    cancellationToken: cancellationToken));
             }
         }
-        public async Task<IEnumerable<InquiryViewModel>> GetAllInquiriesAsync()
+        public Task<IEnumerable<InquiryViewModel>> GetAllInquiriesAsync() =>
+            GetAllInquiriesAsync(CancellationToken.None);
+
+        public async Task<IEnumerable<InquiryViewModel>> GetAllInquiriesAsync(CancellationToken cancellationToken)
         {
             var inquiryTypeIds = new[] { 121, 122 };
-
-            var countSql = @"
-        SELECT COUNT(*) 
-        FROM digital.instructions i 
-        WHERE i.inst_type_id = ANY(@InquiryTypeIds);";
 
             var sql = @"
         SELECT
@@ -677,38 +834,30 @@ namespace CBSSupport.Shared.Services
                 WHEN i.completed = true THEN 'Completed'
                 ELSE 'Pending'
             END AS Outcome,
-            COALESCE(u.full_name, au.full_name, 'Unknown Client') AS ClientName
+            COALESCE(u.full_name, au.full_name, 'Unknown Client') AS ClientName,
+            i.instruction AS Description,
+            COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
+            i.completed_on AS ResolvedDate,
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users au ON i.insert_user = au.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
         WHERE i.inst_type_id = ANY(@InquiryTypeIds)
+          AND i.instruction_id = i.id
         ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                try
-                {
-                    var count = await connection.ExecuteScalarAsync<int>(countSql, new { InquiryTypeIds = inquiryTypeIds });
-                    Console.WriteLine($"DEBUG: Found {count} records with inquiry type IDs 121 or 122");
-
-                    if (count == 0)
-                    {
-                        var existingTypesSql = "SELECT DISTINCT inst_type_id FROM digital.instructions ORDER BY inst_type_id;";
-                        var existingTypes = await connection.QueryAsync<int>(existingTypesSql);
-                        Console.WriteLine($"DEBUG: Existing inst_type_id values: {string.Join(", ", existingTypes)}");
-                    }
-
-                    var result = await connection.QueryAsync<InquiryViewModel>(sql, new { InquiryTypeIds = inquiryTypeIds });
-                    Console.WriteLine($"DEBUG: GetAllInquiriesAsync returned {result.Count()} records");
-                    return result;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"ERROR in GetAllInquiriesAsync: {ex.Message}");
-                    Console.WriteLine($"Stack trace: {ex.StackTrace}");
-                    throw;
-                }
+                var result = (await connection.QueryAsync<InquiryViewModel>(new CommandDefinition(
+                    sql,
+                    new { InquiryTypeIds = inquiryTypeIds },
+                    cancellationToken: cancellationToken))).ToList();
+                _logger.LogDebug("Loaded {RecordCount} inquiries", result.Count);
+                return result;
             }
         }
 
@@ -716,76 +865,15 @@ namespace CBSSupport.Shared.Services
         {
             var sql = @"
         SELECT 
-            COUNT(*) FILTER (WHERE i.inst_category_id = 101) AS TotalTickets,
-            COUNT(*) FILTER (WHERE i.inst_category_id = 101 AND i.completed = false) AS OpenTickets,
-            COUNT(*) FILTER (WHERE i.inst_category_id = 101 AND i.completed = true) AS ResolvedTickets,
-            COUNT(*) FILTER (WHERE i.inst_category_id = 102) AS TotalInquiries
+            COUNT(*) FILTER (WHERE i.inst_category_id = 101 AND i.instruction_id = i.id) AS TotalTickets,
+            COUNT(*) FILTER (WHERE i.inst_category_id = 101 AND i.instruction_id = i.id AND i.completed = false) AS OpenTickets,
+            COUNT(*) FILTER (WHERE i.inst_category_id = 101 AND i.instruction_id = i.id AND i.completed = true) AS ResolvedTickets,
+            COUNT(*) FILTER (WHERE i.inst_category_id = 102 AND i.instruction_id = i.id) AS TotalInquiries
         FROM digital.instructions i;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
                 return await connection.QueryFirstOrDefaultAsync<DashboardStatsViewModel>(sql);
-            }
-        }
-
-        public async Task<bool> UpdateInstructionAsync(ChatMessage instruction)
-        {
-            var checkSql = @"
-        SELECT id, completed, instruction, remarks, expiry_date, edit_date, edit_user
-        FROM digital.instructions 
-        WHERE id = @Id";
-
-            var updateSql = @"
-        UPDATE digital.instructions 
-        SET instruction = @Instruction,
-            remarks = @Remarks,
-            expiry_date = @ExpiryDate,
-            edit_date = @EditDate,
-            edit_user = @EditUser
-        WHERE id = @Id
-          AND inst_category_id = 101
-          AND (completed = false OR completed IS NULL)";
-
-            using (var connection = new NpgsqlConnection(_connectionString))
-            {
-                try
-                {
-                    var existingRecord = await connection.QueryFirstOrDefaultAsync(checkSql, new { Id = instruction.Id });
-
-                    Console.WriteLine($"DEBUG: Record check for ID {instruction.Id}:");
-                    if (existingRecord == null)
-                    {
-                        Console.WriteLine($"ERROR: No record found with ID {instruction.Id}");
-                        return false;
-                    }
-
-                    Console.WriteLine($"DEBUG: Existing record: {System.Text.Json.JsonSerializer.Serialize(existingRecord)}");
-
-                    var parameters = new
-                    {
-                        Id = instruction.Id,
-                        Instruction = instruction.Instruction,
-                        Remarks = instruction.Remarks,
-                        ExpiryDate = instruction.ExpiryDate,
-                        EditDate = instruction.EditDate,
-                        EditUser = instruction.EditUser
-                    };
-
-                    Console.WriteLine($"DEBUG: Update parameters: {System.Text.Json.JsonSerializer.Serialize(parameters)}");
-                    Console.WriteLine($"DEBUG: Update SQL: {updateSql}");
-
-                    var rowsAffected = await connection.ExecuteAsync(updateSql, parameters);
-
-                    Console.WriteLine($"DEBUG: Rows affected: {rowsAffected}");
-
-                    return rowsAffected > 0;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"ERROR in UpdateInstructionAsync: {ex.Message}");
-                    Console.WriteLine($"Stack trace: {ex.StackTrace}");
-                    throw;
-                }
             }
         }
 
@@ -805,7 +893,9 @@ namespace CBSSupport.Shared.Services
         FROM digital.instructions i
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
-        WHERE i.inst_type_id = ANY(@TicketTypeIds) AND i.completed = true
+        WHERE i.inst_type_id = ANY(@TicketTypeIds)
+          AND i.instruction_id = i.id
+          AND i.completed = true
         ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
@@ -836,7 +926,9 @@ namespace CBSSupport.Shared.Services
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users au ON i.insert_user = au.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
-        WHERE i.inst_type_id = ANY(@InquiryTypeIds) AND i.completed = true
+        WHERE i.inst_type_id = ANY(@InquiryTypeIds)
+          AND i.instruction_id = i.id
+          AND i.completed = true
         ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
@@ -861,7 +953,9 @@ namespace CBSSupport.Shared.Services
         FROM digital.instructions i
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
-        WHERE i.inst_type_id = ANY(@TicketTypeIds) AND (i.completed = false OR i.completed IS NULL)
+        WHERE i.inst_type_id = ANY(@TicketTypeIds)
+          AND i.instruction_id = i.id
+          AND (i.completed = false OR i.completed IS NULL)
         ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
@@ -892,7 +986,9 @@ namespace CBSSupport.Shared.Services
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users au ON i.insert_user = au.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
-        WHERE i.inst_type_id = ANY(@InquiryTypeIds) AND (i.completed = false OR i.completed IS NULL)
+        WHERE i.inst_type_id = ANY(@InquiryTypeIds)
+          AND i.instruction_id = i.id
+          AND (i.completed = false OR i.completed IS NULL)
         ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
@@ -901,61 +997,13 @@ namespace CBSSupport.Shared.Services
             }
         }
 
-        public async Task<bool> UpdateInquiryStatusAsync(long inquiryId, bool isCompleted, long? completedByUserId = null)
-        {
-            var sql = @"
-        UPDATE digital.instructions 
-        SET completed = @IsCompleted,
-            completed_by = @CompletedByUserId,
-            completed_on = CASE WHEN @IsCompleted = true THEN @CompletedOn ELSE NULL END,
-            edit_date = @EditDate,
-            edit_user = @EditUser
-        WHERE id = @InquiryId AND inst_category_id = 102";
+        public Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null) =>
+            GetTicketDetailsByIdAsync(ticketId, clientId, CancellationToken.None);
 
-            using (var connection = new NpgsqlConnection(_connectionString))
-            {
-                var rowsAffected = await connection.ExecuteAsync(sql, new
-                {
-                    InquiryId = inquiryId,
-                    IsCompleted = isCompleted,
-                    CompletedByUserId = completedByUserId,
-                    CompletedOn = isCompleted ? DateTime.UtcNow : (DateTime?)null,
-                    EditDate = DateTime.UtcNow,
-                    EditUser = completedByUserId
-                });
-
-                return rowsAffected > 0;
-            }
-        }
-
-        public async Task<bool> UpdateTicketStatusAsync(long ticketId, bool isCompleted, long? completedByUserId = null)
-        {
-            var sql = @"
-        UPDATE digital.instructions 
-        SET completed = @IsCompleted,
-            completed_by = @CompletedByUserId,
-            completed_on = CASE WHEN @IsCompleted = true THEN @CompletedOn ELSE NULL END,
-            edit_date = @EditDate,
-            edit_user = @EditUser
-        WHERE id = @TicketId AND inst_category_id = 101";
-
-            using (var connection = new NpgsqlConnection(_connectionString))
-            {
-                var rowsAffected = await connection.ExecuteAsync(sql, new
-                {
-                    TicketId = ticketId,
-                    IsCompleted = isCompleted,
-                    CompletedByUserId = completedByUserId,
-                    CompletedOn = isCompleted ? DateTime.UtcNow : (DateTime?)null,
-                    EditDate = DateTime.UtcNow,
-                    EditUser = completedByUserId
-                });
-
-                return rowsAffected > 0;
-            }
-        }
-
-        public async Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null)
+        public async Task<TicketViewModel?> GetTicketDetailsByIdAsync(
+            long ticketId,
+            long? clientId,
+            CancellationToken cancellationToken)
         {
             var sql = @"
         SELECT 
@@ -971,8 +1019,11 @@ namespace CBSSupport.Shared.Services
             i.expiry_date AS ExpiryDate,
             i.completed_on AS ResolvedDate,
             COALESCE(u.full_name, 'Unknown Client') AS ClientName,
-            i.client_id AS ClientId
+            i.client_id AS ClientId,
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
         WHERE i.id = @TicketId
@@ -981,11 +1032,20 @@ namespace CBSSupport.Shared.Services
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QuerySingleOrDefaultAsync<TicketViewModel>(sql, new { TicketId = ticketId, ClientId = clientId });
+                return await connection.QuerySingleOrDefaultAsync<TicketViewModel>(new CommandDefinition(
+                    sql,
+                    new { TicketId = ticketId, ClientId = clientId },
+                    cancellationToken: cancellationToken));
             }
         }
 
-        public async Task<InquiryViewModel?> GetInquiryDetailsByIdAsync(long inquiryId, long? clientId = null)
+        public Task<InquiryViewModel?> GetInquiryDetailsByIdAsync(long inquiryId, long? clientId = null) =>
+            GetInquiryDetailsByIdAsync(inquiryId, clientId, CancellationToken.None);
+
+        public async Task<InquiryViewModel?> GetInquiryDetailsByIdAsync(
+            long inquiryId,
+            long? clientId,
+            CancellationToken cancellationToken)
         {
             var sql = @"
         SELECT
@@ -1001,8 +1061,11 @@ namespace CBSSupport.Shared.Services
             i.client_id AS ClientId,
             i.instruction AS Description,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
-            i.completed_on AS ResolvedDate
+            i.completed_on AS ResolvedDate,
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users au ON i.insert_user = au.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
@@ -1012,7 +1075,10 @@ namespace CBSSupport.Shared.Services
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
-                return await connection.QuerySingleOrDefaultAsync<InquiryViewModel>(sql, new { InquiryId = inquiryId, ClientId = clientId });
+                return await connection.QuerySingleOrDefaultAsync<InquiryViewModel>(new CommandDefinition(
+                    sql,
+                    new { InquiryId = inquiryId, ClientId = clientId },
+                    cancellationToken: cancellationToken));
             }
         }
 
@@ -1104,7 +1170,7 @@ namespace CBSSupport.Shared.Services
             COALESCE(ca.full_name, ca.user_name, 'Support') as sendername,
             i.instruction_id
         FROM digital.instructions i
-        LEFT JOIN internal.support_users ca ON i.insert_user = ca.id
+        LEFT JOIN admin.users ca ON i.insert_user = ca.id
         WHERE i.client_id = @ClientId 
         AND (i.notification_seen_by_client IS NULL OR i.notification_seen_by_client = 0)
         ORDER BY i.insert_date DESC
@@ -1137,5 +1203,101 @@ namespace CBSSupport.Shared.Services
 
             return rowsAffected;
         }
+
+        private static object CaseListParameters(CaseListCriteria criteria) => new
+        {
+            criteria.ClientId,
+            criteria.IsCompleted,
+            criteria.TypeCode,
+            criteria.Priority,
+            CursorSortValue = GetCursorSortValue(criteria),
+            CursorId = criteria.Cursor?.Id,
+            Take = checked(criteria.PageSize + 1)
+        };
+
+        private static object? GetCursorSortValue(CaseListCriteria criteria) => criteria.Sort switch
+        {
+            CasePagination.CreatedAtSort => criteria.Cursor?.CreatedAt,
+            CasePagination.StatusSort => criteria.Cursor?.StatusRank,
+            CasePagination.TypeSort => criteria.Cursor?.TypeCode,
+            CasePagination.PrioritySort => criteria.Cursor?.Priority,
+            _ => null
+        };
+
+        private static string BuildCaseCursorPredicate(CaseListCriteria criteria)
+        {
+            if (criteria.Cursor is null)
+            {
+                return string.Empty;
+            }
+
+            var comparison = criteria.Direction == CasePagination.Ascending ? ">" : "<";
+            var expression = CaseSortExpression(criteria.Sort);
+            return $"\n          AND ({expression} {comparison} @CursorSortValue OR ({expression} = @CursorSortValue AND i.id {comparison} @CursorId))";
+        }
+
+        private static string BuildCaseOrderBy(CaseListCriteria criteria)
+        {
+            var direction = criteria.Direction == CasePagination.Ascending ? "ASC" : "DESC";
+            return $"\n        ORDER BY {CaseSortExpression(criteria.Sort)} {direction}, i.id {direction}";
+        }
+
+        private static string CaseSortExpression(string sort) => sort switch
+        {
+            CasePagination.CreatedAtSort => "i.datetime",
+            CasePagination.StatusSort => "CASE WHEN COALESCE(i.completed, false) THEN 1 ELSE 0 END",
+            CasePagination.TypeSort => "i.inst_type_id",
+            CasePagination.PrioritySort => "COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal')",
+            _ => throw new ArgumentOutOfRangeException(nameof(sort), sort, "Unsupported case sort field.")
+        };
+
+        private static CasePage<T> ToCasePage<T>(
+            IReadOnlyList<T> rows,
+            CaseListCriteria criteria,
+            Func<T, CaseListCriteria, CaseListCursor> toCursor)
+        {
+            var hasNextPage = rows.Count > criteria.PageSize;
+            var items = rows.Take(criteria.PageSize).ToArray();
+            var nextCursor = hasNextPage
+                ? CasePagination.EncodeCursor(toCursor(items[^1], criteria))
+                : null;
+            return new CasePage<T>(items, criteria.PageSize, nextCursor);
+        }
+
+        private static CaseListCursor ToTicketCursor(TicketViewModel item, CaseListCriteria criteria) =>
+            ToCursor(
+                criteria,
+                item.Id,
+                item.Date,
+                string.Equals(item.Status, CaseDtoMapper.TicketResolvedStatus, StringComparison.OrdinalIgnoreCase) ? 1 : 0,
+                item.InstTypeId,
+                item.Priority);
+
+        private static CaseListCursor ToInquiryCursor(InquiryViewModel item, CaseListCriteria criteria) =>
+            ToCursor(
+                criteria,
+                item.Id,
+                item.Date,
+                string.Equals(item.Outcome, CaseDtoMapper.InquiryCompletedStatus, StringComparison.OrdinalIgnoreCase) ? 1 : 0,
+                item.InstTypeId,
+                item.Priority);
+
+        private static CaseListCursor ToCursor(
+            CaseListCriteria criteria,
+            long id,
+            DateTime createdAt,
+            int statusRank,
+            short typeCode,
+            string? priority) =>
+            new(
+                criteria.Sort,
+                criteria.Direction,
+                id,
+                criteria.Sort == CasePagination.CreatedAtSort ? createdAt : null,
+                criteria.Sort == CasePagination.StatusSort ? statusRank : null,
+                criteria.Sort == CasePagination.TypeSort ? typeCode : null,
+                criteria.Sort == CasePagination.PrioritySort
+                    ? string.IsNullOrWhiteSpace(priority) ? CasePriorities.Normal : priority.Trim()
+                    : null);
     }
 }

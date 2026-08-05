@@ -33,10 +33,8 @@ public sealed partial class BrowserSignalRAuthenticationTests
         }
     }
 
-    [Theory]
-    [InlineData("chat.js")]
-    [InlineData("admin/admin-signalR.js")]
-    public void BrowserChatConnection_UsesSameOriginHubUrl(string relativeScriptPath)
+    [Fact]
+    public void BrowserChatTransport_UsesSameOriginHubUrl()
     {
         var scriptPath = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
@@ -47,11 +45,12 @@ public sealed partial class BrowserSignalRAuthenticationTests
             "CBSSupport.API",
             "wwwroot",
             "js",
-            relativeScriptPath));
+            "messaging",
+            "transport.js"));
 
         var source = File.ReadAllText(scriptPath);
 
-        Assert.Contains(".withUrl(\"/chathub\")", source, StringComparison.Ordinal);
+        Assert.Contains("options.hubUrl || \"/chathub\"", source, StringComparison.Ordinal);
     }
 
     private static bool IsVendoredSignalRScript(string scriptsDirectory, string scriptPath)

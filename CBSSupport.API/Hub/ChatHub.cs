@@ -1,17 +1,22 @@
 using System.Security.Claims;
 using CBSSupport.API.Security;
+using CBSSupport.API.Realtime;
+using CBSSupport.API.Configuration;
 using CBSSupport.Shared.Contracts;
 using CBSSupport.Shared.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 
 namespace CBSSupport.API.Hubs;
 
 [Authorize(Policy = Policies.AdminOrClient)]
 public sealed class ChatHub(
     IConversationService conversations,
-    ILogger<ChatHub> logger) : Hub
+    IOptions<MessagingFeatureOptions> featureOptions,
+    ILogger<ChatHub> logger) : Hub<IChatClient>
 {
+    private readonly MessagingFeatureOptions _features = featureOptions.Value;
     public override async Task OnConnectedAsync()
     {
         var actor = GetRequiredActor();
@@ -53,71 +58,39 @@ public sealed class ChatHub(
             Context.ConnectionAborted);
     }
 
-    public async Task<ConversationMessage> SendMessage(
-        long conversationId,
-        SendConversationMessageRequest request)
-    {
-        if (request is null
-            || string.IsNullOrWhiteSpace(request.Text)
-            || request.Text.Trim().Length > 4000)
-        {
-            throw new HubException("Message text must be between 1 and 4000 characters.");
-        }
-
-        if (request.AttachmentIds is { Count: > 0 })
-        {
-            throw new HubException("Attachments are not supported by this chat command.");
-        }
-
-        var actor = GetRequiredActor();
-        await RequireAccessAsync(conversationId, actor);
-
-        var message = await conversations.CreateMessageAsync(
-            conversationId,
-            actor,
-            request.Text,
-            Context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString(),
-            Context.ConnectionAborted);
-        if (message is null)
-        {
-            throw ConversationUnavailable();
-        }
-
-        await Clients.GroupExcept(
-                RealtimeGroupNames.Conversation(conversationId),
-                Context.ConnectionId)
-            .SendAsync("MessageCreated", message, Context.ConnectionAborted);
-
-        logger.LogInformation(
-            "User {UserId} sent message {MessageId} to conversation {ConversationId}",
-            actor.UserId,
-            message.Id,
-            conversationId);
-
-        return message;
-    }
-
     public async Task SetTyping(long conversationId, bool isTyping)
     {
         var actor = GetRequiredActor();
-        await RequireAccessAsync(conversationId, actor);
+        var access = await RequireAccessAsync(conversationId, actor);
+        var typing = new TypingChangedEvent(
+            conversationId,
+            actor.UserId,
+            actor.DisplayName,
+            isTyping);
+
+        if (access.IsPrivate)
+        {
+            var recipientUserId = GetPrivateTypingRecipient(access, actor);
+            if (recipientUserId is null)
+            {
+                logger.LogWarning(
+                    "Typing recipient was unavailable for user {UserId} in conversation {ConversationId}",
+                    actor.UserId,
+                    conversationId);
+                throw ConversationUnavailable();
+            }
+
+            await Clients.User(recipientUserId).TypingChanged(typing);
+            return;
+        }
 
         await Clients.GroupExcept(
                 RealtimeGroupNames.Conversation(conversationId),
-                Context.ConnectionId)
-            .SendAsync(
-                "TypingChanged",
-                new
-                {
-                    ConversationId = conversationId,
-                    actor.UserId,
-                    actor.DisplayName,
-                    IsTyping = isTyping
-                },
-                Context.ConnectionAborted);
+                [Context.ConnectionId])
+            .TypingChanged(typing);
     }
 
-    private async Task RequireAccessAsync(
+    private async Task<ConversationAccess> RequireAccessAsync(
         long conversationId,
         ConversationActor actor)
     {
@@ -138,6 +111,30 @@ public sealed class ChatHub(
                 conversationId);
             throw ConversationUnavailable();
         }
+
+        if ((access.IsGroup && !_features.GroupEnabled)
+            || (access.IsPrivate && !_features.PrivateEnabled))
+        {
+            throw ConversationUnavailable();
+        }
+
+        return access;
+    }
+
+    private static string? GetPrivateTypingRecipient(
+        ConversationAccess access,
+        ConversationActor actor)
+    {
+        if (actor.IsAdmin)
+        {
+            return access.ClientId is > 0 && access.ClientUserId is > 0
+                ? RealtimeUserIds.Client(access.ClientId.Value, access.ClientUserId.Value)
+                : null;
+        }
+
+        return access.AdminUserId is > 0
+            ? RealtimeUserIds.Admin(access.AdminUserId.Value)
+            : null;
     }
 
     private ConversationActor GetRequiredActor()
