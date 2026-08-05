@@ -167,6 +167,9 @@ builder.Services.AddSingleton(attachmentOptions);
 builder.Services.AddSingleton<IChatService>(provider => new ChatService(
     connectionString,
     provider.GetRequiredService<ILogger<ChatService>>()));
+builder.Services.AddSingleton<IConversationQueryService>(provider => new ConversationQueryService(
+    connectionString,
+    provider.GetRequiredService<ILogger<ConversationQueryService>>()));
 builder.Services.AddSingleton<ICaseMutationCommandHandler>(_ => new CaseMutationCommandHandler(connectionString));
 builder.Services.AddSingleton<ITicketService, TicketService>();
 builder.Services.AddSingleton<IInquiryService, InquiryService>();

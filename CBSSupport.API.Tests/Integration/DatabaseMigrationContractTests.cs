@@ -808,26 +808,33 @@ public sealed class DatabaseMigrationContractTests
         Assert.Contains("NOT trigger_row.tgisinternal", verificationSql, StringComparison.Ordinal);
     }
 
-    private static string ReadMigration(string fileName) =>
-        File.ReadAllText(Path.Combine(
-            FindRepositoryRoot(),
-            "Database",
-            "Migrations",
-            fileName));
+ private static string ReadMigration(string fileName) =>
+    ReadSqlFile(Path.Combine(
+        FindRepositoryRoot(),
+        "Database",
+        "Migrations",
+        fileName));
 
-    private static string ReadManualDeployment(string fileName) =>
-        File.ReadAllText(Path.Combine(
-            FindRepositoryRoot(),
-            "Database",
-            "ManualDeployments",
-            fileName));
+private static string ReadManualDeployment(string fileName) =>
+    ReadSqlFile(Path.Combine(
+        FindRepositoryRoot(),
+        "Database",
+        "ManualDeployments",
+        fileName));
 
-    private static string ReadPreflight(string fileName) =>
-        File.ReadAllText(Path.Combine(
-            FindRepositoryRoot(),
-            "Database",
-            "Preflight",
-            fileName));
+private static string ReadPreflight(string fileName) =>
+    ReadSqlFile(Path.Combine(
+        FindRepositoryRoot(),
+        "Database",
+        "Preflight",
+        fileName));
+
+private static string ReadSqlFile(string path)
+{
+    return File.ReadAllText(path)
+        .Replace("\r\n", "\n", StringComparison.Ordinal)
+        .Replace('\r', '\n');
+}
 
     private static string ReadDollarQuotedBlock(string sql, string blockName)
     {

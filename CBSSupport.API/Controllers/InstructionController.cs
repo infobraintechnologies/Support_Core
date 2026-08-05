@@ -16,6 +16,7 @@ namespace CBSSupport.API.Controllers;
 public sealed class InstructionsController : ControllerBase
 {
     private readonly IChatService _service;
+    private readonly IConversationQueryService _conversationQueries;
     private readonly IConversationService _conversations;
     private readonly ITicketService _tickets;
     private readonly IInquiryService _inquiries;
@@ -24,6 +25,7 @@ public sealed class InstructionsController : ControllerBase
 
     public InstructionsController(
         IChatService service,
+        IConversationQueryService conversationQueries,
         IConversationService conversations,
         ITicketService tickets,
         IInquiryService inquiries,
@@ -31,6 +33,7 @@ public sealed class InstructionsController : ControllerBase
         IHubContext<ChatHub> hubContext)
     {
         _service = service;
+        _conversationQueries = conversationQueries;
         _conversations = conversations;
         _tickets = tickets;
         _inquiries = inquiries;
@@ -112,7 +115,9 @@ public sealed class InstructionsController : ControllerBase
 
     [HttpGet("by-type/{*chatType}")]
     [Authorize(Policy = Policies.AdminOnly)]
-    public async Task<IActionResult> GetConversationsByChatType(string chatType)
+    public async Task<IActionResult> GetConversationsByChatType(
+        string chatType,
+        CancellationToken cancellationToken = default)
     {
         if (!TryGetInstructionType(chatType, out var instructionTypeId))
         {
@@ -124,12 +129,16 @@ public sealed class InstructionsController : ControllerBase
             return NotFound();
         }
 
-        var conversations = await _service.GetConversationsByInstTypeAsync(instructionTypeId);
+        var conversations = await _conversationQueries.GetConversationsByInstructionTypeAsync(
+            instructionTypeId,
+            cancellationToken: cancellationToken);
         return Ok(conversations);
     }
 
     [HttpGet("messages/{conversationId:long}")]
-    public async Task<IActionResult> GetMessagesForConversation(long conversationId)
+    public async Task<IActionResult> GetMessagesForConversation(
+        long conversationId,
+        CancellationToken cancellationToken = default)
     {
         if (conversationId <= 0)
         {
@@ -137,28 +146,35 @@ public sealed class InstructionsController : ControllerBase
         }
 
 
-        var root = await _service.GetInstructionByIdAsync(conversationId);
+        var clientScope = GetClientScope();
+        var root = await _conversationQueries.GetInstructionByIdAsync(
+            conversationId,
+            clientScope,
+            cancellationToken);
         if (root is null || root.InstTypeId == ConversationTypes.SupportPrivate)
         {
             return NotFound();
         }
 
-        var messages = (await _service.GetMessagesByConversationIdAsync(
+        var messages = (await _conversationQueries.GetMessagesAsync(
             conversationId,
-            GetClientScope())).ToList();
+            clientScope,
+            cancellationToken)).ToList();
 
         return messages.Count == 0 ? NotFound() : Ok(messages);
     }
 
     [HttpGet("sidebar/{clientId:long}")]
-    public async Task<IActionResult> GetSidebar(long clientId)
+    public async Task<IActionResult> GetSidebar(
+        long clientId,
+        CancellationToken cancellationToken = default)
     {
         if (!await CanAccessTenantAsync(clientId))
         {
             return NotFound();
         }
 
-        var sidebar = await _service.GetSidebarForUserAsync(0, clientId);
+        var sidebar = await _conversationQueries.GetSidebarAsync(clientId, cancellationToken);
         sidebar.PrivateChats.Clear();
         return Ok(sidebar);
     }

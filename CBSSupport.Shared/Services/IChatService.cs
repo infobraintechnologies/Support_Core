@@ -7,19 +7,9 @@ namespace CBSSupport.Shared.Services
 {
     public interface IChatService
     {
-        Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(int clientAuthUserId);
-
-        Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId, long? clientId = null);
-
         Task<ChatMessage?> CreateInstructionTicketAsync(
             ChatMessage newTicket,
             CancellationToken cancellationToken = default);
-
-        Task<ChatMessage> GetInstructionByIdAsync(long instructionId);
-
-        Task<IEnumerable<ChatMessage>> GetMessagesByConversationIdAsync(long conversationId, long? clientId = null);
-
-        Task<SidebarViewModel> GetSidebarForUserAsync(long clientAuthUserId, long clientId);
 
         Task<IEnumerable<TicketViewModel>> GetTicketsByClientIdAsync(long clientId);
 
