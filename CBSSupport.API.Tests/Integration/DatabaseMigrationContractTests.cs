@@ -117,6 +117,22 @@ public sealed class DatabaseMigrationContractTests
     }
 
     [Fact]
+    public void CaseNotificationMigration_UsesExactRecipientsAndIdempotentOutboxKeys()
+    {
+        var sql = ReadMigration("202608051000_add_case_notification_delivery.sql");
+
+        Assert.Contains("ADD COLUMN idempotency_key", sql, StringComparison.Ordinal);
+        Assert.Contains("uq_conversation_outbox_idempotency_key", sql, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE digital.case_notifications", sql, StringComparison.Ordinal);
+        Assert.Contains("recipient_kind", sql, StringComparison.Ordinal);
+        Assert.Contains("case_version", sql, StringComparison.Ordinal);
+        Assert.Contains("payload_version", sql, StringComparison.Ordinal);
+        Assert.Contains("uq_case_notifications_idempotency_key", sql, StringComparison.Ordinal);
+        Assert.Contains("enforce_case_notification_recipient", sql, StringComparison.Ordinal);
+        Assert.Contains("recipient.client_id = NEW.client_id", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AttachmentSchema_CountsDeletePendingUntilDeletionConfirmation()
     {
         var createSql = ReadMigration("202607261020_create_r2_attachments.sql");

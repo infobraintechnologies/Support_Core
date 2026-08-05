@@ -255,6 +255,35 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             FROM digital.conversation_outbox
             WHERE conversation_id = @Id AND event_type = 'MessageCreated';
             """, new { Id = conversationId }));
+        Assert.Equal(4, await database.QuerySingleAsync<int>("""
+            SELECT count(*)
+            FROM digital.case_notifications
+            WHERE case_id = @Id;
+            """, new { Id = conversationId }));
+        Assert.Equal(1, await database.QuerySingleAsync<int>("""
+            SELECT count(*)
+            FROM digital.conversation_audit
+            WHERE conversation_id = @Id AND action = 'CaseReplyCreated';
+            """, new { Id = conversationId }));
+
+        var adminReply = await repository.SendMessageAsync(
+            conversationId,
+            new ConversationActor(9, null, IsAdmin: true, "Admin"),
+            Guid.NewGuid(),
+            "Admin reply",
+            [],
+            null);
+        Assert.Equal(ConversationCommandStatus.Created, adminReply.Status);
+        Assert.Equal(5, await database.QuerySingleAsync<int>("""
+            SELECT count(*)
+            FROM digital.case_notifications
+            WHERE case_id = @Id;
+            """, new { Id = conversationId }));
+        Assert.Equal(1, await database.QuerySingleAsync<int>("""
+            SELECT count(*)
+            FROM digital.case_notifications
+            WHERE case_id = @Id AND recipient_kind = 'Client' AND client_user_id = 7;
+            """, new { Id = conversationId }));
 
         await database.ExecuteAsync("""
             CREATE FUNCTION digital.reject_test_outbox() RETURNS trigger
@@ -277,7 +306,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             "Must roll back",
             [],
             null));
-        Assert.Equal(3L, await database.QuerySingleAsync<long>(
+        Assert.Equal(4L, await database.QuerySingleAsync<long>(
             "SELECT next_sequence FROM digital.conversation_sequences WHERE conversation_id = @Id;",
             new { Id = conversationId }));
         Assert.Equal(0, await database.QuerySingleAsync<int>("""
@@ -322,6 +351,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         await database.ApplyMigrationAsync(
             "202607261010_modernize_case_conversations.sql");
         await database.ApplyMigrationAsync("202608041100_create_case_audit.sql");
+        await database.ApplyMigrationAsync("202608051000_add_case_notification_delivery.sql");
         var repository = new ConversationRepository(
             database.ConnectionString,
             attachmentsEnabled: false);
@@ -673,6 +703,236 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             "SELECT completed FROM digital.instructions WHERE id = 3001;"));
         Assert.Equal(0L, await database.QuerySingleAsync<long>(
             "SELECT count(*) FROM digital.case_audit WHERE case_id = 3001;"));
+        Assert.Equal(0L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.case_notifications WHERE case_id = 3001;"));
+        Assert.Equal(0L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.conversation_outbox WHERE conversation_id = 3001;"));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CaseCreate_AtomicCommit_WritesAuditRecipientsAndIdempotentOutbox()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: false);
+
+        var result = await repository.CreateCaseAsync(
+            new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
+            ConversationTypes.TrainingTicket,
+            InstructionCategories.Ticket,
+            "Atomic notification case",
+            null,
+            null,
+            null,
+            DateTime.UtcNow);
+
+        Assert.Equal(ConversationCommandStatus.Created, result.Status);
+        var caseId = Assert.IsType<ChatMessage>(result.Value).Id;
+        Assert.Equal(1L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.case_audit WHERE case_id = @CaseId;", new { CaseId = caseId }));
+        Assert.Equal(1L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.conversation_outbox WHERE conversation_id = @CaseId;", new { CaseId = caseId }));
+        Assert.Equal(2L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.case_notifications WHERE case_id = @CaseId;", new { CaseId = caseId }));
+        Assert.Equal(1L, await database.QuerySingleAsync<long>(
+            "SELECT count(DISTINCT idempotency_key) FROM digital.conversation_outbox WHERE conversation_id = @CaseId;", new { CaseId = caseId }));
+        Assert.Equal(1L, await database.QuerySingleAsync<long>(
+            "SELECT case_version FROM digital.case_notifications WHERE case_id = @CaseId LIMIT 1;", new { CaseId = caseId }));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CaseCreate_NotificationInsertFailure_RollsBackMutationAuditAndOutbox()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await database.ExecuteAsync("""
+            CREATE FUNCTION digital.fail_case_notification_insert() RETURNS trigger
+            LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced notification failure'; END $$;
+            CREATE TRIGGER trg_fail_case_notification_insert
+            BEFORE INSERT ON digital.case_notifications
+            FOR EACH ROW EXECUTE FUNCTION digital.fail_case_notification_insert();
+            """);
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: false);
+
+        await Assert.ThrowsAsync<PostgresException>(() => repository.CreateCaseAsync(
+            new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
+            ConversationTypes.TrainingTicket,
+            InstructionCategories.Ticket,
+            "Rollback notification failure",
+            null,
+            null,
+            null,
+            DateTime.UtcNow));
+
+        Assert.Equal(0L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.instructions WHERE instruction = 'Rollback notification failure';"));
+        Assert.Equal(0L, await database.QuerySingleAsync<long>("SELECT count(*) FROM digital.case_audit;"));
+        Assert.Equal(0L, await database.QuerySingleAsync<long>("SELECT count(*) FROM digital.case_notifications;"));
+        Assert.Equal(0L, await database.QuerySingleAsync<long>("SELECT count(*) FROM digital.conversation_outbox;"));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CaseCreate_OutboxInsertFailure_RollsBackMutationAuditAndNotifications()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await database.ExecuteAsync("""
+            CREATE FUNCTION digital.fail_case_outbox_insert() RETURNS trigger
+            LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced outbox failure'; END $$;
+            CREATE TRIGGER trg_fail_case_outbox_insert
+            BEFORE INSERT ON digital.conversation_outbox
+            FOR EACH ROW EXECUTE FUNCTION digital.fail_case_outbox_insert();
+            """);
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: false);
+
+        await Assert.ThrowsAsync<PostgresException>(() => repository.CreateCaseAsync(
+            new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
+            ConversationTypes.AccountsInquiry,
+            InstructionCategories.Inquiry,
+            "Rollback outbox failure",
+            null,
+            null,
+            null,
+            DateTime.UtcNow));
+
+        Assert.Equal(0L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.instructions WHERE instruction = 'Rollback outbox failure';"));
+        Assert.Equal(0L, await database.QuerySingleAsync<long>("SELECT count(*) FROM digital.case_audit;"));
+        Assert.Equal(0L, await database.QuerySingleAsync<long>("SELECT count(*) FROM digital.case_notifications;"));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CaseNotificationRecipients_RejectInvalidAndCrossTenantPrincipals()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: false);
+        var created = await repository.CreateCaseAsync(
+            new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
+            ConversationTypes.TrainingTicket,
+            InstructionCategories.Ticket,
+            "Recipient validation",
+            null,
+            null,
+            null,
+            DateTime.UtcNow);
+        var caseId = Assert.IsType<ChatMessage>(created.Value).Id;
+        var eventId = await database.QuerySingleAsync<Guid>(
+            "SELECT event_id FROM digital.conversation_outbox WHERE conversation_id = @CaseId;", new { CaseId = caseId });
+
+        await Assert.ThrowsAsync<PostgresException>(() => database.ExecuteAsync("""
+            INSERT INTO digital.case_notifications (
+                event_id, case_id, client_id, recipient_kind, client_user_id,
+                event_type, case_version, idempotency_key, payload)
+            VALUES (@EventId, @CaseId, 42, 'Client', 8,
+                    'TicketCreated', 1, 'cross-tenant-recipient', '{}'::jsonb);
+            """, new { EventId = eventId, CaseId = caseId }));
+        await Assert.ThrowsAsync<PostgresException>(() => database.ExecuteAsync("""
+            INSERT INTO digital.case_notifications (
+                event_id, case_id, client_id, recipient_kind, admin_user_id,
+                event_type, case_version, idempotency_key, payload)
+            VALUES (@EventId, @CaseId, 42, 'Admin', 999,
+                    'TicketCreated', 1, 'missing-admin-recipient', '{}'::jsonb);
+            """, new { EventId = eventId, CaseId = caseId }));
+        Assert.Equal(2L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.case_notifications WHERE case_id = @CaseId;", new { CaseId = caseId }));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CaseOutboxDeliveryFailure_LeavesCommittedRetryableNotificationWork()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: false);
+        var created = await repository.CreateCaseAsync(
+            new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
+            ConversationTypes.TrainingTicket,
+            InstructionCategories.Ticket,
+            "Retryable delivery",
+            null,
+            null,
+            null,
+            DateTime.UtcNow);
+        var caseId = Assert.IsType<ChatMessage>(created.Value).Id;
+        var outbox = new ConversationOutboxRepository(database.ConnectionString, attachmentsEnabled: false);
+        var now = DateTime.UtcNow.AddMinutes(1);
+        var item = Assert.Single(await outbox.ClaimAsync("failure-worker", 10, now, now.AddMinutes(1)));
+
+        await outbox.MarkFailedAsync(item.EventId, "failure-worker", "realtime_publish_failed", now.AddMinutes(2), false);
+
+        Assert.Equal(1, await database.QuerySingleAsync<int>(
+            "SELECT attempt_count FROM digital.conversation_outbox WHERE event_id = @EventId;", new { item.EventId }));
+        Assert.Equal(1L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.conversation_outbox WHERE event_id = @EventId AND processed_at IS NULL AND dead_lettered_at IS NULL;", new { item.EventId }));
+        Assert.Equal(2L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.case_notifications WHERE case_id = @CaseId;", new { CaseId = caseId }));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CaseOutboxDuplicateWorkerExecution_DoesNotDuplicateUserVisibleNotification()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: false);
+        var created = await repository.CreateCaseAsync(
+            new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
+            ConversationTypes.TrainingTicket,
+            InstructionCategories.Ticket,
+            "One visible notification",
+            null,
+            null,
+            null,
+            DateTime.UtcNow);
+        var caseId = Assert.IsType<ChatMessage>(created.Value).Id;
+        var outbox = new ConversationOutboxRepository(database.ConnectionString, attachmentsEnabled: false);
+        var now = DateTime.UtcNow.AddMinutes(1);
+        var firstClaim = Assert.Single(await outbox.ClaimAsync("worker-one", 10, now, now.AddMinutes(1)));
+        await outbox.MarkProcessedAsync(firstClaim.EventId, "worker-one", now);
+
+        var duplicateClaim = await outbox.ClaimAsync("worker-two", 10, now.AddMinutes(2), now.AddMinutes(3));
+
+        Assert.Empty(duplicateClaim);
+        Assert.Equal(2L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.case_notifications WHERE case_id = @CaseId;", new { CaseId = caseId }));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task UncommittedCaseOutboxRow_IsNotClaimedForSignalRDelivery()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await SeedTicketCaseAsync(database, 3099, 42);
+        var eventId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        await using var connection = new NpgsqlConnection(database.ConnectionString);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        await connection.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO digital.conversation_outbox (
+                event_id, conversation_id, client_id, conversation_kind, conversation_state,
+                client_user_id, admin_user_id, access_version, message_id, event_type,
+                schema_version, payload, occurred_at, available_at, attempt_count, idempotency_key)
+            VALUES (
+                @EventId, 3099, 42, 'Ticket', 'Active', NULL, NULL, 1, NULL, 'TicketUpdated',
+                1, '{}'::jsonb, @Now, @Now, 0, @IdempotencyKey);
+            """, new { EventId = eventId, Now = now, IdempotencyKey = $"case:3099:test:{eventId:N}" }, transaction));
+
+        var outbox = new ConversationOutboxRepository(database.ConnectionString, attachmentsEnabled: false);
+        var beforeCommit = await outbox.ClaimAsync("signalr-worker", 10, now.AddMinutes(1), now.AddMinutes(2));
+        Assert.Empty(beforeCommit);
+
+        await transaction.CommitAsync();
+
+        var afterCommit = await outbox.ClaimAsync("signalr-worker", 10, now.AddMinutes(1), now.AddMinutes(2));
+        Assert.Equal(eventId, Assert.Single(afterCommit).EventId);
     }
 
     [PostgreSqlIntegrationFact]
@@ -944,7 +1204,9 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                 CREATE TABLE admin.users (
                     id integer PRIMARY KEY,
                     user_name text,
-                    full_name text
+                    full_name text,
+                    status boolean NOT NULL DEFAULT TRUE,
+                    deactive_date timestamptz
                 );
                 CREATE TABLE internal.support_users (
                     id integer PRIMARY KEY,
@@ -954,7 +1216,9 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                     status boolean NOT NULL DEFAULT TRUE,
                     deactive_date timestamptz
                 );
-                INSERT INTO admin.users VALUES (9, 'admin', 'Admin');
+                INSERT INTO admin.users (id, user_name, full_name) VALUES
+                    (9, 'admin', 'Admin'),
+                    (10, 'admin-two', 'Admin Two');
                 INSERT INTO internal.support_users VALUES
                     (7, 42, 'client-42', 'Client 42'),
                     (8, 43, 'client-43', 'Client 43');
@@ -1076,6 +1340,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             await ApplyMigrationAsync(
                 "202607261040_enforce_attachment_relational_invariants.sql");
             await ApplyMigrationAsync("202608041100_create_case_audit.sql");
+            await ApplyMigrationAsync("202608051000_add_case_notification_delivery.sql");
         }
 
         public async Task SeedGroupConversationsAsync()

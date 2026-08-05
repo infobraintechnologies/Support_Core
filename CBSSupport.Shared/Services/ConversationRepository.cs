@@ -196,7 +196,7 @@ public sealed class ConversationRepository : IConversationRepository
                     event_id, conversation_id, client_id, conversation_kind,
                     conversation_state, client_user_id, admin_user_id, access_version,
                     message_id, event_type, schema_version, payload,
-                    occurred_at, available_at, attempt_count)
+                    occurred_at, available_at, attempt_count, idempotency_key)
                 VALUES (
                     @EventId, @ConversationId, @ClientId, @ConversationKind,
                     'Active', NULL, NULL, 1,
@@ -206,7 +206,7 @@ public sealed class ConversationRepository : IConversationRepository
                         'conversationId', @ConversationId,
                         'messageId', @ConversationId,
                         'sequence', 1),
-                    @OccurredAt, @OccurredAt, 0);
+                    @OccurredAt, @OccurredAt, 0, @OutboxIdempotencyKey);
                 """;
             await connection.ExecuteAsync(new CommandDefinition(
                 initializeSql,
@@ -220,10 +220,24 @@ public sealed class ConversationRepository : IConversationRepository
                     ActorKind = actor.IsAdmin ? "Admin" : "Client",
                     AdminUserId = actor.IsAdmin ? checked((int)actor.UserId) : (int?)null,
                     ClientUserId = actor.IsAdmin ? (int?)null : checked((int)actor.UserId),
-                    CorrelationId = Activity.Current?.Id
+                    CorrelationId = Activity.Current?.Id,
+                    OutboxIdempotencyKey = $"case:{conversationId}:created:1"
                 },
                 transaction,
                 cancellationToken: cancellationToken));
+            await CaseNotificationWriter.InsertAsync(
+                connection,
+                transaction,
+                conversationId,
+                clientId,
+                instructionCategoryId == InstructionCategories.Ticket ? "TicketCreated" : "InquiryCreated",
+                1,
+                eventId,
+                $"case:{conversationId}:created:1",
+                actor.IsAdmin,
+                checked((int)actor.UserId),
+                occurredAt,
+                cancellationToken);
 
             const string selectSql = """
                 SELECT i.id,
@@ -1057,13 +1071,41 @@ public sealed class ConversationRepository : IConversationRepository
             }
         }
 
+        if (access.IsCase)
+        {
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO digital.conversation_audit (
+                    conversation_id, client_id, action, actor_kind,
+                    admin_user_id, client_user_id, occurred_at, details)
+                VALUES (
+                    @ConversationId, @ClientId, 'CaseReplyCreated', @ActorKind,
+                    @AdminUserId, @ClientUserId, @OccurredAt,
+                    jsonb_build_object('messageId', @MessageId, 'caseVersion', @CaseVersion));
+                """,
+                new
+                {
+                    ConversationId = conversationId,
+                    ClientId = access.ClientId!.Value,
+                    ActorKind = actor.IsAdmin ? "Admin" : "Client",
+                    AdminUserId = actor.IsAdmin ? checked((int)actor.UserId) : (int?)null,
+                    ClientUserId = actor.IsAdmin ? (int?)null : checked((int)actor.UserId),
+                    OccurredAt = sentAt,
+                    MessageId = messageId,
+                    CaseVersion = access.Version
+                },
+                transaction,
+                cancellationToken: cancellationToken));
+        }
+
         var eventId = Guid.NewGuid();
         const string outboxSql = """
             INSERT INTO digital.conversation_outbox (
                 event_id, conversation_id, client_id, conversation_kind,
                 conversation_state, client_user_id, admin_user_id, access_version,
                 message_id, event_type,
-                schema_version, payload, occurred_at, available_at, attempt_count)
+                schema_version, payload, occurred_at, available_at, attempt_count,
+                idempotency_key)
             SELECT @EventId, ca.conversation_id, ca.client_id, ca.conversation_kind,
                 ca.state, ca.client_user_id, ca.admin_user_id, ca.version,
                 @MessageId, 'MessageCreated',
@@ -1072,8 +1114,9 @@ public sealed class ConversationRepository : IConversationRepository
                     'eventId', @EventId,
                     'conversationId', @ConversationId,
                     'messageId', @MessageId,
-                    'sequence', @Sequence),
-                @OccurredAt, @OccurredAt, 0
+                    'sequence', @Sequence,
+                    'caseVersion', @CaseVersion),
+                @OccurredAt, @OccurredAt, 0, @OutboxIdempotencyKey
             FROM digital.conversation_access ca
             WHERE ca.conversation_id = @ConversationId;
             """;
@@ -1085,10 +1128,28 @@ public sealed class ConversationRepository : IConversationRepository
                 ConversationId = conversationId,
                 MessageId = messageId,
                 Sequence = sequence.Value,
-                OccurredAt = sentAt
+                OccurredAt = sentAt,
+                CaseVersion = access.Version,
+                OutboxIdempotencyKey = $"conversation:{conversationId}:message:{messageId}"
             },
             transaction,
             cancellationToken: cancellationToken));
+        if (access.IsCase)
+        {
+            await CaseNotificationWriter.InsertAsync(
+                connection,
+                transaction,
+                conversationId,
+                access.ClientId!.Value,
+                "CaseReplyCreated",
+                access.Version,
+                eventId,
+                $"conversation:{conversationId}:message:{messageId}",
+                actor.IsAdmin,
+                checked((int)actor.UserId),
+                sentAt,
+                cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
 
         var createdAttachments = attachmentValidation.Value ?? [];
@@ -1774,19 +1835,27 @@ public sealed class ConversationRepository : IConversationRepository
                 event_id, conversation_id, client_id, conversation_kind,
                 conversation_state, client_user_id, admin_user_id, access_version,
                 message_id, event_type,
-                schema_version, payload, occurred_at, available_at, attempt_count)
+                schema_version, payload, occurred_at, available_at, attempt_count,
+                idempotency_key)
             SELECT @EventId, ca.conversation_id, ca.client_id, ca.conversation_kind,
                 ca.state, ca.client_user_id, ca.admin_user_id, ca.version,
                 NULL, @EventType,
                 1,
                 jsonb_build_object('eventId', @EventId, 'conversationId', @ConversationId),
-                @Now, @Now, 0
+                @Now, @Now, 0, @OutboxIdempotencyKey
             FROM digital.conversation_access ca
             WHERE ca.conversation_id = @ConversationId;
             """;
         await connection.ExecuteAsync(new CommandDefinition(
             sql,
-            new { EventId = eventId, ConversationId = conversationId, EventType = eventType, Now = now },
+            new
+            {
+                EventId = eventId,
+                ConversationId = conversationId,
+                EventType = eventType,
+                Now = now,
+                OutboxIdempotencyKey = $"conversation:{conversationId}:{eventType}:{eventId:N}"
+            },
             transaction,
             cancellationToken: cancellationToken));
     }

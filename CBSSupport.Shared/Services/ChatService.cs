@@ -1149,11 +1149,11 @@ namespace CBSSupport.Shared.Services
                         jsonb_build_object('caseVersion', @Version));
                     INSERT INTO digital.conversation_outbox (event_id, conversation_id, client_id, conversation_kind,
                         conversation_state, client_user_id, admin_user_id, access_version, message_id, event_type,
-                        schema_version, payload, occurred_at, available_at, attempt_count)
+                        schema_version, payload, occurred_at, available_at, attempt_count, idempotency_key)
                     VALUES (@EventId, @CaseId, @ClientId, @ConversationKind, 'Active', NULL, NULL, @Version,
                         NULL, @EventType, 1,
                         jsonb_build_object('eventId', @EventId, 'conversationId', @CaseId, 'caseVersion', @Version),
-                        @OccurredAt, @OccurredAt, 0);
+                        @OccurredAt, @OccurredAt, 0, @OutboxIdempotencyKey);
                     """;
                 await connection.ExecuteAsync(new CommandDefinition(auditAndOutboxSql,
                     new { CaseId = caseId, changed.ClientId, changed.Version, AuditAction = auditAction,
@@ -1162,8 +1162,22 @@ namespace CBSSupport.Shared.Services
                         PreviousVersion = expectedVersion,
                         Operation = instruction is null ? "StatusTransition" : "DetailsUpdated",
                         ChangedFieldNames = changedFieldNames,
-                        CorrelationId = correlationId },
+                        CorrelationId = correlationId,
+                        OutboxIdempotencyKey = $"case:{caseId}:mutation:{changed.Version}" },
                     transaction, cancellationToken: cancellationToken));
+                await CaseNotificationWriter.InsertAsync(
+                    connection,
+                    transaction,
+                    caseId,
+                    changed.ClientId,
+                    eventType,
+                    changed.Version,
+                    eventId,
+                    $"case:{caseId}:mutation:{changed.Version}",
+                    true,
+                    actorUserId.Value,
+                    occurredAt,
+                    cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return new(CaseMutationStatus.Updated, changed.Version, changed.ClientId);
             }
