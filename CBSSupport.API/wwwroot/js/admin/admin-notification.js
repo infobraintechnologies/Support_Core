@@ -29,14 +29,13 @@ window.AdminNotifications = (() => {
 
     async function loadNotifications() {
         try {
-            const response = await fetch('/v1/api/instructions/notifications/unread');
+            const response = await fetch('/api/v1/notifications?limit=20', { credentials: 'same-origin' });
             if (!response.ok) throw new Error('Failed to load notifications');
 
-            const unreadInstructions = await response.json();
-            const cachedReadNotifications = JSON.parse(localStorage.getItem('admin_read_notifications') || '[]');
-            const allNotifications = processNotifications(unreadInstructions, cachedReadNotifications);
+            const page = await response.json();
+            const allNotifications = processNotifications(page.items || []);
 
-            updateNotificationBadge(allNotifications.filter(n => !n.isRead).length);
+            updateNotificationBadge(page.unreadCount || 0);
             renderNotifications(allNotifications);
 
             return allNotifications;
@@ -46,38 +45,27 @@ window.AdminNotifications = (() => {
         }
     }
 
-    function processNotifications(unreadInstructions, cachedReadNotifications = []) {
+    function processNotifications(notificationRows) {
         const notifications = [];
 
-        unreadInstructions.forEach(instruction => {
+        notificationRows.forEach(row => {
             let notification = {
-                id: instruction.id,
-                title: '',
-                message: '',
-                type: '',
-                entityId: instruction.id,
-                entityType: '',
-                createdAt: instruction.insert_date || instruction.datetime,
-                isRead: instruction.notification_seen_by_admin === 1,
-                triggerUserName: instruction.sendername || 'System'
+                id: row.id,
+                title: row.title || 'Support update',
+                message: row.message || 'A support case was updated.',
+                type: 'message',
+                entityId: row.caseId,
+                entityType: 'message',
+                createdAt: row.createdAt,
+                isRead: Boolean(row.readAt)
             };
 
-            if (instruction.inst_category_id === 101) {
+            if (row.eventType.startsWith('Ticket')) {
                 notification.type = 'ticket';
                 notification.entityType = 'ticket';
-                notification.title = 'New Support Ticket';
-                notification.message = `New ticket: ${instruction.instruction?.substring(0, 50) || 'General Support'}...`;
-            } else if (instruction.inst_category_id === 102) {
+            } else if (row.eventType.startsWith('Inquiry')) {
                 notification.type = 'inquiry';
                 notification.entityType = 'inquiry';
-                notification.title = 'New Inquiry';
-                notification.message = `New inquiry: ${instruction.instruction?.substring(0, 50) || 'General Inquiry'}...`;
-            } else if (instruction.inst_category_id === 100) {
-                notification.type = 'message';
-                notification.entityType = 'message';
-                notification.title = 'New Message';
-                notification.message = `${instruction.sendername || 'Client'}: ${instruction.instruction?.substring(0, 50) || 'New message'}...`;
-                notification.entityId = instruction.instruction_id || instruction.id;
             }
 
             notification.timeAgo = AdminUtils.getTimeAgo(notification.createdAt);
@@ -85,17 +73,8 @@ window.AdminNotifications = (() => {
             notifications.push(notification);
         });
 
-        // Add cached read notifications
-        cachedReadNotifications.forEach(cachedNotification => {
-            if (!notifications.find(n => n.id === cachedNotification.id)) {
-                cachedNotification.isRead = true;
-                cachedNotification.timeAgo = AdminUtils.getTimeAgo(cachedNotification.createdAt);
-                notifications.push(cachedNotification);
-            }
-        });
-
         notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        return notifications.slice(0, 20);
+        return notifications;
     }
 
     function updateNotificationBadge(count) {
@@ -193,39 +172,21 @@ window.AdminNotifications = (() => {
     // 🔔 NOTIFICATION ACTIONS
     // ============================================
 
-    async function markNotificationAsRead(instructionId) {
+    async function markNotificationAsRead(notificationId) {
         try {
-            const response = await fetch(`/v1/api/instructions/${instructionId}/mark-seen-admin`, {
+            const response = await fetch(`/api/v1/notifications/${notificationId}/read`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' }
+                headers: requestHeaders(),
+                credentials: 'same-origin'
             });
 
             if (response.ok) {
-                const notificationElement = document.querySelector(`[data-id="${instructionId}"]`);
+                const notificationElement = document.querySelector(`[data-id="${notificationId}"]`);
                 if (notificationElement && notificationElement.classList.contains('unread')) {
                     notificationElement.classList.remove('unread');
-
-                    const notificationData = {
-                        id: parseInt(instructionId),
-                        entityId: notificationElement.dataset.entityId,
-                        entityType: notificationElement.dataset.entityType,
-                        title: notificationElement.querySelector('.notification-title').textContent,
-                        message: notificationElement.querySelector('.notification-message').textContent,
-                        timeAgo: notificationElement.querySelector('.notification-time').textContent,
-                        type: notificationElement.querySelector('.notification-icon').className.split(' ').find(c => ['ticket', 'inquiry', 'message', 'status_change'].includes(c)) || 'message',
-                        icon: notificationElement.querySelector('.notification-icon i').className,
-                        createdAt: new Date().toISOString(),
-                        isRead: true
-                    };
-
-                    const existingReadNotifications = JSON.parse(localStorage.getItem('admin_read_notifications') || '[]');
-                    const updatedReadNotifications = [notificationData, ...existingReadNotifications].slice(0, 20);
-                    localStorage.setItem('admin_read_notifications', JSON.stringify(updatedReadNotifications));
                 }
-
-                if (unreadNotificationCount > 0) {
-                    updateNotificationBadge(unreadNotificationCount - 1);
-                }
+                const changed = await response.json();
+                updateNotificationBadge(changed.unreadCount || 0);
             }
         } catch (error) {
             console.error('Error marking notification as read:', error);
@@ -234,43 +195,30 @@ window.AdminNotifications = (() => {
 
     async function markAllNotificationsAsRead() {
         try {
-            const response = await fetch('/v1/api/instructions/mark-all-seen-admin', {
+            const response = await fetch('/api/v1/notifications/read-all', {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' }
+                headers: requestHeaders(),
+                credentials: 'same-origin'
             });
 
             if (response.ok) {
-                const currentNotifications = Array.from(document.querySelectorAll('.notification-item')).map(item => {
-                    return {
-                        id: parseInt(item.dataset.id),
-                        entityId: item.dataset.entityId,
-                        entityType: item.dataset.entityType,
-                        title: item.querySelector('.notification-title').textContent,
-                        message: item.querySelector('.notification-message').textContent,
-                        timeAgo: item.querySelector('.notification-time').textContent,
-                        type: item.querySelector('.notification-icon').className.split(' ').find(c => ['ticket', 'inquiry', 'message', 'status_change'].includes(c)) || 'message',
-                        icon: item.querySelector('.notification-icon i').className,
-                        createdAt: new Date().toISOString(),
-                        isRead: true
-                    };
-                });
-
-                const existingReadNotifications = JSON.parse(localStorage.getItem('admin_read_notifications') || '[]');
-                const updatedReadNotifications = [...currentNotifications, ...existingReadNotifications].slice(0, 20);
-
-                localStorage.setItem('admin_read_notifications', JSON.stringify(updatedReadNotifications));
-
                 document.querySelectorAll('.notification-item.unread').forEach(item => {
                     item.classList.remove('unread');
                 });
 
-                updateNotificationBadge(0);
+                const result = await response.json();
+                updateNotificationBadge(result.unreadCount || 0);
                 AdminUtils.showNotification('All notifications marked as read', 'success');
             }
         } catch (error) {
             console.error('Error marking all notifications as read:', error);
             AdminUtils.showNotification('Failed to mark notifications as read', 'error');
         }
+    }
+
+    function requestHeaders() {
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        return token ? { 'RequestVerificationToken': token } : {};
     }
 
     // ============================================

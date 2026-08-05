@@ -217,6 +217,8 @@ public sealed class SignalRAudienceBroadcastIntegrationTests
             return Task.CompletedTask;
         }
 
+        public Task NotificationChanged(RealtimeEnvelope<NotificationChangedEvent> notification) => Task.CompletedTask;
+
         public Task TypingChanged(TypingChangedEvent typing) => Task.CompletedTask;
     }
 

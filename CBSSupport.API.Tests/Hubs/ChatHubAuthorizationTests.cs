@@ -505,6 +505,8 @@ public sealed class ChatHubAuthorizationTests
         public Task ConversationChanged(
             RealtimeEnvelope<ConversationChangedEvent> conversation) => Task.CompletedTask;
 
+        public Task NotificationChanged(RealtimeEnvelope<NotificationChangedEvent> notification) => Task.CompletedTask;
+
         public Task TypingChanged(TypingChangedEvent typing)
         {
             TypingCalls.Add(typing);

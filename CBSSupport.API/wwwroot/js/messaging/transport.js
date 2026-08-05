@@ -60,6 +60,9 @@
                 data: envelope?.data || envelope
             });
         });
+        connection.on("NotificationChanged", envelope => {
+            emit("notificationchanged", envelope?.data || envelope);
+        });
         connection.on("TypingChanged", typing => emit("typing", typing));
         connection.onreconnecting(error => emit("state", { state: "reconnecting", error }));
         connection.onclose(error => {

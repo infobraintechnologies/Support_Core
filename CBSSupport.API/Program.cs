@@ -173,6 +173,7 @@ builder.Services.AddSingleton<IConversationQueryService>(provider => new Convers
 builder.Services.AddSingleton<ICaseMutationCommandHandler>(_ => new CaseMutationCommandHandler(connectionString));
 builder.Services.AddSingleton<ITicketService, TicketService>();
 builder.Services.AddSingleton<IInquiryService, InquiryService>();
+builder.Services.AddSingleton<INotificationService>(_ => new NotificationService(connectionString));
 builder.Services.AddSingleton<IConversationRepository>(
     new ConversationRepository(connectionString, attachmentOptions.Enabled));
 builder.Services.AddSingleton<IConversationOutboxRepository>(
@@ -221,6 +222,7 @@ builder.Services.Configure<MessagingFeatureOptions>(
     builder.Configuration.GetSection(MessagingFeatureOptions.SectionName));
 builder.Services.AddSingleton<IUserIdProvider, NamespacedUserIdProvider>();
 builder.Services.AddSingleton<IConversationRealtimePublisher, SignalRConversationRealtimePublisher>();
+builder.Services.AddSingleton<INotificationRealtimePublisher, NotificationRealtimePublisher>();
 builder.Services.Configure<ConversationOutboxDispatcherOptions>(
     builder.Configuration.GetSection("Messaging:Outbox"));
 builder.Services.AddHostedService<ConversationOutboxDispatcher>();

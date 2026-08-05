@@ -1,6 +1,7 @@
 using CBSSupport.API.Hubs;
 using CBSSupport.Shared.Contracts;
 using CBSSupport.API.Configuration;
+using CBSSupport.Shared.Services;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 
@@ -8,12 +9,13 @@ namespace CBSSupport.API.Realtime;
 
 public sealed class SignalRConversationRealtimePublisher(
     IHubContext<ChatHub, IChatClient> hubContext,
+    INotificationService notifications,
     IOptions<MessagingFeatureOptions> featureOptions) : IConversationRealtimePublisher
 {
     private readonly MessagingFeatureOptions _features = featureOptions.Value;
 
     public SignalRConversationRealtimePublisher(IHubContext<ChatHub, IChatClient> hubContext)
-        : this(hubContext, Options.Create(new MessagingFeatureOptions
+        : this(hubContext, new NoopNotificationService(), Options.Create(new MessagingFeatureOptions
         {
             GroupEnabled = true,
             PrivateEnabled = true
@@ -21,7 +23,14 @@ public sealed class SignalRConversationRealtimePublisher(
     {
     }
 
-    public Task PublishAsync(
+    public SignalRConversationRealtimePublisher(
+        IHubContext<ChatHub, IChatClient> hubContext,
+        IOptions<MessagingFeatureOptions> featureOptions)
+        : this(hubContext, new NoopNotificationService(), featureOptions)
+    {
+    }
+
+    public async Task PublishAsync(
         ConversationOutboxItem item,
         CancellationToken cancellationToken = default)
     {
@@ -32,10 +41,10 @@ public sealed class SignalRConversationRealtimePublisher(
             || (string.Equals(item.ConversationKind, "Private", StringComparison.OrdinalIgnoreCase)
                 && !_features.PrivateEnabled))
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        return item.EventType switch
+        await (item.EventType switch
         {
             "MessageCreated" => PublishMessageCreatedAsync(item),
             "ConversationTransferred" or "ConversationArchived" or "ConversationApproved"
@@ -44,7 +53,8 @@ public sealed class SignalRConversationRealtimePublisher(
                 PublishConversationChangedAsync(item),
             _ => throw new InvalidOperationException(
                 $"Unsupported conversation outbox event type '{item.EventType}'.")
-        };
+        });
+        await PublishNotificationChangesAsync(item, cancellationToken);
     }
 
     private Task PublishMessageCreatedAsync(ConversationOutboxItem item)
@@ -115,5 +125,33 @@ public sealed class SignalRConversationRealtimePublisher(
 
         throw new InvalidOperationException(
             $"Unsupported conversation audience kind '{item.ConversationKind}'.");
+    }
+
+    private async Task PublishNotificationChangesAsync(ConversationOutboxItem item, CancellationToken cancellationToken)
+    {
+        var deliveries = await notifications.GetChangesForEventAsync(item.EventId, cancellationToken);
+        foreach (var delivery in deliveries)
+        {
+            var userId = delivery.IsAdmin
+                ? RealtimeUserIds.Admin(delivery.RecipientUserId)
+                : RealtimeUserIds.Client(delivery.ClientId, delivery.RecipientUserId);
+            var envelope = new RealtimeEnvelope<NotificationChangedEvent>(
+                item.EventId,
+                1,
+                "NotificationChanged",
+                item.OccurredAt,
+                delivery.Change.Notification!.CaseId,
+                0,
+                delivery.Change);
+            await hubContext.Clients.User(userId).NotificationChanged(envelope);
+        }
+    }
+
+    private sealed class NoopNotificationService : INotificationService
+    {
+        public Task<NotificationPage> ListAsync(NotificationRecipient recipient, int pageSize, string? cursor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<NotificationChangedEvent?> MarkReadAsync(NotificationRecipient recipient, long notificationId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<NotificationBulkReadResult> MarkAllReadAsync(NotificationRecipient recipient, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<NotificationDelivery>> GetChangesForEventAsync(Guid eventId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<NotificationDelivery>>([]);
     }
 }

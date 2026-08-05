@@ -65,7 +65,17 @@ internal static class CaseNotificationWriter
                        'caseId', @CaseId,
                        'eventType', @NotificationEventType,
                        'caseVersion', @CaseVersion,
-                       'payloadVersion', 1),
+                       'payloadVersion', 1,
+                       'title', CASE
+                           WHEN @NotificationEventType LIKE 'Ticket%' THEN 'Ticket update'
+                           WHEN @NotificationEventType LIKE 'Inquiry%' THEN 'Inquiry update'
+                           WHEN @NotificationEventType = 'CaseReplyCreated' THEN 'New case reply'
+                           ELSE 'Support update' END,
+                       'message', CASE
+                           WHEN @NotificationEventType LIKE 'Ticket%' THEN 'A ticket was updated.'
+                           WHEN @NotificationEventType LIKE 'Inquiry%' THEN 'An inquiry was updated.'
+                           WHEN @NotificationEventType = 'CaseReplyCreated' THEN 'A case has a new reply.'
+                           ELSE 'A support case was updated.' END),
                    @OccurredAt
             FROM recipients
             ON CONFLICT (idempotency_key) DO NOTHING;

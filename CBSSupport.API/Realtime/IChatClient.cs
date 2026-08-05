@@ -8,5 +8,7 @@ public interface IChatClient
 
     Task ConversationChanged(RealtimeEnvelope<ConversationChangedEvent> conversation);
 
+    Task NotificationChanged(RealtimeEnvelope<NotificationChangedEvent> notification);
+
     Task TypingChanged(TypingChangedEvent typing);
 }
