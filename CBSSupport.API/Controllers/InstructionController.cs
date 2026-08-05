@@ -213,17 +213,6 @@ public sealed class InstructionsController : ControllerBase
         long ticketId,
         UpdateInstructionRequest request)
     {
-        var existingTicket = await _service.GetInstructionByIdAsync(ticketId);
-        if (existingTicket is null)
-        {
-            return NotFound();
-        }
-
-        if (existingTicket.Completed is true)
-        {
-            return Conflict(new { message = "Cannot edit a resolved ticket." });
-        }
-
         var remarks = System.Text.Json.JsonSerializer.Serialize(new
         {
             priority = request.Priority ?? "Normal",
@@ -240,9 +229,25 @@ public sealed class InstructionsController : ControllerBase
             EditUser = User.GetRequiredUserId()
         };
 
-        return await _service.UpdateInstructionAsync(updatedTicket)
-            ? Ok(new { message = "Ticket updated successfully." })
-            : NotFound();
+        var mutation = await _service.UpdateTicketAsync(
+            updatedTicket,
+            request.ExpectedVersion,
+            HttpContext.RequestAborted);
+        return mutation.Status switch
+        {
+            CaseMutationStatus.Updated => Ok(new { message = "Ticket updated successfully.", version = mutation.Version }),
+            CaseMutationStatus.NotFound => NotFound(),
+            CaseMutationStatus.Conflict => Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Ticket conflict",
+                detail: "The ticket was changed by another request.",
+                extensions: new Dictionary<string, object?> { ["code"] = "ticket_version_conflict" }),
+            _ => Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Ticket conflict",
+                detail: "The requested update is no longer valid.",
+                extensions: new Dictionary<string, object?> { ["code"] = "invalid_ticket_state" })
+        };
     }
 
     [HttpGet("tickets/{ticketId:long}/details")]
@@ -266,26 +271,19 @@ public sealed class InstructionsController : ControllerBase
         UpdateStatusRequest request)
     {
         var userId = User.GetRequiredUserId();
-        if (!await _service.UpdateTicketStatusAsync(ticketId, request.IsCompleted, userId))
+        var mutation = await _service.UpdateTicketStatusAsync(
+            ticketId, request.IsCompleted, userId, request.ExpectedVersion, HttpContext.RequestAborted);
+        return mutation.Status switch
         {
-            return NotFound();
-        }
-
-        var ticket = await _service.GetTicketDetailsByIdAsync(ticketId);
-        if (ticket is not null)
-        {
-            await _hubContext.Clients.Group(RealtimeGroupNames.Tenant(ticket.ClientId)).SendAsync(
-                "TicketStatusUpdated",
-                new
-                {
-                    TicketId = ticketId,
-                    NewStatus = request.IsCompleted ? "Resolved" : "Open",
-                    UpdatedAt = DateTime.UtcNow
-                },
-                HttpContext.RequestAborted);
-        }
-
-        return Ok(new { success = true, message = "Ticket status updated successfully." });
+            CaseMutationStatus.Updated => Ok(new { success = true, message = "Ticket status updated successfully.", version = mutation.Version }),
+            CaseMutationStatus.NotFound => NotFound(),
+            CaseMutationStatus.Conflict => Problem(statusCode: StatusCodes.Status409Conflict,
+                title: "Ticket conflict", detail: "The ticket was changed by another request.",
+                extensions: new Dictionary<string, object?> { ["code"] = "ticket_version_conflict" }),
+            _ => Problem(statusCode: StatusCodes.Status409Conflict,
+                title: "Ticket conflict", detail: "The requested status transition is no longer valid.",
+                extensions: new Dictionary<string, object?> { ["code"] = "invalid_status_transition" })
+        };
     }
 
     [HttpPut("inquiries/{inquiryId:long}/status")]
@@ -295,26 +293,19 @@ public sealed class InstructionsController : ControllerBase
         UpdateStatusRequest request)
     {
         var userId = User.GetRequiredUserId();
-        if (!await _service.UpdateInquiryStatusAsync(inquiryId, request.IsCompleted, userId))
+        var mutation = await _service.UpdateInquiryStatusAsync(
+            inquiryId, request.IsCompleted, userId, request.ExpectedVersion, HttpContext.RequestAborted);
+        return mutation.Status switch
         {
-            return NotFound();
-        }
-
-        var inquiry = await _service.GetInquiryDetailsByIdAsync(inquiryId);
-        if (inquiry is not null)
-        {
-            await _hubContext.Clients.Group(RealtimeGroupNames.Tenant(inquiry.ClientId)).SendAsync(
-                "InquiryStatusUpdated",
-                new
-                {
-                    InquiryId = inquiryId,
-                    NewStatus = request.IsCompleted ? "Completed" : "Pending",
-                    UpdatedAt = DateTime.UtcNow
-                },
-                HttpContext.RequestAborted);
-        }
-
-        return Ok(new { success = true, message = "Inquiry status updated successfully." });
+            CaseMutationStatus.Updated => Ok(new { success = true, message = "Inquiry status updated successfully.", version = mutation.Version }),
+            CaseMutationStatus.NotFound => NotFound(),
+            CaseMutationStatus.Conflict => Problem(statusCode: StatusCodes.Status409Conflict,
+                title: "Inquiry conflict", detail: "The inquiry was changed by another request.",
+                extensions: new Dictionary<string, object?> { ["code"] = "inquiry_version_conflict" }),
+            _ => Problem(statusCode: StatusCodes.Status409Conflict,
+                title: "Inquiry conflict", detail: "The requested status transition is no longer valid.",
+                extensions: new Dictionary<string, object?> { ["code"] = "invalid_status_transition" })
+        };
     }
 
     [HttpGet("notifications/unread")]
@@ -444,7 +435,7 @@ public sealed class InstructionsController : ControllerBase
             return result.Status switch
             {
                 ConversationCommandStatus.Created when result.Value is not null =>
-                    Ok(result.Value),
+                    Ok(WithInitialCaseVersion(result.Value)),
                 ConversationCommandStatus.Unavailable => NotFound(),
                 ConversationCommandStatus.Conflict =>
                     Conflict(new { code = result.ErrorCode ?? "case_conflict" }),
@@ -589,5 +580,11 @@ public sealed class InstructionsController : ControllerBase
         };
 
         return instructionTypeId != 0;
+    }
+
+    private static ChatMessage WithInitialCaseVersion(ChatMessage message)
+    {
+        message.Version = 1;
+        return message;
     }
 }

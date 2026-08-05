@@ -5,6 +5,7 @@ using Dapper;
 using Npgsql;
 using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Linq;
 
@@ -526,11 +527,13 @@ namespace CBSSupport.Shared.Services
         public async Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId, long? clientId = null)
         {
             var sql = @"
-        SELECT id, datetime, instruction, assigned_to, status, completed, instruction_id
-        FROM digital.instructions
-        WHERE inst_type_id = @InstTypeId
-          AND (@ClientId IS NULL OR client_id = @ClientId)
-        ORDER BY datetime DESC;";
+        SELECT i.id, i.datetime, i.instruction, i.assigned_to, i.status, i.completed, i.instruction_id,
+               ca.version AS Version
+        FROM digital.instructions i
+        LEFT JOIN digital.conversation_access ca ON ca.conversation_id = i.id
+        WHERE i.inst_type_id = @InstTypeId
+          AND (@ClientId IS NULL OR i.client_id = @ClientId)
+        ORDER BY i.datetime DESC;";
 
             using (var connection = new NpgsqlConnection(_connectionString))
             {
@@ -606,8 +609,10 @@ namespace CBSSupport.Shared.Services
             i.expiry_date AS ExpiryDate,
             i.completed_on AS ResolvedDate,
             i.client_id AS ClientId,
-            i.inst_type_id AS InstTypeId
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
         WHERE i.inst_category_id = 101
@@ -641,8 +646,10 @@ namespace CBSSupport.Shared.Services
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
             i.completed_on AS ResolvedDate,
             i.client_id AS ClientId,
-            i.inst_type_id AS InstTypeId
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users au ON i.insert_user = au.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
@@ -683,8 +690,10 @@ namespace CBSSupport.Shared.Services
             i.expiry_date AS ExpiryDate,
             i.completed_on AS ResolvedDate,
             i.client_id AS ClientId,
-            i.inst_type_id AS InstTypeId
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
         WHERE i.client_id = @ClientId
@@ -722,8 +731,10 @@ namespace CBSSupport.Shared.Services
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
             i.completed_on AS ResolvedDate,
             i.client_id AS ClientId,
-            i.inst_type_id AS InstTypeId
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
         WHERE i.client_id = @ClientId
@@ -776,8 +787,10 @@ namespace CBSSupport.Shared.Services
             i.expiry_date AS ExpiryDate,
             i.completed_on AS ResolvedDate,
             i.client_id AS ClientId,
-            i.inst_type_id AS InstTypeId
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
         WHERE i.inst_category_id = 101
@@ -813,8 +826,10 @@ namespace CBSSupport.Shared.Services
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
             i.completed_on AS ResolvedDate,
             i.client_id AS ClientId,
-            i.inst_type_id AS InstTypeId
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users au ON i.insert_user = au.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id
@@ -851,47 +866,19 @@ namespace CBSSupport.Shared.Services
 
         public async Task<bool> UpdateInstructionAsync(ChatMessage instruction)
         {
-            var checkSql = @"
-        SELECT id, completed, instruction, remarks, expiry_date, edit_date, edit_user
-        FROM digital.instructions 
-        WHERE id = @Id";
-
-            var updateSql = @"
-        UPDATE digital.instructions 
-        SET instruction = @Instruction,
-            remarks = @Remarks,
-            expiry_date = @ExpiryDate,
-            edit_date = @EditDate,
-            edit_user = @EditUser
-        WHERE id = @Id
-          AND inst_category_id = 101
-          AND (completed = false OR completed IS NULL)";
-
-            using (var connection = new NpgsqlConnection(_connectionString))
-            {
-                var existingRecord = await connection.QueryFirstOrDefaultAsync(checkSql, new { Id = instruction.Id });
-                if (existingRecord == null)
-                {
-                    _logger.LogWarning("No updatable instruction found for ID {InstructionId}", instruction.Id);
-                    return false;
-                }
-
-                var parameters = new
-                {
-                    Id = instruction.Id,
-                    Instruction = instruction.Instruction,
-                    Remarks = instruction.Remarks,
-                    ExpiryDate = instruction.ExpiryDate,
-                    EditDate = instruction.EditDate,
-                    EditUser = instruction.EditUser
-                };
-
-                var rowsAffected = await connection.ExecuteAsync(updateSql, parameters);
-                _logger.LogDebug("Updated instruction {InstructionId}: {RowsAffected} row(s) affected", instruction.Id, rowsAffected);
-
-                return rowsAffected > 0;
-            }
+            await Task.CompletedTask;
+            _logger.LogWarning("Rejected legacy unversioned ticket update for instruction {InstructionId}", instruction.Id);
+            return false;
         }
+
+        public Task<CaseMutationResult> UpdateTicketAsync(
+            ChatMessage ticket,
+            long expectedVersion,
+            CancellationToken cancellationToken = default) =>
+            UpdateCaseAsync(ticket.Id, InstructionCategories.Ticket, ConversationKinds.Ticket,
+                ticket.EditUser.HasValue ? checked((int)ticket.EditUser.Value) : null,
+                expectedVersion, "TicketUpdated", "TicketUpdated",
+                ticket.Instruction, ticket.Remarks, ticket.ExpiryDate, false, cancellationToken);
 
         public async Task<IEnumerable<TicketViewModel>> GetSolvedTicketsAsync()
         {
@@ -1022,32 +1009,9 @@ namespace CBSSupport.Shared.Services
             long? completedByUserId,
             CancellationToken cancellationToken)
         {
-            var sql = @"
-        UPDATE digital.instructions 
-        SET completed = @IsCompleted,
-            completed_by = @CompletedByUserId,
-            completed_on = CASE WHEN @IsCompleted = true THEN @CompletedOn ELSE NULL END,
-            edit_date = @EditDate,
-            edit_user = @EditUser
-        WHERE id = @InquiryId AND inst_category_id = 102";
-
-            using (var connection = new NpgsqlConnection(_connectionString))
-            {
-                var rowsAffected = await connection.ExecuteAsync(new CommandDefinition(
-                    sql,
-                    new
-                    {
-                        InquiryId = inquiryId,
-                        IsCompleted = isCompleted,
-                        CompletedByUserId = completedByUserId,
-                        CompletedOn = isCompleted ? DateTime.UtcNow : (DateTime?)null,
-                        EditDate = DateTime.UtcNow,
-                        EditUser = completedByUserId
-                    },
-                    cancellationToken: cancellationToken));
-
-                return rowsAffected > 0;
-            }
+            await Task.CompletedTask;
+            _logger.LogWarning("Rejected legacy unversioned inquiry update for inquiry {InquiryId}", inquiryId);
+            return false;
         }
 
         public Task<bool> UpdateTicketStatusAsync(long ticketId, bool isCompleted, long? completedByUserId = null) =>
@@ -1059,33 +1023,158 @@ namespace CBSSupport.Shared.Services
             long? completedByUserId,
             CancellationToken cancellationToken)
         {
-            var sql = @"
-        UPDATE digital.instructions 
-        SET completed = @IsCompleted,
-            completed_by = @CompletedByUserId,
-            completed_on = CASE WHEN @IsCompleted = true THEN @CompletedOn ELSE NULL END,
-            edit_date = @EditDate,
-            edit_user = @EditUser
-        WHERE id = @TicketId AND inst_category_id = 101";
+            await Task.CompletedTask;
+            _logger.LogWarning("Rejected legacy unversioned ticket status update for ticket {TicketId}", ticketId);
+            return false;
+        }
 
-            using (var connection = new NpgsqlConnection(_connectionString))
+        public Task<CaseMutationResult> UpdateTicketStatusAsync(
+            long ticketId,
+            bool isCompleted,
+            long completedByUserId,
+            long expectedVersion,
+            CancellationToken cancellationToken = default) =>
+            UpdateCaseAsync(ticketId, InstructionCategories.Ticket, ConversationKinds.Ticket,
+                checked((int)completedByUserId), expectedVersion,
+                isCompleted ? "TicketResolved" : "TicketReopened", "TicketStatusUpdated",
+                null, null, null, isCompleted, cancellationToken);
+
+        public Task<CaseMutationResult> UpdateInquiryStatusAsync(
+            long inquiryId,
+            bool isCompleted,
+            long completedByUserId,
+            long expectedVersion,
+            CancellationToken cancellationToken = default) =>
+            UpdateCaseAsync(inquiryId, InstructionCategories.Inquiry, ConversationKinds.Inquiry,
+                checked((int)completedByUserId), expectedVersion,
+                isCompleted ? "InquiryCompleted" : "InquiryReopened", "InquiryStatusUpdated",
+                null, null, null, isCompleted, cancellationToken);
+
+        private async Task<CaseMutationResult> UpdateCaseAsync(
+            long caseId, short categoryId, string conversationKind, int? actorUserId,
+            long expectedVersion, string eventType, string auditAction,
+            string? instruction, string? remarks, DateTime? expiryDate, bool isCompleted,
+            CancellationToken cancellationToken)
+        {
+            if (caseId <= 0 || expectedVersion <= 0 || actorUserId is not > 0)
+                return new(CaseMutationStatus.NotFound);
+
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            try
             {
-                var rowsAffected = await connection.ExecuteAsync(new CommandDefinition(
-                    sql,
-                    new
-                    {
-                        TicketId = ticketId,
-                        IsCompleted = isCompleted,
-                        CompletedByUserId = completedByUserId,
-                        CompletedOn = isCompleted ? DateTime.UtcNow : (DateTime?)null,
-                        EditDate = DateTime.UtcNow,
-                        EditUser = completedByUserId
-                    },
-                    cancellationToken: cancellationToken));
+                var occurredAt = DateTime.UtcNow;
+                const string updateSql = """
+                    WITH changed_access AS (
+                        UPDATE digital.conversation_access access
+                        SET version = access.version + 1
+                        FROM digital.instructions root
+                        WHERE access.conversation_id = root.id
+                          AND access.conversation_id = @CaseId
+                          AND access.client_id = root.client_id
+                          AND access.conversation_kind = @ConversationKind
+                          AND access.state = 'Active'
+                          AND access.version = @ExpectedVersion
+                          AND root.inst_category_id = @CategoryId
+                          AND root.instruction_id = root.id
+                          AND (NOT @IsEdit OR COALESCE(root.completed, FALSE) = FALSE)
+                          AND (@IsEdit OR COALESCE(root.completed, FALSE) IS DISTINCT FROM @IsCompleted)
+                        RETURNING access.client_id AS ClientId, access.version AS Version
+                    ), changed_instruction AS (
+                        UPDATE digital.instructions root
+                        SET completed = CASE WHEN @IsEdit THEN root.completed ELSE @IsCompleted END,
+                            completed_by = CASE WHEN @IsEdit THEN root.completed_by ELSE @ActorUserId END,
+                            completed_on = CASE WHEN @IsEdit THEN root.completed_on WHEN @IsCompleted THEN @OccurredAt ELSE NULL END,
+                            instruction = CASE WHEN @IsEdit THEN @Instruction ELSE root.instruction END,
+                            remarks = CASE WHEN @IsEdit THEN @Remarks ELSE root.remarks END,
+                            expiry_date = CASE WHEN @IsEdit THEN @ExpiryDate ELSE root.expiry_date END,
+                            edit_date = @OccurredAt,
+                            edit_user = @ActorUserId
+                        FROM changed_access access
+                        WHERE root.id = @CaseId AND root.client_id = access.ClientId
+                        RETURNING root.id
+                    )
+                    SELECT ClientId, Version FROM changed_access
+                    WHERE EXISTS (SELECT 1 FROM changed_instruction);
+                    """;
+                var changed = await connection.QuerySingleOrDefaultAsync<CaseMutationRow>(new CommandDefinition(
+                    updateSql,
+                    new { CaseId = caseId, CategoryId = categoryId, ConversationKind = conversationKind,
+                        ExpectedVersion = expectedVersion, IsCompleted = isCompleted, IsEdit = instruction is not null,
+                        Instruction = instruction, Remarks = remarks, ExpiryDate = expiryDate,
+                        ActorUserId = actorUserId, OccurredAt = occurredAt },
+                    transaction, cancellationToken: cancellationToken));
+                if (changed is null)
+                {
+                    const string stateSql = """
+                        SELECT access.version
+                        FROM digital.conversation_access access
+                        JOIN digital.instructions root ON root.id = access.conversation_id
+                        WHERE access.conversation_id = @CaseId
+                          AND access.conversation_kind = @ConversationKind
+                          AND root.inst_category_id = @CategoryId
+                          AND root.instruction_id = root.id;
+                        """;
+                    var currentVersion = await connection.QuerySingleOrDefaultAsync<long?>(new CommandDefinition(
+                        stateSql, new { CaseId = caseId, ConversationKind = conversationKind, CategoryId = categoryId },
+                        transaction, cancellationToken: cancellationToken));
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return currentVersion is null ? new(CaseMutationStatus.NotFound)
+                        : currentVersion != expectedVersion ? new(CaseMutationStatus.Conflict)
+                        : new(CaseMutationStatus.InvalidState, currentVersion);
+                }
 
-                return rowsAffected > 0;
+                var eventId = Guid.NewGuid();
+                var changedFieldNames = instruction is null
+                    ? "[\"completed\",\"completedBy\",\"completedOn\"]"
+                    : "[\"instruction\",\"remarks\",\"expiryDate\"]";
+                var correlationId = Activity.Current?.Id;
+                const string auditAndOutboxSql = """
+                    INSERT INTO digital.case_audit (
+                        case_id, case_type, client_id, actor_user_id, actor_type,
+                        action, previous_version, resulting_version, occurred_at,
+                        changed_fields, correlation_id, is_system_generated)
+                    VALUES (
+                        @CaseId, @ConversationKind, @ClientId, @ActorUserId, 'Admin',
+                        @AuditAction, @PreviousVersion, @Version, @OccurredAt,
+                        jsonb_build_object(
+                            'operation', @Operation,
+                            'fields', CAST(@ChangedFieldNames AS jsonb)),
+                        @CorrelationId, FALSE);
+
+                    INSERT INTO digital.conversation_audit (conversation_id, client_id, action, actor_kind,
+                        admin_user_id, client_user_id, occurred_at, details)
+                    VALUES (@CaseId, @ClientId, @AuditAction, 'Admin', @ActorUserId, NULL, @OccurredAt,
+                        jsonb_build_object('caseVersion', @Version));
+                    INSERT INTO digital.conversation_outbox (event_id, conversation_id, client_id, conversation_kind,
+                        conversation_state, client_user_id, admin_user_id, access_version, message_id, event_type,
+                        schema_version, payload, occurred_at, available_at, attempt_count)
+                    VALUES (@EventId, @CaseId, @ClientId, @ConversationKind, 'Active', NULL, NULL, @Version,
+                        NULL, @EventType, 1,
+                        jsonb_build_object('eventId', @EventId, 'conversationId', @CaseId, 'caseVersion', @Version),
+                        @OccurredAt, @OccurredAt, 0);
+                    """;
+                await connection.ExecuteAsync(new CommandDefinition(auditAndOutboxSql,
+                    new { CaseId = caseId, changed.ClientId, changed.Version, AuditAction = auditAction,
+                        ActorUserId = actorUserId, OccurredAt = occurredAt, EventId = eventId,
+                        ConversationKind = conversationKind, EventType = eventType,
+                        PreviousVersion = expectedVersion,
+                        Operation = instruction is null ? "StatusTransition" : "DetailsUpdated",
+                        ChangedFieldNames = changedFieldNames,
+                        CorrelationId = correlationId },
+                    transaction, cancellationToken: cancellationToken));
+                await transaction.CommitAsync(cancellationToken);
+                return new(CaseMutationStatus.Updated, changed.Version, changed.ClientId);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
             }
         }
+
+        private sealed record CaseMutationRow(long ClientId, long Version);
 
         public Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null) =>
             GetTicketDetailsByIdAsync(ticketId, clientId, CancellationToken.None);
@@ -1110,8 +1199,10 @@ namespace CBSSupport.Shared.Services
             i.completed_on AS ResolvedDate,
             COALESCE(u.full_name, 'Unknown Client') AS ClientName,
             i.client_id AS ClientId,
-            i.inst_type_id AS InstTypeId
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users res ON i.completed_by = res.id
         WHERE i.id = @TicketId
@@ -1150,8 +1241,10 @@ namespace CBSSupport.Shared.Services
             i.instruction AS Description,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
             i.completed_on AS ResolvedDate,
-            i.inst_type_id AS InstTypeId
+            i.inst_type_id AS InstTypeId,
+            ca.version AS Version
         FROM digital.instructions i
+        JOIN digital.conversation_access ca ON ca.conversation_id = i.id
         LEFT JOIN internal.support_users u ON i.client_auth_user_id = u.id
         LEFT JOIN admin.users au ON i.insert_user = au.id
         LEFT JOIN digital.inst_types t ON i.inst_type_id = t.id

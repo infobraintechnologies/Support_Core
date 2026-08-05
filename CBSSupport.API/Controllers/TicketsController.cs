@@ -125,32 +125,21 @@ public sealed class AdminTicketsController(IChatService chatService) : Controlle
         UpdateCaseStatusRequest request,
         CancellationToken cancellationToken)
     {
-        var current = await chatService.GetTicketDetailsByIdAsync(caseId, null, cancellationToken);
-        if (current is null)
-        {
-            return NotFound();
-        }
-
-        if (!TryParseStatus(request.Status, out var isCompleted, out var targetLabel))
+        if (!TryParseStatus(request.Status, out var isCompleted, out _))
         {
             return ValidationProblem(
                 statusCode: StatusCodes.Status400BadRequest,
                 detail: "The ticket status must be 'Open' or 'Resolved'.");
         }
 
-        if (string.Equals(current.Status, targetLabel, StringComparison.OrdinalIgnoreCase))
-        {
-            return ConflictProblem("invalid_status_transition");
-        }
-
-        if (!await chatService.UpdateTicketStatusAsync(
-                caseId,
-                isCompleted,
-                User.GetRequiredUserId(),
-                cancellationToken))
-        {
+        var mutation = await chatService.UpdateTicketStatusAsync(
+            caseId, isCompleted, User.GetRequiredUserId(), request.ExpectedVersion, cancellationToken);
+        if (mutation.Status == CaseMutationStatus.NotFound)
             return NotFound();
-        }
+        if (mutation.Status == CaseMutationStatus.Conflict)
+            return ConflictProblem("ticket_version_conflict");
+        if (mutation.Status == CaseMutationStatus.InvalidState)
+            return ConflictProblem("invalid_status_transition");
 
         var updated = await chatService.GetTicketDetailsByIdAsync(caseId, null, cancellationToken);
         return updated is null ? NotFound() : Ok(CaseDtoMapper.ToTicket(updated));
@@ -160,7 +149,7 @@ public sealed class AdminTicketsController(IChatService chatService) : Controlle
         Problem(
             statusCode: StatusCodes.Status409Conflict,
             title: "Ticket conflict",
-            detail: "The requested status transition is invalid.",
+            detail: "The ticket was changed by another request or the transition is no longer valid.",
             extensions: new Dictionary<string, object?> { ["code"] = code });
 
     private static bool TryParseStatus(string? status, out bool isCompleted, out string targetLabel)

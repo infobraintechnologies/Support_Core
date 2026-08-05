@@ -35,6 +35,10 @@ public sealed class DatabaseMigrationContractTests
             sql,
             StringComparison.Ordinal);
         Assert.Contains(
+            "-- migration-transaction: true",
+            sql,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "message.inst_type_id IN (100, root.inst_type_id)",
             sql,
             StringComparison.Ordinal);
@@ -92,6 +96,24 @@ public sealed class DatabaseMigrationContractTests
             sql,
             StringComparison.Ordinal);
         Assert.Contains("'CaseHistorySequenced'", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CaseAuditMigration_CreatesAppendOnlyTenantIndexedHistory()
+    {
+        var sql = ReadMigration("202608041100_create_case_audit.sql");
+
+        Assert.Contains("CREATE TABLE digital.case_audit", sql, StringComparison.Ordinal);
+        Assert.Contains("previous_version", sql, StringComparison.Ordinal);
+        Assert.Contains("resulting_version", sql, StringComparison.Ordinal);
+        Assert.Contains("actor_user_id", sql, StringComparison.Ordinal);
+        Assert.Contains("changed_fields jsonb", sql, StringComparison.Ordinal);
+        Assert.Contains("correlation_id", sql, StringComparison.Ordinal);
+        Assert.Contains("ix_case_audit_case_occurred", sql, StringComparison.Ordinal);
+        Assert.Contains("ix_case_audit_client_occurred", sql, StringComparison.Ordinal);
+        Assert.Contains("trg_case_audit_append_only", sql, StringComparison.Ordinal);
+        Assert.Contains("REVOKE UPDATE, DELETE, TRUNCATE", sql, StringComparison.Ordinal);
+        Assert.Contains("GRANT INSERT ON TABLE digital.case_audit", sql, StringComparison.Ordinal);
     }
 
     [Fact]

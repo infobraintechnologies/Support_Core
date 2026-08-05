@@ -38,7 +38,9 @@ public sealed class SignalRConversationRealtimePublisher(
         return item.EventType switch
         {
             "MessageCreated" => PublishMessageCreatedAsync(item),
-            "ConversationTransferred" or "ConversationArchived" or "ConversationApproved" =>
+            "ConversationTransferred" or "ConversationArchived" or "ConversationApproved"
+                or "TicketResolved" or "TicketReopened" or "InquiryCompleted" or "InquiryReopened"
+                or "TicketUpdated" =>
                 PublishConversationChangedAsync(item),
             _ => throw new InvalidOperationException(
                 $"Unsupported conversation outbox event type '{item.EventType}'.")

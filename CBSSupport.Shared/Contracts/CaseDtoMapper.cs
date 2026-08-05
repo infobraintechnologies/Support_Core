@@ -34,7 +34,8 @@ public static class CaseDtoMapper
             null,
             created.DateTime,
             created.ExpiryDate,
-            created.CompletedOn);
+            created.CompletedOn,
+            1);
 
     public static InquiryResponse ToInquiry(
         ChatMessage created,
@@ -52,7 +53,8 @@ public static class CaseDtoMapper
             created.SenderName ?? string.Empty,
             description,
             created.DateTime,
-            created.CompletedOn);
+            created.CompletedOn,
+            1);
 
     public static TicketResponse ToTicket(TicketViewModel view) =>
         new(
@@ -69,7 +71,8 @@ public static class CaseDtoMapper
             view.Remarks,
             view.Date,
             view.ExpiryDate,
-            view.ResolvedDate);
+            view.ResolvedDate,
+            view.Version);
 
     public static InquiryResponse ToInquiry(InquiryViewModel view) =>
         new(
@@ -83,7 +86,8 @@ public static class CaseDtoMapper
             view.InquiredBy,
             view.Description,
             view.Date,
-            view.ResolvedDate);
+            view.ResolvedDate,
+            view.Version);
 
     private static string NormalizedPriority(string? priority) =>
         string.IsNullOrWhiteSpace(priority) ? CasePriorities.Normal : priority.Trim();

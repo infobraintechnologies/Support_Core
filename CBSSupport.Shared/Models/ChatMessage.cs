@@ -7,6 +7,7 @@ namespace CBSSupport.Shared.Models
     public class ChatMessage
     {
         public long Id { get; set; }
+        public long Version { get; set; }
         public DateTime DateTime { get; set; }
         public short InstTypeId { get; set; }
         public bool Status { get; set; }

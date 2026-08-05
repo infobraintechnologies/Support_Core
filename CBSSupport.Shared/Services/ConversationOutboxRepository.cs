@@ -54,7 +54,7 @@ public sealed class ConversationOutboxRepository(
                    message.id AS MessageRecordId,
                    message.instruction AS MessageText,
                    message.datetime AS MessageSentAt,
-                   COALESCE(message.insert_user, message.client_auth_user_id) AS SenderUserId,
+                   COALESCE(message.insert_user, message.client_auth_user_id)::bigint AS SenderUserId,
                    CASE WHEN message.id IS NULL THEN NULL
                         WHEN message.client_auth_user_id IS NULL THEN 'Admin'
                         ELSE 'Client' END AS SenderKind,

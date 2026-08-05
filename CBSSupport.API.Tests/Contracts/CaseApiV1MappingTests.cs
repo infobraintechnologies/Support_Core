@@ -34,6 +34,7 @@ public sealed class CaseApiV1MappingTests
         Assert.Equal("Open", response.Status);
         Assert.Equal(1001, response.ClientId);
         Assert.Equal("Example User", response.CreatedByName);
+        Assert.Equal(1, response.Version);
     }
 
     [Fact]
@@ -91,7 +92,8 @@ public sealed class CaseApiV1MappingTests
             Remarks = "remarks",
             InstTypeId = ConversationTypes.MigrationTicket,
             ExpiryDate = null,
-            ResolvedDate = DateTime.UtcNow
+            ResolvedDate = DateTime.UtcNow,
+            Version = 6
         };
 
         var response = CaseDtoMapper.ToTicket(view);
@@ -102,6 +104,7 @@ public sealed class CaseApiV1MappingTests
         Assert.Equal("Alice", response.CreatedByName);
         Assert.Equal("Bob", response.ResolvedByName);
         Assert.Equal(55, response.ClientId);
+        Assert.Equal(6, response.Version);
     }
 
     [Fact]
@@ -117,7 +120,8 @@ public sealed class CaseApiV1MappingTests
             ClientId = 9,
             Description = "body",
             Priority = "Normal",
-            InstTypeId = ConversationTypes.AccountsInquiry
+            InstTypeId = ConversationTypes.AccountsInquiry,
+            Version = 4
         };
 
         var response = CaseDtoMapper.ToInquiry(view);
@@ -126,6 +130,7 @@ public sealed class CaseApiV1MappingTests
         Assert.Equal(CaseTypes.Accounts, response.Type);
         Assert.Equal("Pending", response.Status);
         Assert.Equal("Alice", response.InquiredByName);
+        Assert.Equal(4, response.Version);
     }
 
     [Fact]

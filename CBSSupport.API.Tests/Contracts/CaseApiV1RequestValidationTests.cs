@@ -103,11 +103,21 @@ public sealed class CaseApiV1RequestValidationTests
     [Fact]
     public void UpdateCaseStatusRequest_MissingStatus_IsInvalid()
     {
-        var request = new UpdateCaseStatusRequest(null);
+        var request = new UpdateCaseStatusRequest(null, 0);
 
         Assert.Contains(
             Validate(request),
             r => r.MemberNames.Contains(nameof(UpdateCaseStatusRequest.Status)));
+    }
+
+    [Fact]
+    public void UpdateCaseStatusRequest_MissingExpectedVersion_IsInvalid()
+    {
+        var request = new UpdateCaseStatusRequest("Resolved", 0);
+
+        Assert.Contains(
+            Validate(request),
+            r => r.MemberNames.Contains(nameof(UpdateCaseStatusRequest.ExpectedVersion)));
     }
 
     [Fact]

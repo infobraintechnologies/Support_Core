@@ -1,12 +1,88 @@
 using CBSSupport.Shared.Contracts;
 using CBSSupport.Shared.Services;
 using Dapper;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 namespace CBSSupport.API.Tests.Integration;
 
 public sealed class CaseAttachmentPostgreSqlIntegrationTests
 {
+    [Fact]
+    public void MigrationRunner_UsesRepositorySourceInsteadOfGeneratedBuildCopies()
+    {
+        var path = TestDatabase.ResolveMigrationSourcePath(
+            "202607261005_normalize_legacy_case_reply_shape.sql");
+
+        Assert.True(File.Exists(path));
+        Assert.DoesNotContain($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", path,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", path,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith(Path.Combine("Database", "Migrations",
+            "202607261005_normalize_legacy_case_reply_shape.sql"), path,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task TransactionalMigration_WithLockTable_Succeeds()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+
+        await database.ExecuteMigrationScriptAsync("""
+            -- migration-transaction: true
+            LOCK TABLE digital.instructions IN SHARE ROW EXCLUSIVE MODE;
+            """);
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task TransactionalMigration_FailureRollsBackEarlierStatements()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ExecuteAsync("""
+            CREATE TABLE digital.migration_execution_probe (
+                id integer PRIMARY KEY
+            );
+            """);
+
+        await Assert.ThrowsAsync<PostgresException>(() => database.ExecuteMigrationScriptAsync("""
+            -- migration-transaction: true
+            INSERT INTO digital.migration_execution_probe (id) VALUES (1);
+            DO $failure$
+            BEGIN
+                RAISE EXCEPTION 'forced migration failure';
+            END
+            $failure$;
+            """));
+
+        Assert.Equal(0L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.migration_execution_probe;"));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task NonTransactionalMigration_SupportsCreateIndexConcurrently()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ExecuteAsync("""
+            CREATE TABLE digital.migration_execution_probe (
+                id integer PRIMARY KEY
+            );
+            """);
+
+        await database.ExecuteMigrationScriptAsync("""
+            -- migration-transaction: false
+            CREATE INDEX CONCURRENTLY ix_migration_execution_probe_id
+                ON digital.migration_execution_probe (id);
+            """);
+
+        Assert.True(await database.QuerySingleAsync<bool>("""
+            SELECT to_regclass('digital.ix_migration_execution_probe_id') IS NOT NULL;
+            """));
+    }
+
     [PostgreSqlIntegrationFact]
     public async Task CaseMigration_BackfillsRootRepliesAndAllocatorDeterministically()
     {
@@ -136,6 +212,22 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         Assert.Equal(2L, await database.QuerySingleAsync<long>(
             "SELECT next_sequence FROM digital.conversation_sequences WHERE conversation_id = @Id;",
             new { Id = conversationId }));
+        var creationAudit = await database.QuerySingleAsync<CaseAuditRow>("""
+            SELECT case_id AS CaseId, case_type AS CaseType, client_id AS ClientId,
+                   actor_user_id AS ActorUserId, actor_type AS ActorType,
+                   action AS Action, previous_version AS PreviousVersion,
+                   resulting_version AS ResultingVersion, is_system_generated AS IsSystemGenerated
+            FROM digital.case_audit
+            WHERE case_id = @CaseId;
+            """, new { CaseId = conversationId });
+        Assert.Equal("Ticket", creationAudit.CaseType);
+        Assert.Equal(42, creationAudit.ClientId);
+        Assert.Equal(7, creationAudit.ActorUserId);
+        Assert.Equal("Client", creationAudit.ActorType);
+        Assert.Equal("CaseCreated", creationAudit.Action);
+        Assert.Equal(0, creationAudit.PreviousVersion);
+        Assert.Equal(1, creationAudit.ResultingVersion);
+        Assert.False(creationAudit.IsSystemGenerated);
 
         var clientMessageId = Guid.NewGuid();
         var created = await repository.SendMessageAsync(
@@ -228,6 +320,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             "202607261005_normalize_legacy_case_reply_shape.sql");
         await database.ApplyMigrationAsync(
             "202607261010_modernize_case_conversations.sql");
+        await database.ApplyMigrationAsync("202608041100_create_case_audit.sql");
         var repository = new ConversationRepository(
             database.ConnectionString,
             attachmentsEnabled: false);
@@ -497,6 +590,157 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             """, new { Ids = new[] { pendingId, readyId, boundId } }));
     }
 
+    [PostgreSqlIntegrationFact]
+    public async Task CaseStatusUpdate_TwoCallersUseSameVersion_SecondConflictsWithoutOverwrite()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await SeedTicketCaseAsync(database, 3000, 42);
+        var firstCaller = new ChatService(database.ConnectionString, NullLogger<ChatService>.Instance);
+        var secondCaller = new ChatService(database.ConnectionString, NullLogger<ChatService>.Instance);
+
+        const long readVersion = 1;
+        using var activity = new System.Diagnostics.Activity("case-audit-test").Start();
+        var results = await Task.WhenAll(
+            firstCaller.UpdateTicketStatusAsync(3000, true, 9, readVersion, CancellationToken.None),
+            secondCaller.UpdateTicketStatusAsync(3000, true, 9, readVersion, CancellationToken.None));
+
+        Assert.Single(results, result => result.Status == CaseMutationStatus.Updated && result.Version == 2);
+        Assert.Single(results, result => result.Status == CaseMutationStatus.Conflict);
+        Assert.Equal(2L, await database.QuerySingleAsync<long>(
+            "SELECT version FROM digital.conversation_access WHERE conversation_id = 3000;"));
+        Assert.True(await database.QuerySingleAsync<bool>(
+            "SELECT completed FROM digital.instructions WHERE id = 3000;"));
+        Assert.Equal(1L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.conversation_audit WHERE conversation_id = 3000 AND action = 'TicketStatusUpdated';"));
+        Assert.Equal(2L, await database.QuerySingleAsync<long>(
+            "SELECT access_version FROM digital.conversation_outbox WHERE conversation_id = 3000;"));
+        var audit = await database.QuerySingleAsync<CaseAuditRow>("""
+            SELECT case_id AS CaseId, case_type AS CaseType, client_id AS ClientId,
+                   actor_user_id AS ActorUserId, actor_type AS ActorType,
+                   action AS Action, previous_version AS PreviousVersion,
+                   resulting_version AS ResultingVersion, is_system_generated AS IsSystemGenerated
+            FROM digital.case_audit
+            WHERE case_id = 3000;
+            """);
+        Assert.Equal(3000, audit.CaseId);
+        Assert.Equal("Ticket", audit.CaseType);
+        Assert.Equal(42, audit.ClientId);
+        Assert.Equal(9, audit.ActorUserId);
+        Assert.Equal("Admin", audit.ActorType);
+        Assert.Equal("TicketStatusUpdated", audit.Action);
+        Assert.Equal(1, audit.PreviousVersion);
+        Assert.Equal(2, audit.ResultingVersion);
+        Assert.False(audit.IsSystemGenerated);
+        Assert.Equal(0L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.case_audit WHERE case_id = 3000 AND client_id <> 42;"));
+        Assert.False(string.IsNullOrWhiteSpace(await database.QuerySingleAsync<string>(
+            "SELECT correlation_id FROM digital.case_audit WHERE case_id = 3000;")));
+        var changedFields = await database.QuerySingleAsync<string>(
+            "SELECT changed_fields::text FROM digital.case_audit WHERE case_id = 3000;");
+        Assert.Contains("StatusTransition", changedFields, StringComparison.Ordinal);
+        Assert.DoesNotContain("Original ticket text", changedFields, StringComparison.Ordinal);
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CaseStatusUpdate_AuditInsertFailure_RollsBackCaseMutationAndAudit()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await SeedTicketCaseAsync(database, 3001, 42);
+        await database.ExecuteAsync("""
+            CREATE FUNCTION digital.fail_case_audit_insert()
+            RETURNS trigger LANGUAGE plpgsql AS $function$
+            BEGIN
+                RAISE EXCEPTION 'forced audit failure';
+            END;
+            $function$;
+            CREATE TRIGGER trg_fail_case_audit_insert
+            BEFORE INSERT ON digital.case_audit
+            FOR EACH ROW EXECUTE FUNCTION digital.fail_case_audit_insert();
+            """);
+        var service = new ChatService(database.ConnectionString, NullLogger<ChatService>.Instance);
+
+        await Assert.ThrowsAsync<PostgresException>(() =>
+            service.UpdateTicketStatusAsync(3001, true, 9, 1, CancellationToken.None));
+
+        Assert.Equal(1L, await database.QuerySingleAsync<long>(
+            "SELECT version FROM digital.conversation_access WHERE conversation_id = 3001;"));
+        Assert.False(await database.QuerySingleAsync<bool>(
+            "SELECT completed FROM digital.instructions WHERE id = 3001;"));
+        Assert.Equal(0L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.case_audit WHERE case_id = 3001;"));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CaseAudit_ApplicationRoleCannotReadUpdateOrDeleteHistory()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await SeedTicketCaseAsync(database, 3002, 42);
+        var roleName = $"cbs_case_audit_test_{Guid.NewGuid():N}";
+        try
+        {
+            await database.ExecuteAsync($$"""
+                CREATE ROLE "{{roleName}}" NOLOGIN;
+                GRANT "{{roleName}}" TO CURRENT_USER;
+                GRANT USAGE ON SCHEMA digital TO "{{roleName}}";
+                GRANT INSERT ON digital.case_audit TO "{{roleName}}";
+                GRANT USAGE ON SEQUENCE digital.case_audit_audit_id_seq TO "{{roleName}}";
+                """);
+
+            await using var connection = new NpgsqlConnection(database.ConnectionString);
+            await connection.OpenAsync();
+            await connection.ExecuteAsync($$"""SET ROLE "{{roleName}}";""");
+            await Assert.ThrowsAsync<PostgresException>(() => connection.ExecuteAsync(
+                "SELECT * FROM digital.case_audit;"));
+            await Assert.ThrowsAsync<PostgresException>(() => connection.ExecuteAsync(
+                "UPDATE digital.case_audit SET action = 'tampered' WHERE audit_id = 1;"));
+            await Assert.ThrowsAsync<PostgresException>(() => connection.ExecuteAsync(
+                "DELETE FROM digital.case_audit WHERE audit_id = 1;"));
+            await connection.ExecuteAsync("RESET ROLE;");
+        }
+        finally
+        {
+            await database.ExecuteAsync($$"""
+                DO $cleanup$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{roleName}}') THEN
+                        EXECUTE format(
+                            'REVOKE ALL PRIVILEGES ON TABLE digital.case_audit FROM %I',
+                            '{{roleName}}');
+                        EXECUTE format(
+                            'REVOKE ALL PRIVILEGES ON SEQUENCE digital.case_audit_audit_id_seq FROM %I',
+                            '{{roleName}}');
+                        EXECUTE format(
+                            'REVOKE ALL PRIVILEGES ON SCHEMA digital FROM %I',
+                            '{{roleName}}');
+                        EXECUTE format('REVOKE %I FROM CURRENT_USER', '{{roleName}}');
+                        EXECUTE format('DROP ROLE %I', '{{roleName}}');
+                    END IF;
+                END
+                $cleanup$;
+                """);
+        }
+    }
+
+    private static Task SeedTicketCaseAsync(TestDatabase database, long caseId, long clientId) =>
+        database.ExecuteAsync("""
+            INSERT INTO digital.instructions (
+                id, datetime, inst_category_id, inst_type_id, instruction, status,
+                client_auth_user_id, client_id, inst_channel, instruction_id, conversation_sequence, completed)
+            VALUES (@CaseId, now(), 101, 110, 'Original ticket text', TRUE,
+                    7, @ClientId, 'chat', @CaseId, 1, FALSE);
+            INSERT INTO digital.conversation_access (
+                conversation_id, client_id, conversation_kind, state, version, created_at)
+            VALUES (@CaseId, @ClientId, 'Ticket', 'Active', 1, now());
+            INSERT INTO digital.conversation_sequences (conversation_id, next_sequence)
+            VALUES (@CaseId, 2);
+            """, new { CaseId = caseId, ClientId = clientId });
+
     private const string PendingAttachmentInsert = """
         INSERT INTO digital.attachments (
             id, client_id, conversation_id, message_id, position,
@@ -568,6 +812,17 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             now);
 
     private sealed record SequenceRow(long Id, long Sequence);
+
+    private sealed record CaseAuditRow(
+        long CaseId,
+        string CaseType,
+        long ClientId,
+        long ActorUserId,
+        string ActorType,
+        string Action,
+        long PreviousVersion,
+        long ResultingVersion,
+        bool IsSystemGenerated);
 
     private sealed class TestDatabase : IAsyncDisposable
     {
@@ -656,6 +911,10 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                     remarks text,
                     expiry_date timestamptz,
                     completed boolean,
+                    completed_by integer,
+                    completed_on timestamptz,
+                    edit_date timestamptz,
+                    edit_user integer,
                     client_message_id uuid,
                     conversation_sequence bigint,
                     CONSTRAINT ck_instructions_conversation_sequence_shape CHECK (
@@ -748,6 +1007,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             await ApplyMigrationAsync("202607261030_harden_r2_attachment_lifecycle.sql");
             await ApplyMigrationAsync(
                 "202607261040_enforce_attachment_relational_invariants.sql");
+            await ApplyMigrationAsync("202608041100_create_case_audit.sql");
         }
 
         public async Task SeedGroupConversationsAsync()
@@ -774,8 +1034,15 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                 """);
         }
 
-        public Task ApplyMigrationAsync(string fileName) =>
-            ExecuteAsync(File.ReadAllText(Path.GetFullPath(Path.Combine(
+        public Task ApplyMigrationAsync(
+            string fileName,
+            CancellationToken cancellationToken = default) =>
+            ExecuteMigrationScriptAsync(
+                File.ReadAllText(ResolveMigrationSourcePath(fileName)),
+                cancellationToken);
+
+        public static string ResolveMigrationSourcePath(string fileName) =>
+            Path.GetFullPath(Path.Combine(
                 AppContext.BaseDirectory,
                 "..",
                 "..",
@@ -783,7 +1050,48 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                 "..",
                 "Database",
                 "Migrations",
-                fileName))));
+                fileName));
+
+        public async Task ExecuteMigrationScriptAsync(
+            string sql,
+            CancellationToken cancellationToken = default)
+        {
+            await using var connection = new NpgsqlConnection(ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            if (!IsTransactionalMigration(sql))
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    sql,
+                    cancellationToken: cancellationToken));
+                return;
+            }
+
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await connection.ExecuteAsync(new CommandDefinition(
+                    sql,
+                    transaction: transaction,
+                    cancellationToken: cancellationToken));
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        }
+
+        private static bool IsTransactionalMigration(string sql)
+        {
+            const string directivePrefix = "-- migration-transaction:";
+            var directive = sql.Split('\n').Take(20).FirstOrDefault(line =>
+                line.TrimStart().StartsWith(directivePrefix, StringComparison.OrdinalIgnoreCase));
+
+            return directive is null || !directive[(directive.IndexOf(':') + 1)..].Trim()
+                .Equals("false", StringComparison.OrdinalIgnoreCase);
+        }
 
         public async Task ExecuteAsync(string sql, object? parameters = null)
         {

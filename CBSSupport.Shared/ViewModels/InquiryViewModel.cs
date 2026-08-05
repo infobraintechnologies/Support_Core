@@ -15,5 +15,6 @@ namespace CBSSupport.Shared.ViewModels
         public string Priority { get; set; }
         public DateTime? ResolvedDate { get; set; }
         public short InstTypeId { get; set; }
+        public long Version { get; set; }
     }
 }

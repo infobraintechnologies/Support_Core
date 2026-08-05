@@ -52,6 +52,14 @@ window.AdminSignalR = (() => {
 
         messaging.on("conversationchanged", change => {
             window.AdminChat?.handleConversationChanged(change);
+            if (change?.eventType === "TicketResolved"
+                || change?.eventType === "TicketReopened"
+                || change?.eventType === "TicketUpdated") {
+                window.AdminTickets?.getTicketsTable?.()?.ajax.reload(null, false);
+            }
+            if (change?.eventType === "InquiryCompleted" || change?.eventType === "InquiryReopened") {
+                window.AdminInquiries?.getInquiriesTable?.()?.ajax.reload(null, false);
+            }
         });
 
         // Setup message handlers

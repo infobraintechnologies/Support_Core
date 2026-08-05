@@ -125,32 +125,21 @@ public sealed class AdminInquiriesController(IChatService chatService) : Control
         UpdateCaseStatusRequest request,
         CancellationToken cancellationToken)
     {
-        var current = await chatService.GetInquiryDetailsByIdAsync(caseId, null, cancellationToken);
-        if (current is null)
-        {
-            return NotFound();
-        }
-
-        if (!TryParseStatus(request.Status, out var isCompleted, out var targetLabel))
+        if (!TryParseStatus(request.Status, out var isCompleted, out _))
         {
             return ValidationProblem(
                 statusCode: StatusCodes.Status400BadRequest,
                 detail: "The inquiry status must be 'Pending' or 'Completed'.");
         }
 
-        if (string.Equals(current.Outcome, targetLabel, StringComparison.OrdinalIgnoreCase))
-        {
-            return ConflictProblem("invalid_status_transition");
-        }
-
-        if (!await chatService.UpdateInquiryStatusAsync(
-                caseId,
-                isCompleted,
-                User.GetRequiredUserId(),
-                cancellationToken))
-        {
+        var mutation = await chatService.UpdateInquiryStatusAsync(
+            caseId, isCompleted, User.GetRequiredUserId(), request.ExpectedVersion, cancellationToken);
+        if (mutation.Status == CaseMutationStatus.NotFound)
             return NotFound();
-        }
+        if (mutation.Status == CaseMutationStatus.Conflict)
+            return ConflictProblem("inquiry_version_conflict");
+        if (mutation.Status == CaseMutationStatus.InvalidState)
+            return ConflictProblem("invalid_status_transition");
 
         var updated = await chatService.GetInquiryDetailsByIdAsync(caseId, null, cancellationToken);
         return updated is null ? NotFound() : Ok(CaseDtoMapper.ToInquiry(updated));
@@ -160,7 +149,7 @@ public sealed class AdminInquiriesController(IChatService chatService) : Control
         Problem(
             statusCode: StatusCodes.Status409Conflict,
             title: "Inquiry conflict",
-            detail: "The requested status transition is invalid.",
+            detail: "The inquiry was changed by another request or the transition is no longer valid.",
             extensions: new Dictionary<string, object?> { ["code"] = code });
 
     private static bool TryParseStatus(string? status, out bool isCompleted, out string targetLabel)

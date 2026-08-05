@@ -351,27 +351,18 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         {
             Id = 10,
             InstTypeId = ConversationTypes.MigrationTicket,
-            Status = "Open",
+            Status = "Resolved",
             Date = DateTime.UtcNow,
             CreatedBy = "Alice"
         };
-        var detailCalls = 0;
-        chat.Detail = (_, _) =>
-        {
-            detailCalls++;
-            if (detailCalls >= 2)
-            {
-                ticket.Status = "Resolved";
-            }
-            return ticket;
-        };
-        chat.StatusUpdateResult = true;
+        chat.Detail = (_, _) => ticket;
+        chat.StatusMutationResult = new(CaseMutationStatus.Updated, 2, ClientId);
         var controller = new AdminTicketsController(chat)
         {
             ControllerContext = ControllerContextFor(CreateAdminPrincipal())
         };
 
-        var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest("Resolved"), CancellationToken.None);
+        var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest("Resolved", 1), CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<TicketResponse>(ok.Value);
@@ -390,7 +381,7 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         };
         var controller = new AdminTicketsController(chat) { ControllerContext = ControllerContextFor(CreateAdminPrincipal()) };
 
-        var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest(status), CancellationToken.None);
+        var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest(status, 1), CancellationToken.None);
 
         var problem = Assert.IsAssignableFrom<ObjectResult>(result.Result);
         var details = Assert.IsType<ValidationProblemDetails>(problem.Value);
@@ -401,28 +392,25 @@ public sealed class TicketsInquiriesApiV1ControllerTests
     [Fact]
     public async Task UpdateTicketStatus_NoOpTransition_ReturnsConflictWithoutWriting()
     {
-        var chat = new RecordingChatService
-        {
-            Detail = (_, _) => new TicketViewModel { Id = 10, Status = "Resolved", Date = DateTime.UtcNow }
-        };
+        var chat = new RecordingChatService { StatusMutationResult = new(CaseMutationStatus.InvalidState, 1, ClientId) };
         var controller = new AdminTicketsController(chat) { ControllerContext = ControllerContextFor(CreateAdminPrincipal()) };
 
-        var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest("Resolved"), CancellationToken.None);
+        var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest("Resolved", 1), CancellationToken.None);
 
         var conflict = Assert.IsType<ObjectResult>(result.Result);
         Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
-        Assert.DoesNotContain(chat.Calls, c => c.Method == "UpdateTicketStatusAsync");
+        Assert.Contains(chat.Calls, c => c.Method == "UpdateTicketStatusAsync");
     }
 
     [Fact]
     public async Task UpdateTicketStatus_MissingTicket_ReturnsNotFound()
     {
-        var controller = new AdminTicketsController(new RecordingChatService())
+        var controller = new AdminTicketsController(new RecordingChatService { StatusMutationResult = new(CaseMutationStatus.NotFound) })
         {
             ControllerContext = ControllerContextFor(CreateAdminPrincipal())
         };
 
-        var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest("Resolved"), CancellationToken.None);
+        var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest("Resolved", 1), CancellationToken.None);
 
         Assert.IsType<NotFoundResult>(result.Result);
     }
@@ -597,6 +585,7 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         public IEnumerable<TicketViewModel> AllTickets { get; set; } = [];
         public IEnumerable<InquiryViewModel> AllInquiries { get; set; } = [];
         public bool StatusUpdateResult { get; set; } = true;
+        public CaseMutationResult StatusMutationResult { get; set; } = new(CaseMutationStatus.NotFound);
 
         public Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null)
         {
@@ -671,6 +660,21 @@ public sealed class TicketsInquiriesApiV1ControllerTests
             Calls.Add(new RecordedCall(nameof(UpdateInquiryStatusAsync), [inquiryId, isCompleted, completedByUserId]));
             return Task.FromResult(StatusUpdateResult);
         }
+
+        public Task<CaseMutationResult> UpdateTicketStatusAsync(long ticketId, bool isCompleted, long completedByUserId, long expectedVersion, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(new RecordedCall(nameof(UpdateTicketStatusAsync), [ticketId, isCompleted, completedByUserId, expectedVersion]));
+            return Task.FromResult(StatusMutationResult);
+        }
+
+        public Task<CaseMutationResult> UpdateInquiryStatusAsync(long inquiryId, bool isCompleted, long completedByUserId, long expectedVersion, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(new RecordedCall(nameof(UpdateInquiryStatusAsync), [inquiryId, isCompleted, completedByUserId, expectedVersion]));
+            return Task.FromResult(StatusMutationResult);
+        }
+
+        public Task<CaseMutationResult> UpdateTicketAsync(ChatMessage ticket, long expectedVersion, CancellationToken cancellationToken = default) =>
+            Task.FromResult(StatusMutationResult);
 
         public Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(int clientAuthUserId) => throw new NotSupportedException();
         public Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId, long? clientId = null) => throw new NotSupportedException();

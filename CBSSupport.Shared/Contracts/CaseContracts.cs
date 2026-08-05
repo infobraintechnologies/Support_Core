@@ -137,7 +137,21 @@ public sealed record CreateInquiryRequest(
 }
 
 public sealed record UpdateCaseStatusRequest(
-    [Required] string? Status);
+    [Required] string? Status,
+    [Range(1, long.MaxValue)] long ExpectedVersion);
+
+public enum CaseMutationStatus
+{
+    Updated,
+    NotFound,
+    Conflict,
+    InvalidState
+}
+
+public sealed record CaseMutationResult(
+    CaseMutationStatus Status,
+    long? Version = null,
+    long? ClientId = null);
 
 /// <summary>
 /// Public ticket representation. Deliberately does not expose persistence-only
@@ -158,7 +172,8 @@ public sealed record TicketResponse(
     string? Remarks,
     DateTime CreatedAt,
     DateTime? DueAt,
-    DateTime? ResolvedAt);
+    DateTime? ResolvedAt,
+    long Version);
 
 public sealed record InquiryResponse(
     long Id,
@@ -171,4 +186,5 @@ public sealed record InquiryResponse(
     string? InquiredByName,
     string? Description,
     DateTime CreatedAt,
-    DateTime? ResolvedAt);
+    DateTime? ResolvedAt,
+    long Version);

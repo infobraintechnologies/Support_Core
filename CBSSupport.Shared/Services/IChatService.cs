@@ -96,6 +96,13 @@ namespace CBSSupport.Shared.Services
             return UpdateTicketStatusAsync(ticketId, isCompleted, completedByUserId);
         }
 
+        Task<CBSSupport.Shared.Contracts.CaseMutationResult> UpdateTicketStatusAsync(
+            long ticketId,
+            bool isCompleted,
+            long completedByUserId,
+            long expectedVersion,
+            CancellationToken cancellationToken = default);
+
         Task<bool> UpdateInquiryStatusAsync(long inquiryId, bool isCompleted, long? completedByUserId = null);
 
         Task<bool> UpdateInquiryStatusAsync(
@@ -107,6 +114,18 @@ namespace CBSSupport.Shared.Services
             cancellationToken.ThrowIfCancellationRequested();
             return UpdateInquiryStatusAsync(inquiryId, isCompleted, completedByUserId);
         }
+
+        Task<CBSSupport.Shared.Contracts.CaseMutationResult> UpdateInquiryStatusAsync(
+            long inquiryId,
+            bool isCompleted,
+            long completedByUserId,
+            long expectedVersion,
+            CancellationToken cancellationToken = default);
+
+        Task<CBSSupport.Shared.Contracts.CaseMutationResult> UpdateTicketAsync(
+            ChatMessage ticket,
+            long expectedVersion,
+            CancellationToken cancellationToken = default);
 
         Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null);
 

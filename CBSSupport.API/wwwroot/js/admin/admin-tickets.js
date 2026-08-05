@@ -182,7 +182,7 @@ window.AdminTickets = (() => {
             const response = await fetch(`/v1/api/instructions/tickets/${currentTicketData.id}/status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isCompleted: isCompleted })
+                body: JSON.stringify({ isCompleted: isCompleted, expectedVersion: currentTicketData.version })
             });
 
             if (!response.ok) {
@@ -194,6 +194,7 @@ window.AdminTickets = (() => {
             console.log('🎫 AdminTickets: Update response:', result);
 
             if (result.success) {
+                currentTicketData.version = result.version;
                 const currentUser = window.AdminCore?.getCurrentUser();
                 currentTicketData.status = newStatus;
 

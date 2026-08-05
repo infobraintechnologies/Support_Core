@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics;
 using CBSSupport.Shared.Contracts;
 using CBSSupport.Shared.Models;
 using Dapper;
@@ -180,6 +181,17 @@ public sealed class ConversationRepository : IConversationRepository
                     @AdminUserId, @ClientUserId, @OccurredAt,
                     jsonb_build_object('conversationKind', @ConversationKind));
 
+                INSERT INTO digital.case_audit (
+                    case_id, case_type, client_id, actor_user_id, actor_type,
+                    action, previous_version, resulting_version, occurred_at,
+                    changed_fields, correlation_id, is_system_generated)
+                VALUES (
+                    @ConversationId, @ConversationKind, @ClientId,
+                    COALESCE(@AdminUserId, @ClientUserId), @ActorKind,
+                    'CaseCreated', 0, 1, @OccurredAt,
+                    jsonb_build_object('operation', 'Created', 'fields', '[]'::jsonb),
+                    @CorrelationId, FALSE);
+
                 INSERT INTO digital.conversation_outbox (
                     event_id, conversation_id, client_id, conversation_kind,
                     conversation_state, client_user_id, admin_user_id, access_version,
@@ -207,7 +219,8 @@ public sealed class ConversationRepository : IConversationRepository
                     EventId = eventId,
                     ActorKind = actor.IsAdmin ? "Admin" : "Client",
                     AdminUserId = actor.IsAdmin ? checked((int)actor.UserId) : (int?)null,
-                    ClientUserId = actor.IsAdmin ? (int?)null : checked((int)actor.UserId)
+                    ClientUserId = actor.IsAdmin ? (int?)null : checked((int)actor.UserId),
+                    CorrelationId = Activity.Current?.Id
                 },
                 transaction,
                 cancellationToken: cancellationToken));
@@ -770,7 +783,7 @@ public sealed class ConversationRepository : IConversationRepository
                    i.instruction_id AS ConversationId,
                    i.instruction AS Text,
                    i.datetime AS SentAt,
-                   COALESCE(i.insert_user, i.client_auth_user_id) AS SenderUserId,
+                   COALESCE(i.insert_user, i.client_auth_user_id)::bigint AS SenderUserId,
                    CASE WHEN i.client_auth_user_id IS NULL THEN 'Admin' ELSE 'Client' END AS SenderKind,
                    CASE WHEN i.client_auth_user_id IS NULL
                         THEN COALESCE(admin_user.full_name, admin_user.user_name, 'Support')
@@ -877,7 +890,7 @@ public sealed class ConversationRepository : IConversationRepository
                    i.instruction_id AS ConversationId,
                    i.instruction AS Text,
                    i.datetime AS SentAt,
-                   COALESCE(i.insert_user, i.client_auth_user_id) AS SenderUserId,
+                   COALESCE(i.insert_user, i.client_auth_user_id)::bigint AS SenderUserId,
                    CASE WHEN i.client_auth_user_id IS NULL THEN 'Admin' ELSE 'Client' END AS SenderKind,
                    @DisplayName AS SenderDisplayName,
                    i.client_message_id AS ClientMessageId,
