@@ -1,4 +1,5 @@
 using CBSSupport.Shared.Contracts;
+using CBSSupport.Shared.Models;
 using CBSSupport.Shared.Services;
 using Dapper;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -675,6 +676,72 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
     }
 
     [PostgreSqlIntegrationFact]
+    public async Task CreateInstructionTicket_NewLegacyRoot_SelfLinksBeforeReturning()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        var service = new ChatService(database.ConnectionString, NullLogger<ChatService>.Instance);
+
+        var created = await service.CreateInstructionTicketAsync(new ChatMessage
+        {
+            DateTime = DateTime.UtcNow,
+            InstTypeId = ConversationTypes.InternalTeam,
+            InstCategoryId = InstructionCategories.Support,
+            Instruction = "Legacy internal conversation",
+            Status = true,
+            InsertUser = 9,
+            ClientId = 42,
+            ServiceId = 3,
+            InstChannel = "chat"
+        });
+
+        Assert.NotNull(created);
+        Assert.Equal(created.Id, created.InstructionId);
+        Assert.Equal(created.Id, await database.QuerySingleAsync<long>(
+            "SELECT instruction_id FROM digital.instructions WHERE id = @Id;",
+            new { created.Id }));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task CreateInstructionTicket_SelfLinkFailure_RollsBackLegacyRootInsert()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ExecuteAsync("""
+            CREATE FUNCTION digital.fail_legacy_root_self_link()
+            RETURNS trigger LANGUAGE plpgsql AS $function$
+            BEGIN
+                IF NEW.instruction_id = NEW.id THEN
+                    RAISE EXCEPTION 'forced legacy root self-link failure';
+                END IF;
+                RETURN NEW;
+            END;
+            $function$;
+            CREATE TRIGGER trg_fail_legacy_root_self_link
+            BEFORE UPDATE ON digital.instructions
+            FOR EACH ROW EXECUTE FUNCTION digital.fail_legacy_root_self_link();
+            """);
+        var service = new ChatService(database.ConnectionString, NullLogger<ChatService>.Instance);
+
+        await Assert.ThrowsAsync<PostgresException>(() => service.CreateInstructionTicketAsync(
+            new ChatMessage
+            {
+                DateTime = DateTime.UtcNow,
+                InstTypeId = ConversationTypes.InternalTeam,
+                InstCategoryId = InstructionCategories.Support,
+                Instruction = "Legacy internal conversation",
+                Status = true,
+                InsertUser = 9,
+                ClientId = 42,
+                ServiceId = 3,
+                InstChannel = "chat"
+            }));
+
+        Assert.Equal(0L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.instructions;"));
+    }
+
+    [PostgreSqlIntegrationFact]
     public async Task CaseAudit_ApplicationRoleCannotReadUpdateOrDeleteHistory()
     {
         await using var database = await TestDatabase.CreateAsync();
@@ -905,6 +972,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                     client_id bigint,
                     service_id bigint,
                     ip_address text,
+                    geo_location character varying NULL,
                     inst_channel text,
                     attachment_id text,
                     instruction_id bigint,
