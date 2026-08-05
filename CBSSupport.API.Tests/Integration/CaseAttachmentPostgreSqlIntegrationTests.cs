@@ -903,6 +903,54 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
     }
 
     [PostgreSqlIntegrationFact]
+    public async Task RecipientNotifications_TwoRecipientsDevicesAndSessions_KeepDurableIndependentUnreadState()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        var cases = new ConversationRepository(database.ConnectionString, attachmentsEnabled: false);
+        var created = await cases.CreateCaseAsync(
+            new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
+            ConversationTypes.TrainingTicket,
+            InstructionCategories.Ticket,
+            "Recipient durability", null, null, null, DateTime.UtcNow);
+        var caseId = Assert.IsType<ChatMessage>(created.Value).Id;
+        var recipients = (await database.QueryAsync<NotificationRecipientRow>("""
+            SELECT notification_id AS NotificationId, admin_user_id AS UserId
+            FROM digital.case_notifications
+            WHERE case_id = @CaseId AND recipient_kind = 'Admin'
+            ORDER BY notification_id;
+            """, new { CaseId = caseId })).ToArray();
+        Assert.True(recipients.Length >= 2, "Fixture must contain two active admin recipients.");
+
+        var firstRecipient = new NotificationRecipient(true, recipients[0].UserId, null);
+        var secondRecipient = new NotificationRecipient(true, recipients[1].UserId, null);
+        var firstDevice = new NotificationService(database.ConnectionString);
+        var initial = await firstDevice.ListAsync(firstRecipient, 20, null);
+        Assert.Equal(1, initial.UnreadCount);
+
+        var read = await firstDevice.MarkReadAsync(firstRecipient, recipients[0].NotificationId);
+        Assert.NotNull(read);
+        Assert.Equal(0, read!.UnreadCount);
+
+        // A second device and a new service instance after logout/login see the same server state.
+        var secondDeviceAfterLogin = new NotificationService(database.ConnectionString);
+        var reloaded = await secondDeviceAfterLogin.ListAsync(firstRecipient, 20, null);
+        Assert.Equal(0, reloaded.UnreadCount);
+        Assert.NotNull(Assert.Single(reloaded.Items).ReadAt);
+
+        var otherRecipient = await secondDeviceAfterLogin.ListAsync(secondRecipient, 20, null);
+        Assert.Equal(1, otherRecipient.UnreadCount);
+        Assert.NotNull(await secondDeviceAfterLogin.MarkReadAsync(secondRecipient, recipients[1].NotificationId));
+        Assert.Equal(0, (await secondDeviceAfterLogin.ListAsync(secondRecipient, 20, null)).UnreadCount);
+
+        // A spoofed tenant cannot see or mutate the tenant-42 recipient row.
+        var crossTenant = new NotificationRecipient(false, 7, 43);
+        Assert.Empty((await secondDeviceAfterLogin.ListAsync(crossTenant, 20, null)).Items);
+        Assert.Null(await secondDeviceAfterLogin.MarkReadAsync(crossTenant, recipients[0].NotificationId));
+    }
+
+    [PostgreSqlIntegrationFact]
     public async Task UncommittedCaseOutboxRow_IsNotClaimedForSignalRDelivery()
     {
         await using var database = await TestDatabase.CreateAsync();
@@ -1151,6 +1199,8 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         long ResultingVersion,
         bool IsSystemGenerated);
 
+    private sealed record NotificationRecipientRow(long NotificationId, int UserId);
+
     private sealed class TestDatabase : IAsyncDisposable
     {
         private readonly string _adminConnectionString;
@@ -1341,6 +1391,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                 "202607261040_enforce_attachment_relational_invariants.sql");
             await ApplyMigrationAsync("202608041100_create_case_audit.sql");
             await ApplyMigrationAsync("202608051000_add_case_notification_delivery.sql");
+            await ApplyMigrationAsync("202608051100_finalize_recipient_notification_state.sql");
         }
 
         public async Task SeedGroupConversationsAsync()
@@ -1384,6 +1435,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                 "Database",
                 "Migrations",
                 fileName));
+
 
         public async Task ExecuteMigrationScriptAsync(
             string sql,

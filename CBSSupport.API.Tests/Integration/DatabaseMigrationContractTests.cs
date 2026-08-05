@@ -133,6 +133,18 @@ public sealed class DatabaseMigrationContractTests
     }
 
     [Fact]
+    public void RecipientNotificationFinalization_UsesUnreadIndexesAndDoesNotGuessLegacyRecipients()
+    {
+        var sql = ReadMigration("202608051100_finalize_recipient_notification_state.sql");
+
+        Assert.Contains("ix_case_notifications_client_recipient_unread_created", sql, StringComparison.Ordinal);
+        Assert.Contains("ix_case_notifications_admin_recipient_unread_created", sql, StringComparison.Ordinal);
+        Assert.Contains("digital.notification_backfill_review", sql, StringComparison.Ordinal);
+        Assert.Contains("legacy_flags_do_not_identify_recipient", sql, StringComparison.Ordinal);
+        Assert.Contains("no durable recipient row is inferred", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void AttachmentSchema_CountsDeletePendingUntilDeletionConfirmation()
     {
         var createSql = ReadMigration("202607261020_create_r2_attachments.sql");

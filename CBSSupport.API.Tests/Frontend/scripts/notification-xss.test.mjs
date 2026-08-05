@@ -234,33 +234,33 @@ documentStub.getElementById = id =>
 
 const unread = PAYLOADS.slice(0, 4).map((payload, index) => ({
     id: 1000 + index,
-    inst_category_id: 100,
-    instruction: payload,
-    sendername: `<b>sender ${index}</b>`,
-    insert_date: "2026-08-04T10:00:00Z",
-    notification_seen_by_admin: 0
+    caseId: 2000 + index,
+    eventType: "CaseReplyCreated",
+    title: `<b>sender ${index}</b>`,
+    message: payload,
+    createdAt: "2026-08-04T10:00:00Z",
+    readAt: null
 }));
 
-globalThis.fetch = async () => ({ ok: true, json: async () => unread });
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ items: unread, unreadCount: unread.length }) });
 
 await globalThis.AdminNotifications.loadNotifications();
 
 const messages = allDescendants(container)
     .filter(node => String(node.className || "").split(/\s+/).includes("notification-message"));
+const titles = allDescendants(container)
+    .filter(node => String(node.className || "").split(/\s+/).includes("notification-title"));
 assert.equal(messages.length, unread.length, "one notification message rendered per unread instruction");
+assert.equal(titles.length, unread.length, "one notification title rendered per notification");
 
 for (let i = 0; i < unread.length; i += 1) {
     const message = messages[i];
-    // Notification messages are truncated to 50 characters by processNotifications.
-    const displayable = unread[i].instruction.length > 50
-        ? unread[i].instruction.substring(0, 50)
-        : unread[i].instruction;
     assert.ok(
-        message.textContent.includes(displayable),
+        message.textContent.includes(unread[i].message),
         `payload ${i} displayed as text in notification list`);
     assert.ok(
-        message.textContent.includes(unread[i].sendername),
-        `sender name ${i} displayed as text in notification list`);
+        titles[i].textContent.includes(unread[i].title),
+        `title ${i} displayed as text in notification list`);
 }
 
 assert.equal(hasElement(container, "img"), false, "no img element from notification payloads");
@@ -268,13 +268,13 @@ assert.equal(hasElement(container, "script"), false, "no script element from not
 assert.equal(globalThis.__xssTriggered, false, "notification payloads must not execute");
 
 assert.equal(
-    collectInnerHtml(container).includes(unread[0].instruction),
+    collectInnerHtml(container).includes(unread[0].message),
     false,
     "notification payload must never be injected through innerHTML");
 
 // --- Empty state ------------------------------------------------------------
 
-globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ items: [], unreadCount: 0 }) });
 await globalThis.AdminNotifications.loadNotifications();
 assert.equal(
     findByClass(container, "notification-empty") !== null,

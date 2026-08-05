@@ -855,14 +855,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function loadClientNotifications() {
         try {
-            const response = await fetch(`/v1/api/instructions/notifications/unread?clientId=${currentClient.id}`);
+            const response = await fetch('/api/v1/notifications?limit=20', { credentials: 'same-origin' });
             if (!response.ok) throw new Error('Failed to load notifications');
 
-            const unreadInstructions = await response.json();
-            const cachedReadNotifications = JSON.parse(localStorage.getItem('client_read_notifications') || '[]');
-            const allNotifications = processClientNotifications(unreadInstructions, cachedReadNotifications);
+            const page = await response.json();
+            const allNotifications = processClientNotifications(page.items || []);
 
-            updateClientNotificationBadge(allNotifications.filter(n => !n.isRead).length);
+            updateClientNotificationBadge(page.unreadCount || 0);
             renderClientNotifications(allNotifications);
 
             return allNotifications;
@@ -872,38 +871,27 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    function processClientNotifications(unreadInstructions, cachedReadNotifications = []) {
+    function processClientNotifications(notificationRows) {
         const notifications = [];
 
-        unreadInstructions.forEach(instruction => {
+        notificationRows.forEach(row => {
             let notification = {
-                id: instruction.id,
-                title: '',
-                message: '',
-                type: '',
-                entityId: instruction.id,
-                entityType: '',
-                createdAt: instruction.insert_date || instruction.datetime,
-                isRead: instruction.notification_seen_by_client === 1,
-                triggerUserName: instruction.sendername || 'Support'
+                id: row.id,
+                title: row.title || 'Support update',
+                message: row.message || 'A support case was updated.',
+                type: 'message',
+                entityId: row.caseId,
+                entityType: 'message',
+                createdAt: row.createdAt,
+                isRead: Boolean(row.readAt)
             };
 
-            if (instruction.inst_category_id === 101) {
+            if (row.eventType.startsWith('Ticket')) {
                 notification.type = 'ticket';
                 notification.entityType = 'ticket';
-                notification.title = 'Ticket Update';
-                notification.message = `Your ticket #${instruction.id} has been updated: ${instruction.instruction?.substring(0, 50) || 'Status changed'}...`;
-            } else if (instruction.inst_category_id === 102) {
+            } else if (row.eventType.startsWith('Inquiry')) {
                 notification.type = 'inquiry';
                 notification.entityType = 'inquiry';
-                notification.title = 'Inquiry Response';
-                notification.message = `Response to inquiry #${instruction.id}: ${instruction.instruction?.substring(0, 50) || 'New response'}...`;
-            } else if (instruction.inst_category_id === 100) {
-                notification.type = 'message';
-                notification.entityType = 'message';
-                notification.title = 'New Message';
-                notification.message = `${instruction.sendername || 'Support'}: ${instruction.instruction?.substring(0, 50) || 'New message'}...`;
-                notification.entityId = instruction.instruction_id || instruction.id;
             }
 
             notification.timeAgo = getTimeAgo(notification.createdAt);
@@ -911,16 +899,8 @@ document.addEventListener("DOMContentLoaded", () => {
             notifications.push(notification);
         });
 
-        cachedReadNotifications.forEach(cachedNotification => {
-            if (!notifications.find(n => n.id === cachedNotification.id)) {
-                cachedNotification.isRead = true;
-                cachedNotification.timeAgo = getTimeAgo(cachedNotification.createdAt);
-                notifications.push(cachedNotification);
-            }
-        });
-
         notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        return notifications.slice(0, 20);
+        return notifications;
     }
 
     function updateClientNotificationBadge(count) {
@@ -1003,39 +983,21 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    async function markClientNotificationAsRead(instructionId) {
+    async function markClientNotificationAsRead(notificationId) {
         try {
-            const response = await fetch(`/v1/api/instructions/${instructionId}/mark-seen-client`, {
+            const response = await fetch(`/api/v1/notifications/${notificationId}/read`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' }
+                headers: notificationRequestHeaders(),
+                credentials: 'same-origin'
             });
 
             if (response.ok) {
-                const notificationElement = document.querySelector(`[data-id="${instructionId}"]`);
+                const notificationElement = document.querySelector(`[data-id="${notificationId}"]`);
                 if (notificationElement && notificationElement.classList.contains('unread')) {
                     notificationElement.classList.remove('unread');
-
-                    const notificationData = {
-                        id: parseInt(instructionId),
-                        entityId: notificationElement.dataset.entityId,
-                        entityType: notificationElement.dataset.entityType,
-                        title: notificationElement.querySelector('.notification-title').textContent,
-                        message: notificationElement.querySelector('.notification-message').textContent,
-                        timeAgo: notificationElement.querySelector('.notification-time').textContent,
-                        type: notificationElement.querySelector('.notification-icon').className.split(' ').find(c => ['ticket', 'inquiry', 'message', 'status_change'].includes(c)) || 'message',
-                        icon: notificationElement.querySelector('.notification-icon i').className,
-                        createdAt: new Date().toISOString(),
-                        isRead: true
-                    };
-
-                    const existingReadNotifications = JSON.parse(localStorage.getItem('client_read_notifications') || '[]');
-                    const updatedReadNotifications = [notificationData, ...existingReadNotifications].slice(0, 20);
-                    localStorage.setItem('client_read_notifications', JSON.stringify(updatedReadNotifications));
                 }
-
-                if (clientUnreadNotificationCount > 0) {
-                    updateClientNotificationBadge(clientUnreadNotificationCount - 1);
-                }
+                const changed = await response.json();
+                updateClientNotificationBadge(changed.unreadCount || 0);
             }
         } catch (error) {
             console.error('Error marking notification as read:', error);
@@ -1044,43 +1006,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function markAllClientNotificationsAsRead() {
         try {
-            const response = await fetch('/v1/api/instructions/mark-all-seen-client', {
+            const response = await fetch('/api/v1/notifications/read-all', {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' }
+                headers: notificationRequestHeaders(),
+                credentials: 'same-origin'
             });
 
             if (response.ok) {
-                const currentNotifications = Array.from(document.querySelectorAll('.notification-item')).map(item => {
-                    return {
-                        id: parseInt(item.dataset.id),
-                        entityId: item.dataset.entityId,
-                        entityType: item.dataset.entityType,
-                        title: item.querySelector('.notification-title').textContent,
-                        message: item.querySelector('.notification-message').textContent,
-                        timeAgo: item.querySelector('.notification-time').textContent,
-                        type: item.querySelector('.notification-icon').className.split(' ').find(c => ['ticket', 'inquiry', 'message', 'status_change'].includes(c)) || 'message',
-                        icon: item.querySelector('.notification-icon i').className,
-                        createdAt: new Date().toISOString(),
-                        isRead: true
-                    };
-                });
-
-                const existingReadNotifications = JSON.parse(localStorage.getItem('client_read_notifications') || '[]');
-                const updatedReadNotifications = [...currentNotifications, ...existingReadNotifications].slice(0, 20);
-
-                localStorage.setItem('client_read_notifications', JSON.stringify(updatedReadNotifications));
-
                 document.querySelectorAll('.notification-item.unread').forEach(item => {
                     item.classList.remove('unread');
                 });
 
-                updateClientNotificationBadge(0);
+                const result = await response.json();
+                updateClientNotificationBadge(result.unreadCount || 0);
                 alert('All notifications marked as read');
             }
         } catch (error) {
             console.error('Error marking all notifications as read:', error);
             alert('Failed to mark notifications as read');
         }
+    }
+
+    function notificationRequestHeaders() {
+        const token = document.querySelector('input[name="__RequestVerificationToken"]')?.value;
+        return token ? { 'RequestVerificationToken': token } : {};
     }
 
     function initializeClientNotifications() {
@@ -1384,6 +1333,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (chatSubheading) chatSubheading.textContent = "Choose a chat to read messages.";
             setChatPanelState("This conversation is no longer active.", "empty");
             updateSendButtonState();
+        }
+    });
+
+    messaging.on("notificationchanged", change => {
+        updateClientNotificationBadge(change?.unreadCount || 0);
+        loadClientNotifications();
+        if (change?.notification?.message) {
+            showNotificationToast(change.notification.message, 'info');
         }
     });
 

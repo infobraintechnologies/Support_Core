@@ -62,6 +62,15 @@ window.AdminSignalR = (() => {
             }
         });
 
+        messaging.on("notificationchanged", change => {
+            if (window.AdminNotifications) {
+                window.AdminNotifications.loadNotifications();
+            }
+            if (change?.notification?.message && window.AdminUtils) {
+                window.AdminUtils.showNotification(change.notification.message, "info");
+            }
+        });
+
         // Setup message handlers
         setupMessageHandlers();
     }
