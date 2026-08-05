@@ -98,7 +98,9 @@ public sealed class InquiriesController(
 [ApiController]
 [Route("api/v1/admin/inquiries")]
 [Authorize(Policy = Policies.AdminOnly)]
-public sealed class AdminInquiriesController(IChatService chatService) : ControllerBase
+public sealed class AdminInquiriesController(
+    IChatService chatService,
+    IInquiryService inquiries) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<CasePage<InquiryResponse>>> List(
@@ -132,8 +134,9 @@ public sealed class AdminInquiriesController(IChatService chatService) : Control
                 detail: "The inquiry status must be 'Pending' or 'Completed'.");
         }
 
-        var mutation = await chatService.UpdateInquiryStatusAsync(
-            caseId, isCompleted, User.GetRequiredUserId(), request.ExpectedVersion, cancellationToken);
+        var mutation = await inquiries.UpdateStatusAsync(
+            new CaseStatusUpdateCommand(caseId, isCompleted, User.GetRequiredUserId(), request.ExpectedVersion),
+            cancellationToken);
         if (mutation.Status == CaseMutationStatus.NotFound)
             return NotFound();
         if (mutation.Status == CaseMutationStatus.Conflict)

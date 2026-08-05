@@ -200,6 +200,8 @@ public sealed class InstructionsControllerTenantTests
         var controller = new InstructionsController(
             chatService,
             null!,
+            null!,
+            null!,
             new TenantAuthorizationService(),
             null!);
 

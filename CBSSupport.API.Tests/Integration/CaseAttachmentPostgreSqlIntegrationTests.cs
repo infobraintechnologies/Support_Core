@@ -628,14 +628,14 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         await database.InitializeMessagingSchemaAsync();
         await database.ApplyCaseAndAttachmentMigrationsAsync();
         await SeedTicketCaseAsync(database, 3000, 42);
-        var firstCaller = new ChatService(database.ConnectionString, NullLogger<ChatService>.Instance);
-        var secondCaller = new ChatService(database.ConnectionString, NullLogger<ChatService>.Instance);
+        var firstCaller = new TicketService(new CaseMutationCommandHandler(database.ConnectionString));
+        var secondCaller = new TicketService(new CaseMutationCommandHandler(database.ConnectionString));
 
         const long readVersion = 1;
         using var activity = new System.Diagnostics.Activity("case-audit-test").Start();
         var results = await Task.WhenAll(
-            firstCaller.UpdateTicketStatusAsync(3000, true, 9, readVersion, CancellationToken.None),
-            secondCaller.UpdateTicketStatusAsync(3000, true, 9, readVersion, CancellationToken.None));
+            firstCaller.UpdateStatusAsync(new CaseStatusUpdateCommand(3000, true, 9, readVersion), CancellationToken.None),
+            secondCaller.UpdateStatusAsync(new CaseStatusUpdateCommand(3000, true, 9, readVersion), CancellationToken.None));
 
         Assert.Single(results, result => result.Status == CaseMutationStatus.Updated && result.Version == 2);
         Assert.Single(results, result => result.Status == CaseMutationStatus.Conflict);
@@ -692,10 +692,10 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             BEFORE INSERT ON digital.case_audit
             FOR EACH ROW EXECUTE FUNCTION digital.fail_case_audit_insert();
             """);
-        var service = new ChatService(database.ConnectionString, NullLogger<ChatService>.Instance);
+        var service = new TicketService(new CaseMutationCommandHandler(database.ConnectionString));
 
         await Assert.ThrowsAsync<PostgresException>(() =>
-            service.UpdateTicketStatusAsync(3001, true, 9, 1, CancellationToken.None));
+            service.UpdateStatusAsync(new CaseStatusUpdateCommand(3001, true, 9, 1), CancellationToken.None));
 
         Assert.Equal(1L, await database.QuerySingleAsync<long>(
             "SELECT version FROM digital.conversation_access WHERE conversation_id = 3001;"));

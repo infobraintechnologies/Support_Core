@@ -78,54 +78,9 @@ namespace CBSSupport.Shared.Services
 
         Task<DashboardStatsViewModel> GetDashboardStatsAsync();
 
-        Task<bool> UpdateInstructionAsync(ChatMessage instruction);
-
         Task<long?> GetOrCreateGroupChatConversationIdAsync(long clientId, int clientAuthUserId);
 
         Task<ChatMessage?> CreateGroupChatMessageAsync(ChatMessage newMessage);
-
-        Task<bool> UpdateTicketStatusAsync(long ticketId, bool isCompleted, long? completedByUserId = null);
-
-        Task<bool> UpdateTicketStatusAsync(
-            long ticketId,
-            bool isCompleted,
-            long? completedByUserId,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return UpdateTicketStatusAsync(ticketId, isCompleted, completedByUserId);
-        }
-
-        Task<CBSSupport.Shared.Contracts.CaseMutationResult> UpdateTicketStatusAsync(
-            long ticketId,
-            bool isCompleted,
-            long completedByUserId,
-            long expectedVersion,
-            CancellationToken cancellationToken = default);
-
-        Task<bool> UpdateInquiryStatusAsync(long inquiryId, bool isCompleted, long? completedByUserId = null);
-
-        Task<bool> UpdateInquiryStatusAsync(
-            long inquiryId,
-            bool isCompleted,
-            long? completedByUserId,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return UpdateInquiryStatusAsync(inquiryId, isCompleted, completedByUserId);
-        }
-
-        Task<CBSSupport.Shared.Contracts.CaseMutationResult> UpdateInquiryStatusAsync(
-            long inquiryId,
-            bool isCompleted,
-            long completedByUserId,
-            long expectedVersion,
-            CancellationToken cancellationToken = default);
-
-        Task<CBSSupport.Shared.Contracts.CaseMutationResult> UpdateTicketAsync(
-            ChatMessage ticket,
-            long expectedVersion,
-            CancellationToken cancellationToken = default);
 
         Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null);
 

@@ -356,8 +356,8 @@ public sealed class TicketsInquiriesApiV1ControllerTests
             CreatedBy = "Alice"
         };
         chat.Detail = (_, _) => ticket;
-        chat.StatusMutationResult = new(CaseMutationStatus.Updated, 2, ClientId);
-        var controller = new AdminTicketsController(chat)
+        var tickets = new RecordingTicketService { MutationResult = new(CaseMutationStatus.Updated, 2, ClientId) };
+        var controller = new AdminTicketsController(chat, tickets)
         {
             ControllerContext = ControllerContextFor(CreateAdminPrincipal())
         };
@@ -367,7 +367,7 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<TicketResponse>(ok.Value);
         Assert.Equal("Resolved", response.Status);
-        Assert.Contains(chat.Calls, c => c.Method == "UpdateTicketStatusAsync");
+        Assert.Single(tickets.StatusCommands);
     }
 
     [Theory]
@@ -379,33 +379,37 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         {
             Detail = (_, _) => new TicketViewModel { Id = 10, Status = "Open", Date = DateTime.UtcNow }
         };
-        var controller = new AdminTicketsController(chat) { ControllerContext = ControllerContextFor(CreateAdminPrincipal()) };
+        var tickets = new RecordingTicketService();
+        var controller = new AdminTicketsController(chat, tickets) { ControllerContext = ControllerContextFor(CreateAdminPrincipal()) };
 
         var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest(status, 1), CancellationToken.None);
 
         var problem = Assert.IsAssignableFrom<ObjectResult>(result.Result);
         var details = Assert.IsType<ValidationProblemDetails>(problem.Value);
         Assert.Equal(expectedStatus, details.Status);
-        Assert.DoesNotContain(chat.Calls, c => c.Method == "UpdateTicketStatusAsync");
+        Assert.Empty(tickets.StatusCommands);
     }
 
     [Fact]
     public async Task UpdateTicketStatus_NoOpTransition_ReturnsConflictWithoutWriting()
     {
-        var chat = new RecordingChatService { StatusMutationResult = new(CaseMutationStatus.InvalidState, 1, ClientId) };
-        var controller = new AdminTicketsController(chat) { ControllerContext = ControllerContextFor(CreateAdminPrincipal()) };
+        var chat = new RecordingChatService();
+        var tickets = new RecordingTicketService { MutationResult = new(CaseMutationStatus.InvalidState, 1, ClientId) };
+        var controller = new AdminTicketsController(chat, tickets) { ControllerContext = ControllerContextFor(CreateAdminPrincipal()) };
 
         var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest("Resolved", 1), CancellationToken.None);
 
         var conflict = Assert.IsType<ObjectResult>(result.Result);
         Assert.Equal(StatusCodes.Status409Conflict, conflict.StatusCode);
-        Assert.Contains(chat.Calls, c => c.Method == "UpdateTicketStatusAsync");
+        Assert.Single(tickets.StatusCommands);
     }
 
     [Fact]
     public async Task UpdateTicketStatus_MissingTicket_ReturnsNotFound()
     {
-        var controller = new AdminTicketsController(new RecordingChatService { StatusMutationResult = new(CaseMutationStatus.NotFound) })
+        var controller = new AdminTicketsController(
+            new RecordingChatService(),
+            new RecordingTicketService { MutationResult = new(CaseMutationStatus.NotFound) })
         {
             ControllerContext = ControllerContextFor(CreateAdminPrincipal())
         };
@@ -413,6 +417,41 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         var result = await controller.UpdateStatus(10, new UpdateCaseStatusRequest("Resolved", 1), CancellationToken.None);
 
         Assert.IsType<NotFoundResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task UpdateInquiryStatus_UsesDedicatedInquiryServiceWithClaimDerivedActor()
+    {
+        var inquiries = new RecordingInquiryService
+        {
+            MutationResult = new(CaseMutationStatus.Updated, 4, ClientId)
+        };
+        var chat = new RecordingChatService
+        {
+            InquiryDetail = (_, _) => new InquiryViewModel
+            {
+                Id = 14,
+                InstTypeId = ConversationTypes.AccountsInquiry,
+                Outcome = "Completed",
+                Date = DateTime.UtcNow
+            }
+        };
+        var controller = new AdminInquiriesController(chat, inquiries)
+        {
+            ControllerContext = ControllerContextFor(CreateAdminPrincipal())
+        };
+
+        var result = await controller.UpdateStatus(
+            14,
+            new UpdateCaseStatusRequest("Completed", 3),
+            CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(result.Result);
+        var command = Assert.Single(inquiries.StatusCommands);
+        Assert.Equal(14, command.CaseId);
+        Assert.True(command.IsCompleted);
+        Assert.Equal(AdminUserId, command.ActorUserId);
+        Assert.Equal(3, command.ExpectedVersion);
     }
 
     // ---- Inquiry creation ----
@@ -584,8 +623,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         public CaseListCriteria? LastInquiryCriteria { get; private set; }
         public IEnumerable<TicketViewModel> AllTickets { get; set; } = [];
         public IEnumerable<InquiryViewModel> AllInquiries { get; set; } = [];
-        public bool StatusUpdateResult { get; set; } = true;
-        public CaseMutationResult StatusMutationResult { get; set; } = new(CaseMutationStatus.NotFound);
 
         public Task<TicketViewModel?> GetTicketDetailsByIdAsync(long ticketId, long? clientId = null)
         {
@@ -649,33 +686,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
             return Task.FromResult(AllInquiries);
         }
 
-        public Task<bool> UpdateTicketStatusAsync(long ticketId, bool isCompleted, long? completedByUserId = null)
-        {
-            Calls.Add(new RecordedCall(nameof(UpdateTicketStatusAsync), [ticketId, isCompleted, completedByUserId]));
-            return Task.FromResult(StatusUpdateResult);
-        }
-
-        public Task<bool> UpdateInquiryStatusAsync(long inquiryId, bool isCompleted, long? completedByUserId = null)
-        {
-            Calls.Add(new RecordedCall(nameof(UpdateInquiryStatusAsync), [inquiryId, isCompleted, completedByUserId]));
-            return Task.FromResult(StatusUpdateResult);
-        }
-
-        public Task<CaseMutationResult> UpdateTicketStatusAsync(long ticketId, bool isCompleted, long completedByUserId, long expectedVersion, CancellationToken cancellationToken = default)
-        {
-            Calls.Add(new RecordedCall(nameof(UpdateTicketStatusAsync), [ticketId, isCompleted, completedByUserId, expectedVersion]));
-            return Task.FromResult(StatusMutationResult);
-        }
-
-        public Task<CaseMutationResult> UpdateInquiryStatusAsync(long inquiryId, bool isCompleted, long completedByUserId, long expectedVersion, CancellationToken cancellationToken = default)
-        {
-            Calls.Add(new RecordedCall(nameof(UpdateInquiryStatusAsync), [inquiryId, isCompleted, completedByUserId, expectedVersion]));
-            return Task.FromResult(StatusMutationResult);
-        }
-
-        public Task<CaseMutationResult> UpdateTicketAsync(ChatMessage ticket, long expectedVersion, CancellationToken cancellationToken = default) =>
-            Task.FromResult(StatusMutationResult);
-
         public Task<IEnumerable<ChatMessage>> GetInstructionTicketsForUserAsync(int clientAuthUserId) => throw new NotSupportedException();
         public Task<IEnumerable<ChatMessage>> GetConversationsByInstTypeAsync(short instTypeId, long? clientId = null) => throw new NotSupportedException();
         public Task<ChatMessage?> CreateInstructionTicketAsync(ChatMessage newTicket, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -688,7 +698,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         public Task<IEnumerable<InquiryViewModel>> GetSolvedInquiriesAsync() => throw new NotSupportedException();
         public Task<IEnumerable<InquiryViewModel>> GetUnsolvedInquiriesAsync() => throw new NotSupportedException();
         public Task<DashboardStatsViewModel> GetDashboardStatsAsync() => throw new NotSupportedException();
-        public Task<bool> UpdateInstructionAsync(ChatMessage instruction) => throw new NotSupportedException();
         public Task<long?> GetOrCreateGroupChatConversationIdAsync(long clientId, int clientAuthUserId) => throw new NotSupportedException();
         public Task<ChatMessage?> CreateGroupChatMessageAsync(ChatMessage newMessage) => throw new NotSupportedException();
         public Task<IEnumerable<object>> GetUnreadNotificationsForAdminAsync() => throw new NotSupportedException();
@@ -698,6 +707,34 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         public Task<IEnumerable<object>> GetUnreadNotificationsForClientAsync(long clientId) => throw new NotSupportedException();
         public Task<int> MarkAllNotificationsSeenByClientAsync(long clientId) => throw new NotSupportedException();
     }
+
+    private sealed class RecordingTicketService : ITicketService
+    {
+        public List<CaseStatusUpdateCommand> StatusCommands { get; } = [];
+        public CaseMutationResult MutationResult { get; set; } = new(CaseMutationStatus.NotFound);
+
+        public Task<CaseMutationResult> UpdateStatusAsync(CaseStatusUpdateCommand command, CancellationToken cancellationToken = default)
+        {
+            StatusCommands.Add(command);
+            return Task.FromResult(MutationResult);
+        }
+
+        public Task<CaseMutationResult> UpdateAsync(TicketUpdateCommand command, CancellationToken cancellationToken = default) =>
+            Task.FromResult(MutationResult);
+    }
+
+    private sealed class RecordingInquiryService : IInquiryService
+    {
+        public List<CaseStatusUpdateCommand> StatusCommands { get; } = [];
+        public CaseMutationResult MutationResult { get; set; } = new(CaseMutationStatus.NotFound);
+
+        public Task<CaseMutationResult> UpdateStatusAsync(CaseStatusUpdateCommand command, CancellationToken cancellationToken = default)
+        {
+            StatusCommands.Add(command);
+            return Task.FromResult(MutationResult);
+        }
+    }
+
 
     private sealed class RecordingCaseConversationService : IConversationService
     {

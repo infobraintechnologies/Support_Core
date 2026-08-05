@@ -1,4 +1,6 @@
 using CBSSupport.Shared.Services;
+using CBSSupport.Shared.Contracts;
+using CBSSupport.Shared.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CBSSupport.API.Tests.Services;
@@ -36,7 +38,29 @@ public sealed class ChatServiceLoggingTests
         var source = ReadChatServiceSource();
 
         Assert.Contains("_logger.LogWarning", source);
-        Assert.Contains("{InstructionId}", source);
+        Assert.Contains("{InstructionTypeId}", source);
+    }
+
+    [Theory]
+    [InlineData(ConversationTypes.TrainingTicket, InstructionCategories.Ticket)]
+    [InlineData(ConversationTypes.AccountsInquiry, InstructionCategories.Inquiry)]
+    public async Task CreateInstructionTicketAsync_CaseCommand_IsRejectedBeforeAnyLegacyDatabaseWrite(
+        short instructionTypeId,
+        short instructionCategoryId)
+    {
+        var service = new ChatService(
+            "Host=localhost;Database=unused",
+            NullLogger<ChatService>.Instance);
+
+        var result = await service.CreateInstructionTicketAsync(new ChatMessage
+        {
+            InstTypeId = instructionTypeId,
+            InstCategoryId = instructionCategoryId,
+            Instruction = "This must use IConversationService.",
+            InsertUser = 9
+        });
+
+        Assert.Null(result);
     }
 
     private static string ReadChatServiceSource()

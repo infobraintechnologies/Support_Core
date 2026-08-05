@@ -98,7 +98,9 @@ public sealed class TicketsController(
 [ApiController]
 [Route("api/v1/admin/tickets")]
 [Authorize(Policy = Policies.AdminOnly)]
-public sealed class AdminTicketsController(IChatService chatService) : ControllerBase
+public sealed class AdminTicketsController(
+    IChatService chatService,
+    ITicketService tickets) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<CasePage<TicketResponse>>> List(
@@ -132,8 +134,9 @@ public sealed class AdminTicketsController(IChatService chatService) : Controlle
                 detail: "The ticket status must be 'Open' or 'Resolved'.");
         }
 
-        var mutation = await chatService.UpdateTicketStatusAsync(
-            caseId, isCompleted, User.GetRequiredUserId(), request.ExpectedVersion, cancellationToken);
+        var mutation = await tickets.UpdateStatusAsync(
+            new CaseStatusUpdateCommand(caseId, isCompleted, User.GetRequiredUserId(), request.ExpectedVersion),
+            cancellationToken);
         if (mutation.Status == CaseMutationStatus.NotFound)
             return NotFound();
         if (mutation.Status == CaseMutationStatus.Conflict)

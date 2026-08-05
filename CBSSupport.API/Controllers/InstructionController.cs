@@ -17,17 +17,23 @@ public sealed class InstructionsController : ControllerBase
 {
     private readonly IChatService _service;
     private readonly IConversationService _conversations;
+    private readonly ITicketService _tickets;
+    private readonly IInquiryService _inquiries;
     private readonly IAuthorizationService _authorizationService;
     private readonly IHubContext<ChatHub> _hubContext;
 
     public InstructionsController(
         IChatService service,
         IConversationService conversations,
+        ITicketService tickets,
+        IInquiryService inquiries,
         IAuthorizationService authorizationService,
         IHubContext<ChatHub> hubContext)
     {
         _service = service;
         _conversations = conversations;
+        _tickets = tickets;
+        _inquiries = inquiries;
         _authorizationService = authorizationService;
         _hubContext = hubContext;
     }
@@ -219,19 +225,14 @@ public sealed class InstructionsController : ControllerBase
             userremarks = request.Remarks ?? string.Empty
         });
 
-        var updatedTicket = new ChatMessage
-        {
-            Id = ticketId,
-            Instruction = request.Instruction,
-            Remarks = remarks,
-            ExpiryDate = request.ExpiryDate,
-            EditDate = DateTime.UtcNow,
-            EditUser = User.GetRequiredUserId()
-        };
-
-        var mutation = await _service.UpdateTicketAsync(
-            updatedTicket,
-            request.ExpectedVersion,
+        var mutation = await _tickets.UpdateAsync(
+            new TicketUpdateCommand(
+                ticketId,
+                request.Instruction,
+                remarks,
+                request.ExpiryDate,
+                User.GetRequiredUserId(),
+                request.ExpectedVersion),
             HttpContext.RequestAborted);
         return mutation.Status switch
         {
@@ -271,8 +272,9 @@ public sealed class InstructionsController : ControllerBase
         UpdateStatusRequest request)
     {
         var userId = User.GetRequiredUserId();
-        var mutation = await _service.UpdateTicketStatusAsync(
-            ticketId, request.IsCompleted, userId, request.ExpectedVersion, HttpContext.RequestAborted);
+        var mutation = await _tickets.UpdateStatusAsync(
+            new CaseStatusUpdateCommand(ticketId, request.IsCompleted, userId, request.ExpectedVersion),
+            HttpContext.RequestAborted);
         return mutation.Status switch
         {
             CaseMutationStatus.Updated => Ok(new { success = true, message = "Ticket status updated successfully.", version = mutation.Version }),
@@ -293,8 +295,9 @@ public sealed class InstructionsController : ControllerBase
         UpdateStatusRequest request)
     {
         var userId = User.GetRequiredUserId();
-        var mutation = await _service.UpdateInquiryStatusAsync(
-            inquiryId, request.IsCompleted, userId, request.ExpectedVersion, HttpContext.RequestAborted);
+        var mutation = await _inquiries.UpdateStatusAsync(
+            new CaseStatusUpdateCommand(inquiryId, request.IsCompleted, userId, request.ExpectedVersion),
+            HttpContext.RequestAborted);
         return mutation.Status switch
         {
             CaseMutationStatus.Updated => Ok(new { success = true, message = "Inquiry status updated successfully.", version = mutation.Version }),

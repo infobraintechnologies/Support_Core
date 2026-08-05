@@ -77,7 +77,7 @@ public sealed class InstructionsControllerPrincipalWriteTests
         var chatService = DispatchProxy.Create<IChatService, RecordingChatServiceProxy>();
         var recordingService = (RecordingChatServiceProxy)(object)chatService;
         var conversations = new RecordingConversationService();
-        var controller = new InstructionsController(chatService, conversations, null!, null!)
+        var controller = new InstructionsController(chatService, conversations, null!, null!, null!, null!)
         {
             ControllerContext = new ControllerContext
             {
