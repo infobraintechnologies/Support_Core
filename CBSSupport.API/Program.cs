@@ -74,9 +74,14 @@ var jwtSecurityOptions = builder.Configuration
     .GetSection(JwtSecurityOptions.SectionName)
     .Get<JwtSecurityOptions>() ?? new JwtSecurityOptions();
 jwtSecurityOptions.Validate();
+var passwordHashOptions = builder.Configuration
+    .GetSection(PasswordHashOptions.SectionName)
+    .Get<PasswordHashOptions>() ?? new PasswordHashOptions();
+passwordHashOptions.Validate();
 
 builder.Services.AddSingleton(loginSecurityOptions);
 builder.Services.AddSingleton(jwtSecurityOptions);
+builder.Services.AddSingleton(passwordHashOptions);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<ILoginAttemptLimiter, LoginAttemptLimiter>();
 builder.Services.AddRateLimiter(options =>

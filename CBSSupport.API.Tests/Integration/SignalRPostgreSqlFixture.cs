@@ -275,7 +275,8 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
                     new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:DefaultConnection"] = connectionString,
-                        ["Jwt:Enabled"] = "false"
+                        ["Jwt:Enabled"] = "false",
+                        ["Security:PasswordHashing:Pepper"] = "test-company-pepper"
                     }));
         }
     }
