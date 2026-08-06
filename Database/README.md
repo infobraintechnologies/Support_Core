@@ -83,6 +83,12 @@ Never edit an applied migration. Write a new timestamped forward-fix instead.
    and explicitly select `Attachments:SecurityMode=StructuralValidationOnly`.
    Validate the structural worker and record team approval of residual malware
    risk and compensating controls before any separately approved activation.
+13. Apply `202608061000_add_persisted_security_stamps.sql` after confirming that
+    `pgcrypto.gen_random_bytes(integer)` is installed and that the owners of both
+    externally managed identity tables approve the additive columns. Verify every
+    row has a 32-byte stamp before enabling the application deployment; rotate
+    stamps through the shared service for password/reset, role, compromise, and
+    revoke-all events.
 
 StructuralValidationOnly performs no malware scanning and does not require ClamAV,
 port 3310, scanner health, or signature definitions. It must not be represented as

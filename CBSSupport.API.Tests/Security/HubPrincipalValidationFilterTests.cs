@@ -85,6 +85,39 @@ public sealed class HubPrincipalValidationFilterTests
     }
 
     [Fact]
+    public async Task ReconnectAfterStampRotation_RejectsStalePrincipalBeforeJoiningHub()
+    {
+        var validator = new MutablePrincipalValidator { IsValid = true };
+        var connections = new ActiveHubConnectionRegistry();
+        var filter = new HubPrincipalValidationFilter(
+            validator,
+            connections,
+            new MutableTimeProvider(InitialTime),
+            NullLogger<HubPrincipalValidationFilter>.Instance);
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var hub = new TestHub();
+        var firstContext = new TestHubCallerContext(CreatePrincipal());
+        await filter.OnConnectedAsync(
+            new HubLifetimeContext(firstContext, services, hub),
+            _ => Task.CompletedTask);
+
+        validator.IsValid = false;
+        await filter.OnDisconnectedAsync(
+            new HubLifetimeContext(firstContext, services, hub),
+            exception: null,
+            (_, _) => Task.CompletedTask);
+
+        var reconnectContext = new TestHubCallerContext(CreatePrincipal());
+        await Assert.ThrowsAsync<HubException>(() =>
+            filter.OnConnectedAsync(
+                new HubLifetimeContext(reconnectContext, services, hub),
+                _ => Task.CompletedTask));
+
+        Assert.True(reconnectContext.WasAborted);
+        Assert.Empty(connections.GetConnections());
+    }
+
+    [Fact]
     public async Task ConnectionLifecycle_RegistersAfterValidation_AndRemovesOnDisconnect()
     {
         var validator = new MutablePrincipalValidator { IsValid = true };

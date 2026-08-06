@@ -6,19 +6,31 @@ namespace CBSSupport.API.Tests.Security;
 public sealed class DataProtectionAccountSecurityStampServiceTests
 {
     [Fact]
-    public void Stamp_PasswordCredentialChange_InvalidatesProtectedStampWithoutExposingCredentials()
+    public void Stamp_RandomPersistedValue_IsProtectedAndOnlyMatchesCurrentValue()
     {
-        const string passwordHash = "stored-password-hash";
-        const string passwordSalt = "stored-password-salt";
+        var service = new DataProtectionAccountSecurityStampService(
+            new EphemeralDataProtectionProvider());
+        var persistedStamp = Enumerable.Repeat((byte)7, 32).ToArray();
+        var replacementStamp = Enumerable.Repeat((byte)8, 32).ToArray();
+
+        var stamp = service.Create(persistedStamp);
+
+        Assert.True(service.Matches(stamp, persistedStamp));
+        Assert.False(service.Matches(stamp, replacementStamp));
+        Assert.False(service.Matches("not-protected", persistedStamp));
+    }
+
+    [Fact]
+    public void Generate_ProducesCryptographicallyRandomSizedStamps()
+    {
         var service = new DataProtectionAccountSecurityStampService(
             new EphemeralDataProtectionProvider());
 
-        var stamp = service.Create(passwordHash, passwordSalt);
+        var first = service.Generate();
+        var second = service.Generate();
 
-        Assert.DoesNotContain(passwordHash, stamp, StringComparison.Ordinal);
-        Assert.DoesNotContain(passwordSalt, stamp, StringComparison.Ordinal);
-        Assert.True(service.Matches(stamp, passwordHash, passwordSalt));
-        Assert.False(service.Matches(stamp, "replacement-hash", passwordSalt));
-        Assert.False(service.Matches("not-protected", passwordHash, passwordSalt));
+        Assert.Equal(32, first.Length);
+        Assert.Equal(32, second.Length);
+        Assert.False(first.SequenceEqual(second));
     }
 }

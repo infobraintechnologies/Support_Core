@@ -23,6 +23,7 @@ namespace CBSSupport.Shared.Data
                     user_name,
                     password_salt,
                     password_hash,
+                    security_stamp,
                     role_id,
                     full_name,
                     status,
@@ -49,6 +50,7 @@ namespace CBSSupport.Shared.Data
                     full_name,
                     password_hash,
                     password_salt,
+                    security_stamp,
                     status,
                     deactive_date
                 FROM internal.support_users
@@ -77,6 +79,7 @@ namespace CBSSupport.Shared.Data
                     user_name,
                     password_salt,
                     password_hash,
+                    security_stamp,
                     role_id,
                     full_name,
                     status,
@@ -108,6 +111,7 @@ namespace CBSSupport.Shared.Data
                     full_name,
                     password_hash,
                     password_salt,
+                    security_stamp,
                     status,
                     deactive_date
                 FROM internal.support_users

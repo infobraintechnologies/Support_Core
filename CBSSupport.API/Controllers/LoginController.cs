@@ -76,7 +76,7 @@ namespace CBSSupport.API.Controllers
                     new Claim("FullName", adminUser.FullName),
                         new Claim(
                             CustomClaimTypes.SecurityStamp,
-                            _securityStamps.Create(adminUser.PasswordHash, adminUser.PasswordSalt))
+                            _securityStamps.Create(adminUser.SecurityStamp))
                 };
 
                     await SignInUser(claims, model.RememberMe, "/AdminSupport");
@@ -122,7 +122,7 @@ namespace CBSSupport.API.Controllers
                         new Claim(CustomClaimTypes.ClientId, clientUser.ClientId.ToString()),
                         new Claim(
                             CustomClaimTypes.SecurityStamp,
-                            _securityStamps.Create(clientUser.PasswordHash, clientUser.PasswordSalt))
+                            _securityStamps.Create(clientUser.SecurityStamp))
                     };
 
                     await SignInUser(claims, model.RememberMe, "/Support");

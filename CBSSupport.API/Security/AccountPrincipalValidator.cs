@@ -36,7 +36,7 @@ public sealed class AccountPrincipalValidator(
     {
         var user = await userRepository.GetByIdAsync(userId, cancellationToken);
         return user is { Status: true, DeactiveDate: null }
-            && securityStamps.Matches(securityStamp, user.PasswordHash, user.PasswordSalt);
+            && securityStamps.Matches(securityStamp, user.SecurityStamp);
     }
 
     private async Task<bool> ValidateClientAsync(
@@ -47,7 +47,7 @@ public sealed class AccountPrincipalValidator(
     {
         var user = await userRepository.GetClientUserByIdAsync(clientId, userId, cancellationToken);
         return user is { Status: true, DeactiveDate: null }
-            && securityStamps.Matches(securityStamp, user.PasswordHash, user.PasswordSalt);
+            && securityStamps.Matches(securityStamp, user.SecurityStamp);
     }
 
     private static bool TryGetSingleRole(ClaimsPrincipal principal, out string role)

@@ -1,12 +1,15 @@
 using CBSSupport.API.Security;
+using System.Security.Cryptography;
 
 namespace CBSSupport.API.Tests.TestDoubles;
 
 internal sealed class FakeAccountSecurityStampService : IAccountSecurityStampService
 {
-    public string Create(string passwordHash, string passwordSalt) =>
-        $"test-stamp:{passwordHash.Length}:{passwordHash}:{passwordSalt}";
+    public byte[] Generate() => RandomNumberGenerator.GetBytes(32);
 
-    public bool Matches(string candidate, string passwordHash, string passwordSalt) =>
-        string.Equals(candidate, Create(passwordHash, passwordSalt), StringComparison.Ordinal);
+    public string Create(byte[] persistedStamp) =>
+        $"test-stamp:{Convert.ToBase64String(persistedStamp)}";
+
+    public bool Matches(string candidate, byte[] persistedStamp) =>
+        string.Equals(candidate, Create(persistedStamp), StringComparison.Ordinal);
 }

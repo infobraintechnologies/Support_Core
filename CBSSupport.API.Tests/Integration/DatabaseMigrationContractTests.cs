@@ -221,6 +221,20 @@ public sealed class DatabaseMigrationContractTests
     }
 
     [Fact]
+    public void SecurityStampMigration_BackfillsRandomBytesAndEnforcesLength()
+    {
+        var sql = ReadMigration("202608061000_add_persisted_security_stamps.sql");
+
+        Assert.Contains("gen_random_bytes(32)", sql, StringComparison.Ordinal);
+        Assert.Contains("ADD COLUMN IF NOT EXISTS security_stamp bytea", sql, StringComparison.Ordinal);
+        Assert.Contains("security_stamp SET NOT NULL", sql, StringComparison.Ordinal);
+        Assert.Contains("octet_length(security_stamp) = 32", sql, StringComparison.Ordinal);
+        Assert.Contains("LIMIT 10000", sql, StringComparison.Ordinal);
+        Assert.Contains("admin.users", sql, StringComparison.Ordinal);
+        Assert.Contains("internal.support_users", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AttachmentSchema_EnforcesTenantUploaderAndMessageBindingComposites()
     {
         var sql = ReadMigration("202607261040_enforce_attachment_relational_invariants.sql");

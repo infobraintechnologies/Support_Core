@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace CBSSupport.API.Security;
@@ -15,12 +14,17 @@ public sealed class DataProtectionAccountSecurityStampService : IAccountSecurity
         _protector = dataProtectionProvider.CreateProtector(ProtectorPurpose);
     }
 
-    public string Create(string passwordHash, string passwordSalt) =>
-        _protector.Protect(Convert.ToBase64String(ComputeFingerprint(passwordHash, passwordSalt)));
+    public byte[] Generate() => RandomNumberGenerator.GetBytes(32);
 
-    public bool Matches(string candidate, string passwordHash, string passwordSalt)
+    public string Create(byte[] persistedStamp)
     {
-        if (string.IsNullOrWhiteSpace(candidate))
+        ValidateStamp(persistedStamp);
+        return _protector.Protect(Convert.ToBase64String(persistedStamp));
+    }
+
+    public bool Matches(string candidate, byte[] persistedStamp)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || persistedStamp.Length != 32)
         {
             return false;
         }
@@ -28,9 +32,8 @@ public sealed class DataProtectionAccountSecurityStampService : IAccountSecurity
         try
         {
             var protectedFingerprint = Convert.FromBase64String(_protector.Unprotect(candidate));
-            var currentFingerprint = ComputeFingerprint(passwordHash, passwordSalt);
-            return protectedFingerprint.Length == currentFingerprint.Length
-                && CryptographicOperations.FixedTimeEquals(protectedFingerprint, currentFingerprint);
+            return protectedFingerprint.Length == persistedStamp.Length
+                && CryptographicOperations.FixedTimeEquals(protectedFingerprint, persistedStamp);
         }
         catch (CryptographicException)
         {
@@ -42,12 +45,14 @@ public sealed class DataProtectionAccountSecurityStampService : IAccountSecurity
         }
     }
 
-    private static byte[] ComputeFingerprint(string passwordHash, string passwordSalt)
+    private static void ValidateStamp(byte[] persistedStamp)
     {
-        ArgumentNullException.ThrowIfNull(passwordHash);
-        ArgumentNullException.ThrowIfNull(passwordSalt);
-
-        var material = $"{passwordHash.Length}:{passwordHash}{passwordSalt.Length}:{passwordSalt}";
-        return SHA256.HashData(Encoding.UTF8.GetBytes(material));
+        ArgumentNullException.ThrowIfNull(persistedStamp);
+        if (persistedStamp.Length != 32)
+        {
+            throw new ArgumentException(
+                "Security stamps must contain exactly 32 random bytes.",
+                nameof(persistedStamp));
+        }
     }
 }

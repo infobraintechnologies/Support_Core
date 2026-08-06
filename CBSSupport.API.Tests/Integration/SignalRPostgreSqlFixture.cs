@@ -5,7 +5,6 @@ using CBSSupport.Shared.Data;
 using CBSSupport.Shared.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -153,7 +152,7 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
             new Claim(CustomClaimTypes.ClientId, client.ClientId.ToString(CultureInfo.InvariantCulture)),
             new Claim(
                 CustomClaimTypes.SecurityStamp,
-                stamps.Create(PasswordHash, PasswordSalt))
+                stamps.Create(GetSecurityStamp(client.UserId)))
         };
         var identity = new ClaimsIdentity(
             claims,
@@ -173,6 +172,14 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
         return $"{cookieOptions.Cookie.Name}={protectedTicket}";
     }
 
+    private static byte[] GetSecurityStamp(int userId) =>
+        userId switch
+        {
+            101 => Enumerable.Repeat((byte)0x01, 32).ToArray(),
+            102 => Enumerable.Repeat((byte)0x02, 32).ToArray(),
+            _ => throw new ArgumentOutOfRangeException(nameof(userId))
+        };
+
     private static async Task InitializeDatabaseAsync(string connectionString)
     {
         const string sql = """
@@ -186,6 +193,7 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
                 full_name text NOT NULL,
                 password_hash text NOT NULL,
                 password_salt text NOT NULL,
+                security_stamp bytea NOT NULL,
                 status boolean NOT NULL,
                 deactive_date timestamp with time zone NULL
             );
@@ -210,12 +218,12 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
 
             INSERT INTO internal.support_users (
                 id, client_id, user_name, full_name,
-                password_hash, password_salt, status, deactive_date)
+                password_hash, password_salt, security_stamp, status, deactive_date)
             VALUES
                 (101, 501, 'integration-client-a', 'Integration Client A',
-                 'integration-password-hash', 'integration-password-salt', TRUE, NULL),
+                 'integration-password-hash', 'integration-password-salt', decode(repeat('01', 32), 'hex'), TRUE, NULL),
                 (102, 501, 'integration-client-b', 'Integration Client B',
-                 'integration-password-hash', 'integration-password-salt', TRUE, NULL);
+                 'integration-password-hash', 'integration-password-salt', decode(repeat('02', 32), 'hex'), TRUE, NULL);
 
             INSERT INTO digital.instructions (
                 id, client_id, inst_type_id, inst_category_id, instruction_id)
@@ -268,7 +276,6 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
                         attachmentsEnabled: false));
                 services.AddSingleton<IChatService>(
                     new ChatService(connectionString, NullLogger<ChatService>.Instance));
-                services.AddDataProtection().UseEphemeralDataProtectionProvider();
             });
             builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(

@@ -40,7 +40,8 @@ public sealed class JwtTokenTests
             Username = "admin",
             FullName = "Support Administrator",
             PasswordHash = "password-hash",
-            PasswordSalt = "password-salt"
+            PasswordSalt = "password-salt",
+            SecurityStamp = Enumerable.Repeat((byte)7, 32).ToArray()
         };
         var authService = new StubAuthService { AdminUser = user };
         var options = CreateEnabledOptions();
@@ -58,8 +59,7 @@ public sealed class JwtTokenTests
         Assert.Equal(Roles.Admin, jwt.Claims.Single(c => c.Type == JwtClaimTypes.Role).Value);
         Assert.True(new FakeAccountSecurityStampService().Matches(
             jwt.Claims.Single(c => c.Type == CustomClaimTypes.SecurityStamp).Value,
-            user.PasswordHash,
-            user.PasswordSalt));
+            user.SecurityStamp));
         Assert.DoesNotContain(jwt.Claims, claim => claim.Type == "UserId");
         Assert.DoesNotContain(jwt.Claims, claim => claim.Type == CustomClaimTypes.ClientId);
         Assert.DoesNotContain(jwt.Claims, claim => claim.Type == CustomClaimTypes.LegacyClientId);

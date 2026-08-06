@@ -2,7 +2,9 @@ namespace CBSSupport.API.Security;
 
 public interface IAccountSecurityStampService
 {
-    string Create(string passwordHash, string passwordSalt);
+    byte[] Generate();
 
-    bool Matches(string candidate, string passwordHash, string passwordSalt);
+    string Create(byte[] persistedStamp);
+
+    bool Matches(string candidate, byte[] persistedStamp);
 }

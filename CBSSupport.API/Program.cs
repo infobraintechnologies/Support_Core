@@ -31,6 +31,11 @@ var builder = WebApplication.CreateBuilder(args);
 var isOpenApiGeneration = Assembly.GetEntryAssembly()?.GetName().Name
     ?.StartsWith("GetDocument", StringComparison.Ordinal) == true;
 
+builder.Services.AddCbsDataProtection(
+    builder.Configuration,
+    builder.Environment,
+    isOpenApiGeneration);
+
 builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = RequestSizeLimits.MaximumBodySizeBytes);
 builder.Services.Configure<IISServerOptions>(options =>
@@ -265,8 +270,11 @@ if (!isOpenApiGeneration)
     builder.Services.AddHostedService<ConversationOutboxDispatcher>();
 }
 builder.Services.AddSingleton<IUserRepository>(provider => new UserRepository(connectionString));
+builder.Services.AddSingleton<IAccountSecurityStampStore>(
+    new AccountSecurityStampStore(connectionString));
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IAccountSecurityStampService, DataProtectionAccountSecurityStampService>();
+builder.Services.AddSingleton<IAccountSecurityStampRotationService, AccountSecurityStampRotationService>();
 builder.Services.AddSingleton<IAccountPrincipalValidator, AccountPrincipalValidator>();
 builder.Services.AddScoped<CookiePrincipalValidationEvents>();
 builder.Services.AddScoped<JwtPrincipalValidationEvents>();
