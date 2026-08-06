@@ -14,15 +14,7 @@ public sealed class R2FileStorage : IFileStorage, IDisposable
     public R2FileStorage(R2StorageOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        if (string.IsNullOrWhiteSpace(options.AccessKeyId)
-            || string.IsNullOrWhiteSpace(options.SecretAccessKey)
-            || string.IsNullOrWhiteSpace(options.BucketName)
-            || (string.IsNullOrWhiteSpace(options.ServiceUrl)
-                && string.IsNullOrWhiteSpace(options.AccountId)))
-        {
-            throw new InvalidOperationException(
-                "R2 credentials, bucket, and account/service URL are required when attachments are enabled.");
-        }
+        options.Validate();
 
         _bucket = options.BucketName;
         var serviceUrl = options.ServiceUrl?.TrimEnd('/')
