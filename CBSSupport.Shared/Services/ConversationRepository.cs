@@ -1562,6 +1562,32 @@ public sealed class ConversationRepository : IConversationRepository
 
         try
         {
+            var reviewUpdated = await connection.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE digital.private_conversation_review
+                SET review_state = 'Resolved',
+                    remediation_code = 'participants_confirmed',
+                    resolved_at = @ResolvedAt,
+                    resolved_by_admin_user_id = @ResolvedByAdminUserId
+                WHERE conversation_id = @ConversationId
+                  AND client_id = @ClientId
+                  AND review_state = 'NeedsReview';
+                """,
+                new
+                {
+                    ConversationId = conversationId,
+                    ClientId = row.ClientId,
+                    ResolvedAt = DateTime.UtcNow,
+                    ResolvedByAdminUserId = checked((int)actor.UserId)
+                },
+                transaction,
+                cancellationToken: cancellationToken));
+            if (reviewUpdated != 1)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return new(ConversationCommandStatus.Unavailable, ErrorCode: "private_review_unavailable");
+            }
+
             await connection.ExecuteAsync(new CommandDefinition(
                 """
                 UPDATE digital.conversation_access

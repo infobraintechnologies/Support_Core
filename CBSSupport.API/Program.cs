@@ -220,6 +220,9 @@ if (attachmentOptions.Enabled)
 }
 builder.Services.Configure<MessagingFeatureOptions>(
     builder.Configuration.GetSection(MessagingFeatureOptions.SectionName));
+builder.Services.AddSingleton<IPrivateMessagingReadinessGate>(
+    new PrivateMessagingReadinessGate(connectionString));
+builder.Services.AddHostedService<PrivateMessagingReadinessHostedService>();
 builder.Services.AddSingleton<IUserIdProvider, NamespacedUserIdProvider>();
 builder.Services.AddSingleton<IConversationRealtimePublisher, SignalRConversationRealtimePublisher>();
 builder.Services.AddSingleton<INotificationRealtimePublisher, NotificationRealtimePublisher>();
