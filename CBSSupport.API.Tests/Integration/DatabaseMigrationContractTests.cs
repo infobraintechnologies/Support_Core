@@ -145,6 +145,46 @@ public sealed class DatabaseMigrationContractTests
     }
 
     [Fact]
+    public void LegacyPrivateMappingGate_IsContentFreeIdempotentAndFailClosed()
+    {
+        var migration = ReadMigration(
+            "202608051200_complete_legacy_private_mapping_gate.sql");
+        var preflight = ReadPreflight(
+            "202608051210_verify_legacy_private_mapping_gate.sql");
+
+        Assert.Contains("ON CONFLICT (conversation_id) DO NOTHING", migration, StringComparison.Ordinal);
+        Assert.Contains("confirm_exact_client_and_admin_participants", migration, StringComparison.Ordinal);
+        Assert.Contains("LegacyPrivateApproved", migration, StringComparison.Ordinal);
+        Assert.Contains("missing_approval_evidence", migration, StringComparison.Ordinal);
+        Assert.Contains("invalid_lifecycle_fields", migration, StringComparison.Ordinal);
+        Assert.Contains("review.conversation_id IS NOT NULL", migration, StringComparison.Ordinal);
+        Assert.Contains("LegacyPrivateReviewReconciled", migration, StringComparison.Ordinal);
+        Assert.Contains("client_user.client_id::bigint IS DISTINCT FROM access.client_id", migration, StringComparison.Ordinal);
+        Assert.Contains("missing its required Client participant foreign key", migration, StringComparison.Ordinal);
+        Assert.Contains("missing its required Admin participant foreign key", migration, StringComparison.Ordinal);
+        Assert.Contains("ix_conversation_access_active_private_pair_unique", migration, StringComparison.Ordinal);
+        Assert.Contains("fk_conversation_access_conversation_tenant", migration, StringComparison.Ordinal);
+        Assert.Contains("trg_private_conversation_review_matches_access", migration, StringComparison.Ordinal);
+        Assert.Contains("legacy_private_mapping_constraints", migration, StringComparison.Ordinal);
+        Assert.Contains("legacy_private_mapping_review_triggers", migration, StringComparison.Ordinal);
+        Assert.DoesNotContain("root.instruction,", migration, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Contains("unresolved_needs_review", preflight, StringComparison.Ordinal);
+        Assert.Contains("valid_resolved_active", preflight, StringComparison.Ordinal);
+        Assert.Contains("valid_resolved_archived", preflight, StringComparison.Ordinal);
+        Assert.Contains("resolved_without_approval_evidence", preflight, StringComparison.Ordinal);
+        Assert.Contains("not_private_kind", preflight, StringComparison.Ordinal);
+        Assert.Contains("tenant_mismatch", preflight, StringComparison.Ordinal);
+        Assert.Contains("invalid_client_participant", preflight, StringComparison.Ordinal);
+        Assert.Contains("invalid_admin_participant", preflight, StringComparison.Ordinal);
+        Assert.Contains("duplicate_active_pair", preflight, StringComparison.Ordinal);
+        Assert.Contains("conflicting_review_state", preflight, StringComparison.Ordinal);
+        Assert.Contains("Ready", preflight, StringComparison.Ordinal);
+        Assert.Contains("PrivateEnabled=false", preflight, StringComparison.Ordinal);
+        Assert.DoesNotContain("instruction AS", preflight, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void AttachmentSchema_CountsDeletePendingUntilDeletionConfirmation()
     {
         var createSql = ReadMigration("202607261020_create_r2_attachments.sql");
