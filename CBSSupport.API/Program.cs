@@ -15,15 +15,21 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.Server.IIS;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
+using Microsoft.OpenApi.Models;
+using System.Reflection;
 using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+var isOpenApiGeneration = Assembly.GetEntryAssembly()?.GetName().Name
+    ?.StartsWith("GetDocument", StringComparison.Ordinal) == true;
 
 builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = RequestSizeLimits.MaximumBodySizeBytes);
@@ -36,6 +42,14 @@ var mvcBuilder = builder.Services.AddControllersWithViews(SecurityMvcOptions.Con
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddAntiforgery(SecurityMvcOptions.ConfigureAntiforgery);
+builder.Services.AddOpenApi("v1", options =>
+{
+    options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_0;
+    options.ShouldInclude = description =>
+        description.RelativePath?.StartsWith("api/v1/", StringComparison.OrdinalIgnoreCase) == true;
+    options.AddDocumentTransformer<CBSSupport.API.OpenApi.ApiDocumentTransformer>();
+    options.AddOperationTransformer<CBSSupport.API.OpenApi.ApiOperationTransformer>();
+});
 
 if (builder.Environment.IsDevelopment())
 {
@@ -77,7 +91,16 @@ jwtSecurityOptions.Validate();
 var passwordHashOptions = builder.Configuration
     .GetSection(PasswordHashOptions.SectionName)
     .Get<PasswordHashOptions>() ?? new PasswordHashOptions();
-passwordHashOptions.Validate();
+if (isOpenApiGeneration)
+{
+    // The build-time generator invokes the entry point with a mock server. It
+    // must not require deployment-only secret material.
+    passwordHashOptions = new PasswordHashOptions();
+}
+else
+{
+    passwordHashOptions.Validate();
+}
 
 builder.Services.AddSingleton(loginSecurityOptions);
 builder.Services.AddSingleton(jwtSecurityOptions);
@@ -158,10 +181,11 @@ builder.Services.AddRateLimiter(options =>
 
 // --- 2. Get Connection String ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-if (string.IsNullOrEmpty(connectionString))
+if (string.IsNullOrEmpty(connectionString) && !isOpenApiGeneration)
 {
     throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 }
+connectionString ??= "Host=127.0.0.1;Port=5432;Database=openapi_generation;Username=unused;Password=unused";
 
 // --- 3. Register your custom services---
 var attachmentOptions = builder.Configuration
@@ -207,7 +231,7 @@ builder.Services.AddSingleton<IAttachmentService>(provider => new AttachmentServ
     provider.GetService<IFileScanner>(),
     attachmentOptions,
     provider.GetRequiredService<TimeProvider>()));
-if (attachmentOptions.Enabled)
+if (!isOpenApiGeneration && attachmentOptions.Enabled)
 {
     builder.Services.AddHostedService<AttachmentCleanupWorker>();
     if (attachmentOptions.SecurityMode == AttachmentSecurityMode.StructuralValidationOnly)
@@ -227,13 +251,19 @@ builder.Services.Configure<MessagingFeatureOptions>(
     builder.Configuration.GetSection(MessagingFeatureOptions.SectionName));
 builder.Services.AddSingleton<IPrivateMessagingReadinessGate>(
     new PrivateMessagingReadinessGate(connectionString));
-builder.Services.AddHostedService<PrivateMessagingReadinessHostedService>();
+if (!isOpenApiGeneration)
+{
+    builder.Services.AddHostedService<PrivateMessagingReadinessHostedService>();
+}
 builder.Services.AddSingleton<IUserIdProvider, NamespacedUserIdProvider>();
 builder.Services.AddSingleton<IConversationRealtimePublisher, SignalRConversationRealtimePublisher>();
 builder.Services.AddSingleton<INotificationRealtimePublisher, NotificationRealtimePublisher>();
 builder.Services.Configure<ConversationOutboxDispatcherOptions>(
     builder.Configuration.GetSection("Messaging:Outbox"));
-builder.Services.AddHostedService<ConversationOutboxDispatcher>();
+if (!isOpenApiGeneration)
+{
+    builder.Services.AddHostedService<ConversationOutboxDispatcher>();
+}
 builder.Services.AddSingleton<IUserRepository>(provider => new UserRepository(connectionString));
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IAccountSecurityStampService, DataProtectionAccountSecurityStampService>();
@@ -242,7 +272,10 @@ builder.Services.AddScoped<CookiePrincipalValidationEvents>();
 builder.Services.AddScoped<JwtPrincipalValidationEvents>();
 builder.Services.AddSingleton<IActiveHubConnectionRegistry, ActiveHubConnectionRegistry>();
 builder.Services.AddSingleton<HubPrincipalValidationFilter>();
-builder.Services.AddHostedService<HubConnectionRevocationMonitor>();
+if (!isOpenApiGeneration)
+{
+    builder.Services.AddHostedService<HubConnectionRevocationMonitor>();
+}
 builder.Services.AddSingleton<IAuthorizationHandler, TenantAccessHandler>();
 
 // --- 4. CONFIGURE AUTHENTICATION ---
@@ -351,6 +384,8 @@ app.MapControllerRoute(
 
 app.MapControllers();
 app.MapHub<ChatHub>("/chathub");
+app.MapOpenApi("/openapi/{documentName}.json")
+    .RequireAuthorization(Policies.AdminOnly);
 app.Run();
 
 static string GetMessagingRateLimitKey(HttpContext context)

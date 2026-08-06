@@ -1,0 +1,30 @@
+name: API contract
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Restore
+        run: dotnet restore CBSSupportSolution.sln
+      - name: Build and generate deterministic OpenAPI artifact
+        run: dotnet build CBSSupport.API/CBSSupport.API.csproj --configuration Release --no-restore
+      - name: Compare generated contract with baseline
+        shell: pwsh
+        run: ./scripts/Compare-OpenApi.ps1 -CurrentPath artifacts/openapi/cbs-support-api.json -BaselinePath CBSSupport.API/openapi/cbs-support-api.baseline.json
+      - name: Validate OpenAPI document
+        run: dotnet test CBSSupport.API.Tests/CBSSupport.API.Tests.csproj --configuration Release --no-restore --filter FullyQualifiedName~OpenApiContractTests
+      - name: Upload generated OpenAPI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cbs-support-api-openapi-v1
+          path: artifacts/openapi/cbs-support-api.json
+          if-no-files-found: error

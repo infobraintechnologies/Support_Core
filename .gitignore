@@ -1,6 +1,7 @@
 # Build results
 bin/
 obj/
+artifacts/openapi/
 *.exe
 *.dll
 *.pdb
