@@ -34,7 +34,8 @@ public sealed class NotificationsController(
     }
 
     [HttpPut("read-all")]
-    public async Task<ActionResult<object>> MarkAllRead(CancellationToken cancellationToken)
+    public async Task<ActionResult<NotificationBulkReadResult>> MarkAllRead(
+        CancellationToken cancellationToken)
     {
         var recipient = CurrentRecipient();
         var result = await notifications.MarkAllReadAsync(recipient, cancellationToken);
