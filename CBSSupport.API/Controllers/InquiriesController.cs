@@ -11,7 +11,8 @@ namespace CBSSupport.API.Controllers;
 [Route("api/v1/inquiries")]
 public sealed class InquiriesController(
     IConversationService conversations,
-    IChatService chatService) : ControllerBase
+    IChatService chatService,
+    IAuthorizationService? authorizationService = null) : ControllerBase
 {
     [HttpPost]
     [Authorize(Policy = Policies.ClientOnly)]
@@ -84,7 +85,32 @@ public sealed class InquiriesController(
     {
         long? scope = User.IsInRole(Roles.Admin) ? null : User.GetRequiredClientId();
         var inquiry = await chatService.GetInquiryDetailsByIdAsync(caseId, scope, cancellationToken);
-        return inquiry is null ? NotFound() : Ok(CaseDtoMapper.ToInquiry(inquiry));
+        if (inquiry is null
+            || (User.IsInRole(Roles.Admin)
+                && !await CanAccessTenantAsync(inquiry.ClientId, cancellationToken)))
+        {
+            return NotFound();
+        }
+
+        return Ok(CaseDtoMapper.ToInquiry(inquiry));
+    }
+
+    private async Task<bool> CanAccessTenantAsync(long clientId, CancellationToken cancellationToken)
+    {
+        if (authorizationService is not null)
+        {
+            return (await authorizationService.AuthorizeAsync(
+                User,
+                new TenantResource(clientId),
+                TenantAccessRequirement.Instance)).Succeeded;
+        }
+
+        var context = new AuthorizationHandlerContext(
+            [TenantAccessRequirement.Instance],
+            User,
+            new TenantResource(clientId));
+        await new TenantAccessHandler().HandleAsync(context);
+        return context.HasSucceeded;
     }
 
     private ObjectResult ConflictProblem(string code) =>
@@ -100,7 +126,8 @@ public sealed class InquiriesController(
 [Authorize(Policy = Policies.AdminOnly)]
 public sealed class AdminInquiriesController(
     IChatService chatService,
-    IInquiryService inquiries) : ControllerBase
+    IInquiryService inquiries,
+    IAuthorizationService? authorizationService = null) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<CasePage<InquiryResponse>>> List(
@@ -112,6 +139,12 @@ public sealed class AdminInquiriesController(
             return ValidationProblem(
                 statusCode: StatusCodes.Status400BadRequest,
                 detail: error);
+        }
+
+        if (criteria!.ClientId is long selectedClientId
+            && !await CanAccessTenantAsync(selectedClientId, cancellationToken))
+        {
+            return NotFound();
         }
 
         var page = await chatService.ListInquiriesAsync(criteria!, cancellationToken);
@@ -134,6 +167,12 @@ public sealed class AdminInquiriesController(
                 detail: "The inquiry status must be 'Pending' or 'Completed'.");
         }
 
+        var current = await chatService.GetInquiryDetailsByIdAsync(caseId, null, cancellationToken);
+        if (current is null || !await CanAccessTenantAsync(current.ClientId, cancellationToken))
+        {
+            return NotFound();
+        }
+
         var mutation = await inquiries.UpdateStatusAsync(
             new CaseStatusUpdateCommand(caseId, isCompleted, User.GetRequiredUserId(), request.ExpectedVersion),
             cancellationToken);
@@ -154,6 +193,24 @@ public sealed class AdminInquiriesController(
             title: "Inquiry conflict",
             detail: "The inquiry was changed by another request or the transition is no longer valid.",
             extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private async Task<bool> CanAccessTenantAsync(long clientId, CancellationToken cancellationToken)
+    {
+        if (authorizationService is not null)
+        {
+            return (await authorizationService.AuthorizeAsync(
+                User,
+                new TenantResource(clientId),
+                TenantAccessRequirement.Instance)).Succeeded;
+        }
+
+        var context = new AuthorizationHandlerContext(
+            [TenantAccessRequirement.Instance],
+            User,
+            new TenantResource(clientId));
+        await new TenantAccessHandler().HandleAsync(context);
+        return context.HasSucceeded;
+    }
 
     private static bool TryParseStatus(string? status, out bool isCompleted, out string targetLabel)
     {

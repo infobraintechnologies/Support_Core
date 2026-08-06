@@ -17,6 +17,7 @@ public static class CustomClaimTypes
 {
     public const string ClientId = "client_id";
     public const string SecurityStamp = "security_stamp";
+    public const string AdminTenantAccess = "tenant_access";
 
     // Remove after existing cookies have expired and every issuer emits client_id.
     public const string LegacyClientId = "ClientId";

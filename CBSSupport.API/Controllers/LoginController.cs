@@ -71,7 +71,8 @@ namespace CBSSupport.API.Controllers
                 {
                     new Claim(ClaimTypes.NameIdentifier, adminUser.Id.ToString()),
                     new Claim(ClaimTypes.Name, adminUser.Username),
-                    new Claim(ClaimTypes.Role, Roles.Admin),
+                        new Claim(ClaimTypes.Role, Roles.Admin),
+                        new Claim(CustomClaimTypes.AdminTenantAccess, "*"),
                     new Claim("FullName", adminUser.FullName),
                         new Claim(
                             CustomClaimTypes.SecurityStamp,

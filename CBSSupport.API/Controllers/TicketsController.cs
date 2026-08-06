@@ -11,7 +11,8 @@ namespace CBSSupport.API.Controllers;
 [Route("api/v1/tickets")]
 public sealed class TicketsController(
     IConversationService conversations,
-    IChatService chatService) : ControllerBase
+    IChatService chatService,
+    IAuthorizationService? authorizationService = null) : ControllerBase
 {
     [HttpPost]
     [Authorize(Policy = Policies.ClientOnly)]
@@ -84,7 +85,32 @@ public sealed class TicketsController(
     {
         long? scope = User.IsInRole(Roles.Admin) ? null : User.GetRequiredClientId();
         var ticket = await chatService.GetTicketDetailsByIdAsync(caseId, scope, cancellationToken);
-        return ticket is null ? NotFound() : Ok(CaseDtoMapper.ToTicket(ticket));
+        if (ticket is null
+            || (User.IsInRole(Roles.Admin)
+                && !await CanAccessTenantAsync(ticket.ClientId, cancellationToken)))
+        {
+            return NotFound();
+        }
+
+        return Ok(CaseDtoMapper.ToTicket(ticket));
+    }
+
+    private async Task<bool> CanAccessTenantAsync(long clientId, CancellationToken cancellationToken)
+    {
+        if (authorizationService is not null)
+        {
+            return (await authorizationService.AuthorizeAsync(
+                User,
+                new TenantResource(clientId),
+                TenantAccessRequirement.Instance)).Succeeded;
+        }
+
+        var context = new AuthorizationHandlerContext(
+            [TenantAccessRequirement.Instance],
+            User,
+            new TenantResource(clientId));
+        await new TenantAccessHandler().HandleAsync(context);
+        return context.HasSucceeded;
     }
 
     private ObjectResult ConflictProblem(string code) =>
@@ -100,7 +126,8 @@ public sealed class TicketsController(
 [Authorize(Policy = Policies.AdminOnly)]
 public sealed class AdminTicketsController(
     IChatService chatService,
-    ITicketService tickets) : ControllerBase
+    ITicketService tickets,
+    IAuthorizationService? authorizationService = null) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<CasePage<TicketResponse>>> List(
@@ -112,6 +139,12 @@ public sealed class AdminTicketsController(
             return ValidationProblem(
                 statusCode: StatusCodes.Status400BadRequest,
                 detail: error);
+        }
+
+        if (criteria!.ClientId is long selectedClientId
+            && !await CanAccessTenantAsync(selectedClientId, cancellationToken))
+        {
+            return NotFound();
         }
 
         var page = await chatService.ListTicketsAsync(criteria!, cancellationToken);
@@ -134,6 +167,12 @@ public sealed class AdminTicketsController(
                 detail: "The ticket status must be 'Open' or 'Resolved'.");
         }
 
+        var current = await chatService.GetTicketDetailsByIdAsync(caseId, null, cancellationToken);
+        if (current is null || !await CanAccessTenantAsync(current.ClientId, cancellationToken))
+        {
+            return NotFound();
+        }
+
         var mutation = await tickets.UpdateStatusAsync(
             new CaseStatusUpdateCommand(caseId, isCompleted, User.GetRequiredUserId(), request.ExpectedVersion),
             cancellationToken);
@@ -154,6 +193,24 @@ public sealed class AdminTicketsController(
             title: "Ticket conflict",
             detail: "The ticket was changed by another request or the transition is no longer valid.",
             extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private async Task<bool> CanAccessTenantAsync(long clientId, CancellationToken cancellationToken)
+    {
+        if (authorizationService is not null)
+        {
+            return (await authorizationService.AuthorizeAsync(
+                User,
+                new TenantResource(clientId),
+                TenantAccessRequirement.Instance)).Succeeded;
+        }
+
+        var context = new AuthorizationHandlerContext(
+            [TenantAccessRequirement.Instance],
+            User,
+            new TenantResource(clientId));
+        await new TenantAccessHandler().HandleAsync(context);
+        return context.HasSucceeded;
+    }
 
     private static bool TryParseStatus(string? status, out bool isCompleted, out string targetLabel)
     {

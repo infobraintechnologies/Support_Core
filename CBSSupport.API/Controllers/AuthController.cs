@@ -99,6 +99,7 @@ namespace CBSSupport.API.Controllers
                 new Claim(JwtClaimTypes.Name, user.Username),
                 new Claim("FullName", user.FullName),
                 new Claim(JwtClaimTypes.Role, Roles.Admin),
+                new Claim(CustomClaimTypes.AdminTenantAccess, "*"),
                 new Claim(
                     CustomClaimTypes.SecurityStamp,
                     _securityStamps.Create(user.PasswordHash, user.PasswordSalt)),

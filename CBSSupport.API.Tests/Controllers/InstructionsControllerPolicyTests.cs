@@ -2,6 +2,8 @@ using System.Reflection;
 using CBSSupport.API.Controllers;
 using CBSSupport.API.Security;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Routing;
 
 namespace CBSSupport.API.Tests.Controllers;
 
@@ -48,6 +50,21 @@ public sealed class InstructionsControllerPolicyTests
     public void ClientAction_UsesClientOnlyPolicy(string actionName)
     {
         AssertPolicy(GetAction(actionName), Policies.ClientOnly);
+    }
+
+    [Theory]
+    [InlineData(nameof(InstructionsController.GetSidebar))]
+    [InlineData(nameof(InstructionsController.GetTicketsForClient))]
+    [InlineData(nameof(InstructionsController.GetInquiriesForClient))]
+    [InlineData(nameof(InstructionsController.SaveAdminSupportGroupChat))]
+    public void LegacyClientIdAction_IsNoLongerRoutable(string actionName)
+    {
+        var action = GetAction(actionName);
+
+        Assert.NotEmpty(action.GetCustomAttributes<NonActionAttribute>());
+        Assert.DoesNotContain(
+            action.GetCustomAttributes(),
+            attribute => attribute is HttpMethodAttribute);
     }
 
     private static MethodInfo GetAction(string actionName)
