@@ -123,6 +123,7 @@ public sealed class GlobalExceptionHandlerTests
                 "ConnectionStrings:DefaultConnection",
                 "Host=127.0.0.1;Database=unused;Username=unused;Password=unused");
             builder.UseSetting("Jwt:Enabled", "false");
+            builder.UseSetting("Security:PasswordHashing:Pepper", "test-company-pepper");
             builder.ConfigureTestServices(services =>
             {
                 RegisterFaultInjectingController(services);
@@ -141,6 +142,7 @@ public sealed class GlobalExceptionHandlerTests
                 "ConnectionStrings:DefaultConnection",
                 "Host=127.0.0.1;Database=unused;Username=unused;Password=unused");
             builder.UseSetting("Jwt:Enabled", "false");
+            builder.UseSetting("Security:PasswordHashing:Pepper", "test-company-pepper");
             builder.UseSetting("Messaging:Features:PrivateEnabled", "false");
             builder.ConfigureTestServices(RegisterFaultInjectingController);
         }

@@ -37,6 +37,7 @@ public sealed class AttachmentSecurityModeRegistrationTests
                 "ConnectionStrings:DefaultConnection",
                 "Host=127.0.0.1;Database=unused;Username=unused;Password=unused");
             builder.UseSetting("Jwt:Enabled", "false");
+            builder.UseSetting("Security:PasswordHashing:Pepper", "test-company-pepper");
             builder.UseSetting("Attachments:Enabled", "true");
             builder.UseSetting("Attachments:SecurityMode", "StructuralValidationOnly");
             builder.UseSetting("Attachments:Scanning:WorkerEnabled", "true");

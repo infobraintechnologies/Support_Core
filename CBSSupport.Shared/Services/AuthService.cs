@@ -6,10 +6,14 @@ namespace CBSSupport.Shared.Services
     public class AuthService : IAuthService
     {
         private readonly IUserRepository _userRepository;
+        private readonly PasswordHashOptions _passwordHashOptions;
 
-        public AuthService(IUserRepository userRepository)
+        public AuthService(
+            IUserRepository userRepository,
+            PasswordHashOptions passwordHashOptions)
         {
             _userRepository = userRepository;
+            _passwordHashOptions = passwordHashOptions;
         }
 
         public async Task<AdminUser?> ValidateUserAsync(string username, string password)
@@ -17,7 +21,11 @@ namespace CBSSupport.Shared.Services
             var user = await _userRepository.GetByUsernameAsync(username);
             if (user == null || !IsActive(user.Status, user.DeactiveDate)) return null;
 
-            bool isPasswordValid = PasswordHelper.VerifyPassword(password, user.PasswordHash, user.PasswordSalt);
+            bool isPasswordValid = PasswordHelper.VerifyPassword(
+                password,
+                user.PasswordHash,
+                user.PasswordSalt,
+                _passwordHashOptions.Pepper);
 
             return isPasswordValid ? user : null;
         }
@@ -31,7 +39,11 @@ namespace CBSSupport.Shared.Services
                 return null;
             }
 
-            bool isPasswordValid = PasswordHelper.VerifyPassword(password, clientUser.PasswordHash, clientUser.PasswordSalt);
+            bool isPasswordValid = PasswordHelper.VerifyPassword(
+                password,
+                clientUser.PasswordHash,
+                clientUser.PasswordSalt,
+                _passwordHashOptions.Pepper);
 
             return isPasswordValid ? clientUser : null;
         }
