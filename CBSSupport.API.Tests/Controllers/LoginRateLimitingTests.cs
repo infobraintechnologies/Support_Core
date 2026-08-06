@@ -54,6 +54,26 @@ public sealed class LoginRateLimitingTests
         Assert.Equal(2, authService.AdminValidationCalls);
     }
 
+    [Fact]
+    public async Task AuthController_UnknownAccount_ReturnsGenericUnauthorized()
+    {
+        var limiter = CreateLimiter(failedAttemptsBeforeBackoff: 5);
+        var authService = new CountingAuthService();
+        var controller = CreateAuthController(limiter, authService);
+        var model = new LoginViewModel
+        {
+            RoleType = "admin",
+            Username = "does-not-exist",
+            Password = "bad"
+        };
+
+        var result = await controller.GetToken(model);
+
+        var objectResult = Assert.IsType<UnauthorizedObjectResult>(result);
+        Assert.Equal(StatusCodes.Status401Unauthorized, objectResult.StatusCode);
+        Assert.Equal(1, authService.AdminValidationCalls);
+    }
+
     private static LoginController CreateLoginController(
         ILoginAttemptLimiter limiter,
         CountingAuthService authService)
@@ -95,17 +115,21 @@ public sealed class LoginRateLimitingTests
     {
         var options = new LoginSecurityOptions
         {
-            PerIpPermitLimit = 10,
-            PerIpWindow = TimeSpan.FromMinutes(1),
-            PerIpSegments = 1,
+            SourcePermitLimit = 10,
+            SourceWindow = TimeSpan.FromMinutes(1),
             FailedAttemptsBeforeBackoff = failedAttemptsBeforeBackoff,
             InitialBackoff = TimeSpan.FromMinutes(1),
             MaximumBackoff = TimeSpan.FromMinutes(4),
             StateRetention = TimeSpan.FromMinutes(30),
-            MaximumTrackedAccounts = 32
+            CleanupBatchSize = 32,
+            CleanupEveryOperations = 256
         };
 
-        return new LoginAttemptLimiter(options, TimeProvider.System);
+        return new LoginAttemptLimiter(
+            new InMemoryLoginThrottleStore(),
+            options,
+            TimeProvider.System,
+            NullLogger<LoginAttemptLimiter>.Instance);
     }
 
     private sealed class CountingAuthService : IAuthService

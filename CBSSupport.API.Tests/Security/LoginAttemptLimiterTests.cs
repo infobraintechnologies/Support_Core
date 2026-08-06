@@ -1,110 +1,150 @@
 using CBSSupport.API.Security;
+using CBSSupport.API.Tests.TestDoubles;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CBSSupport.API.Tests.Security;
 
 public sealed class LoginAttemptLimiterTests
 {
     [Fact]
-    public void Check_SequentialFailuresReachThreshold_BlocksAccountTemporarily()
+    public async Task Check_SequentialFailuresReachThreshold_BlocksAccountTemporarily()
     {
         var timeProvider = new ManualTimeProvider(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero));
         var limiter = CreateLimiter(timeProvider, failedAttemptsBeforeBackoff: 3);
 
-        RecordFailedAttempts(limiter, "account", 3);
+        await RecordFailedAttemptsAsync(limiter, "account", 3);
 
-        var decision = limiter.Check("account");
+        var decision = await limiter.CheckAsync("account", "198.51.100.1");
 
         Assert.False(decision.IsAllowed);
+        Assert.Equal(LoginThrottleBlockReason.AccountBackoff, decision.BlockReason);
         Assert.Equal(TimeSpan.FromMinutes(1), decision.RetryAfter);
     }
 
     [Fact]
-    public void Check_ExpiredBackoff_AllowsNewAttemptsAndIncreasesNextBackoff()
+    public async Task Check_TwoLogicalInstancesShareBackoffState()
     {
-        var timeProvider = new ManualTimeProvider(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero));
-        var limiter = CreateLimiter(timeProvider, failedAttemptsBeforeBackoff: 2);
-        RecordFailedAttempts(limiter, "account", 2);
-        timeProvider.Advance(TimeSpan.FromMinutes(1));
+        var store = new InMemoryLoginThrottleStore();
+        var options = CreateOptions(failedAttemptsBeforeBackoff: 2);
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var firstInstance = CreateLimiter(store, options, timeProvider);
+        var secondInstance = CreateLimiter(store, options, timeProvider);
 
-        Assert.True(limiter.Check("account").IsAllowed);
-        RecordFailedAttempts(limiter, "account", 2);
+        await RecordFailedAttemptsAsync(firstInstance, "account", 2);
 
-        var decision = limiter.Check("account");
+        var decision = await secondInstance.CheckAsync("account", "198.51.100.1");
 
         Assert.False(decision.IsAllowed);
-        Assert.Equal(TimeSpan.FromMinutes(2), decision.RetryAfter);
+        Assert.Equal(LoginThrottleBlockReason.AccountBackoff, decision.BlockReason);
     }
 
     [Fact]
-    public void Check_RepeatedBackoffs_DoNotExceedConfiguredMaximum()
+    public async Task Check_ParallelRequestsAcrossInstances_AtomicallyEnforceSourceWindow()
     {
-        var timeProvider = new ManualTimeProvider(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero));
+        var store = new InMemoryLoginThrottleStore();
+        var options = CreateOptions(failedAttemptsBeforeBackoff: 100);
+        options.SourcePermitLimit = 10;
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var firstInstance = CreateLimiter(store, options, timeProvider);
+        var secondInstance = CreateLimiter(store, options, timeProvider);
+
+        var decisions = await Task.WhenAll(
+            Enumerable.Range(0, 50)
+                .Select(index => (index % 2 == 0 ? firstInstance : secondInstance)
+                    .CheckAsync("account", "198.51.100.1")));
+
+        Assert.Equal(10, decisions.Count(decision => decision.IsAllowed));
+        Assert.Equal(40, decisions.Count(decision => !decision.IsAllowed));
+    }
+
+    [Fact]
+    public async Task Reset_AfterSuccessfulLogin_ClearsOnlyAccountPairBackoff()
+    {
+        var store = new InMemoryLoginThrottleStore();
+        var options = CreateOptions(failedAttemptsBeforeBackoff: 1);
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var limiter = CreateLimiter(store, options, timeProvider);
+
+        await limiter.CheckAsync("account", "198.51.100.1");
+        await limiter.RecordFailureAsync("account", "198.51.100.1");
+        await limiter.ResetAsync("account", "198.51.100.1");
+
+        var decision = await limiter.CheckAsync("account", "198.51.100.1");
+
+        Assert.True(decision.IsAllowed);
+    }
+
+    [Fact]
+    public async Task Check_RepeatedBackoffsAreCappedAndCooldownExpires()
+    {
+        var timeProvider = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var limiter = CreateLimiter(timeProvider, failedAttemptsBeforeBackoff: 1);
 
         for (var cycle = 0; cycle < 4; cycle++)
         {
-            Assert.True(limiter.Check("account").IsAllowed);
-            limiter.RecordFailure("account");
-            var decision = limiter.Check("account");
+            Assert.True((await limiter.CheckAsync("account", "198.51.100.1")).IsAllowed);
+            await limiter.RecordFailureAsync("account", "198.51.100.1");
+            var decision = await limiter.CheckAsync("account", "198.51.100.1");
             Assert.False(decision.IsAllowed);
             timeProvider.Advance(decision.RetryAfter);
         }
 
-        limiter.RecordFailure("account");
-        var cappedDecision = limiter.Check("account");
+        await limiter.RecordFailureAsync("account", "198.51.100.1");
+        var cappedDecision = await limiter.CheckAsync("account", "198.51.100.1");
 
         Assert.False(cappedDecision.IsAllowed);
         Assert.Equal(TimeSpan.FromMinutes(4), cappedDecision.RetryAfter);
     }
 
     [Fact]
-    public void Reset_BlockedAccount_RemovesBackoffHistory()
+    public async Task Check_StoreFailure_FailsClosedWithGenericThrottleDecision()
     {
-        var timeProvider = new ManualTimeProvider(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero));
-        var limiter = CreateLimiter(timeProvider, failedAttemptsBeforeBackoff: 1);
-        limiter.RecordFailure("account");
+        var store = new InMemoryLoginThrottleStore { ThrowOnReserve = true };
+        var limiter = CreateLimiter(store, CreateOptions(3), new ManualTimeProvider(DateTimeOffset.UtcNow));
 
-        limiter.Reset("account");
+        var decision = await limiter.CheckAsync("account", "198.51.100.1");
 
-        Assert.True(limiter.Check("account").IsAllowed);
-        limiter.RecordFailure("account");
-        Assert.Equal(TimeSpan.FromMinutes(1), limiter.Check("account").RetryAfter);
-    }
-
-    [Fact]
-    public void Check_DifferentAccountKey_IsNotAffectedByBlockedAccount()
-    {
-        var timeProvider = new ManualTimeProvider(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero));
-        var limiter = CreateLimiter(timeProvider, failedAttemptsBeforeBackoff: 1);
-        limiter.RecordFailure("blocked-account");
-
-        Assert.False(limiter.Check("blocked-account").IsAllowed);
-        Assert.True(limiter.Check("other-account").IsAllowed);
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(LoginThrottleBlockReason.StoreUnavailable, decision.BlockReason);
+        Assert.Equal(TimeSpan.FromSeconds(30), decision.RetryAfter);
     }
 
     private static LoginAttemptLimiter CreateLimiter(
         TimeProvider timeProvider,
         int failedAttemptsBeforeBackoff) =>
-        new(
-            new LoginSecurityOptions
-            {
-                FailedAttemptsBeforeBackoff = failedAttemptsBeforeBackoff,
-                InitialBackoff = TimeSpan.FromMinutes(1),
-                MaximumBackoff = TimeSpan.FromMinutes(4),
-                StateRetention = TimeSpan.FromHours(1),
-                MaximumTrackedAccounts = 100
-            },
+        CreateLimiter(
+            new InMemoryLoginThrottleStore(),
+            CreateOptions(failedAttemptsBeforeBackoff),
             timeProvider);
 
-    private static void RecordFailedAttempts(
+    private static LoginAttemptLimiter CreateLimiter(
+        InMemoryLoginThrottleStore store,
+        LoginSecurityOptions options,
+        TimeProvider timeProvider) =>
+        new(store, options, timeProvider, NullLogger<LoginAttemptLimiter>.Instance);
+
+    private static LoginSecurityOptions CreateOptions(int failedAttemptsBeforeBackoff) =>
+        new()
+        {
+            SourcePermitLimit = 100,
+            SourceWindow = TimeSpan.FromMinutes(1),
+            FailedAttemptsBeforeBackoff = failedAttemptsBeforeBackoff,
+            InitialBackoff = TimeSpan.FromMinutes(1),
+            MaximumBackoff = TimeSpan.FromMinutes(4),
+            StateRetention = TimeSpan.FromMinutes(30),
+            CleanupBatchSize = 32,
+            CleanupEveryOperations = 256
+        };
+
+    private static async Task RecordFailedAttemptsAsync(
         ILoginAttemptLimiter limiter,
         string accountKey,
         int count)
     {
         for (var attempt = 0; attempt < count; attempt++)
         {
-            Assert.True(limiter.Check(accountKey).IsAllowed);
-            limiter.RecordFailure(accountKey);
+            Assert.True((await limiter.CheckAsync(accountKey, "198.51.100.1")).IsAllowed);
+            await limiter.RecordFailureAsync(accountKey, "198.51.100.1");
         }
     }
 

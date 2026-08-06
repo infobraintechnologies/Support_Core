@@ -9,7 +9,7 @@ namespace CBSSupport.API.Tests.Controllers;
 public sealed class LoginRateLimitingPolicyTests
 {
     [Fact]
-    public void MvcLoginPost_UsesPerIpRateLimitPolicy()
+    public void MvcLoginPost_DoesNotUseProcessLocalRateLimiter()
     {
         var action = typeof(LoginController).GetMethod(
             nameof(LoginController.Index),
@@ -18,22 +18,18 @@ public sealed class LoginRateLimitingPolicyTests
             types: [typeof(LoginViewModel)],
             modifiers: null);
 
-        var attribute = Assert.Single(
+        Assert.Empty(
             Assert.IsAssignableFrom<MemberInfo>(action)
                 .GetCustomAttributes<EnableRateLimitingAttribute>());
-
-        Assert.Equal(LoginRateLimitPolicies.PerIp, attribute.PolicyName);
     }
 
     [Fact]
-    public void JwtTokenPost_UsesPerIpRateLimitPolicy()
+    public void JwtTokenPost_DoesNotUseProcessLocalRateLimiter()
     {
         var action = typeof(AuthController).GetMethod(nameof(AuthController.GetToken));
 
-        var attribute = Assert.Single(
+        Assert.Empty(
             Assert.IsAssignableFrom<MemberInfo>(action)
                 .GetCustomAttributes<EnableRateLimitingAttribute>());
-
-        Assert.Equal(LoginRateLimitPolicies.PerIp, attribute.PolicyName);
     }
 }

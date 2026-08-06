@@ -89,6 +89,14 @@ Never edit an applied migration. Write a new timestamped forward-fix instead.
     row has a 32-byte stamp before enabling the application deployment; rotate
     stamps through the shared service for password/reset, role, compromise, and
     revoke-all events.
+14. Apply `202608061100_create_distributed_login_throttling.sql` before enabling
+    login traffic on more than one API instance. Grant the application role only
+    the table DML required by the throttle repository. The application performs
+    bounded stale-row cleanup; do not grant `TRUNCATE` or public access. The
+    source window defaults to 20 attempts per minute, while each normalized
+    account/source pair receives a five-failure exponential backoff capped at
+    fifteen minutes. A successful login clears only that pair's backoff state;
+    the source window remains active.
 
 StructuralValidationOnly performs no malware scanning and does not require ClamAV,
 port 3310, scanner health, or signature definitions. It must not be represented as

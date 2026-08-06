@@ -2,7 +2,6 @@
 using CBSSupport.Shared.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -39,7 +38,6 @@ namespace CBSSupport.API.Controllers
         [HttpPost("token")]
         [AllowAnonymous]
         [IgnoreAntiforgeryToken]
-        [EnableRateLimiting(LoginRateLimitPolicies.PerIp)]
         public async Task<IActionResult> GetToken([FromBody] LoginViewModel model)
         {
             if (!_jwtOptions.Enabled)
@@ -63,7 +61,11 @@ namespace CBSSupport.API.Controllers
             }
 
             var accountKey = LoginAccountKey.ForAdministrator(model.Username);
-            var decision = _loginAttemptLimiter.Check(accountKey);
+            var clientSignal = LoginAccountKey.ClientSignal(HttpContext.Connection.RemoteIpAddress);
+            var decision = await _loginAttemptLimiter.CheckAsync(
+                accountKey,
+                clientSignal,
+                HttpContext.RequestAborted);
             if (!decision.IsAllowed)
             {
                 Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(decision.RetryAfter.TotalSeconds))
@@ -78,12 +80,18 @@ namespace CBSSupport.API.Controllers
 
             if (user != null)
             {
-                _loginAttemptLimiter.Reset(accountKey);
+                await _loginAttemptLimiter.ResetAsync(
+                    accountKey,
+                    clientSignal,
+                    HttpContext.RequestAborted);
                 var tokenString = GenerateJwtToken(user);
                 return Ok(new { token = tokenString, message = "Token generated successfully." });
             }
 
-            _loginAttemptLimiter.RecordFailure(accountKey);
+            await _loginAttemptLimiter.RecordFailureAsync(
+                accountKey,
+                clientSignal,
+                HttpContext.RequestAborted);
             return Unauthorized(new { message = "Invalid username or password." });
         }
 

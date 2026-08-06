@@ -2,14 +2,35 @@ namespace CBSSupport.API.Security;
 
 public interface ILoginAttemptLimiter
 {
-    LoginAttemptDecision Check(string accountKey);
+    Task<LoginAttemptDecision> CheckAsync(
+        string accountKey,
+        string clientSignal,
+        CancellationToken cancellationToken = default);
 
-    void RecordFailure(string accountKey);
+    Task RecordFailureAsync(
+        string accountKey,
+        string clientSignal,
+        CancellationToken cancellationToken = default);
 
-    void Reset(string accountKey);
+    Task ResetAsync(
+        string accountKey,
+        string clientSignal,
+        CancellationToken cancellationToken = default);
 }
 
-public readonly record struct LoginAttemptDecision(bool IsAllowed, TimeSpan RetryAfter)
+public enum LoginThrottleBlockReason
 {
-    public static LoginAttemptDecision Allowed { get; } = new(true, TimeSpan.Zero);
+    None,
+    SourceLimit,
+    AccountBackoff,
+    StoreUnavailable
+}
+
+public readonly record struct LoginAttemptDecision(
+    bool IsAllowed,
+    TimeSpan RetryAfter,
+    LoginThrottleBlockReason BlockReason = LoginThrottleBlockReason.None)
+{
+    public static LoginAttemptDecision Allowed { get; } =
+        new(true, TimeSpan.Zero, LoginThrottleBlockReason.None);
 }

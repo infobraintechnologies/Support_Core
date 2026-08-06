@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using CBSSupport.API.Security;
 
@@ -43,7 +42,6 @@ namespace CBSSupport.API.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        [EnableRateLimiting(LoginRateLimitPolicies.PerIp)]
         public async Task<IActionResult> Index(LoginViewModel model)
         {
             if (!ModelState.IsValid) return View(model);
@@ -57,7 +55,8 @@ namespace CBSSupport.API.Controllers
                 }
 
                 var accountKey = LoginAccountKey.ForAdministrator(model.Username);
-                if (!TryAcquireAccountAttempt(accountKey))
+                var clientSignal = LoginAccountKey.ClientSignal(HttpContext.Connection.RemoteIpAddress);
+                if (!await TryAcquireAccountAttemptAsync(accountKey, clientSignal))
                 {
                     return View(model);
                 }
@@ -65,7 +64,10 @@ namespace CBSSupport.API.Controllers
                 var adminUser = await _authService.ValidateUserAsync(model.Username, model.Password);
                 if (adminUser != null)
                 {
-                    _loginAttemptLimiter.Reset(accountKey);
+                    await _loginAttemptLimiter.ResetAsync(
+                        accountKey,
+                        clientSignal,
+                        HttpContext.RequestAborted);
 
                     var claims = new List<Claim>
                 {
@@ -84,7 +86,10 @@ namespace CBSSupport.API.Controllers
                     return RedirectToAction("Index", "AdminSupport");
                 }
 
-                _loginAttemptLimiter.RecordFailure(accountKey);
+                await _loginAttemptLimiter.RecordFailureAsync(
+                    accountKey,
+                    clientSignal,
+                    HttpContext.RequestAborted);
             }
             else if (model.RoleType == "client" && model.ClientLogin != null)
             {
@@ -98,7 +103,8 @@ namespace CBSSupport.API.Controllers
                 var accountKey = LoginAccountKey.ForClient(
                     model.ClientLogin.ClientCode.Value,
                     model.ClientLogin.Username);
-                if (!TryAcquireAccountAttempt(accountKey))
+                var clientSignal = LoginAccountKey.ClientSignal(HttpContext.Connection.RemoteIpAddress);
+                if (!await TryAcquireAccountAttemptAsync(accountKey, clientSignal))
                 {
                     return View(model);
                 }
@@ -111,7 +117,10 @@ namespace CBSSupport.API.Controllers
 
                 if (clientUser != null)
                 {
-                    _loginAttemptLimiter.Reset(accountKey);
+                    await _loginAttemptLimiter.ResetAsync(
+                        accountKey,
+                        clientSignal,
+                        HttpContext.RequestAborted);
 
                     var claims = new List<Claim>
                     {
@@ -130,16 +139,24 @@ namespace CBSSupport.API.Controllers
                     return RedirectToAction("Index", "Support");
                 }
 
-                _loginAttemptLimiter.RecordFailure(accountKey);
+                await _loginAttemptLimiter.RecordFailureAsync(
+                    accountKey,
+                    clientSignal,
+                    HttpContext.RequestAborted);
             }
 
             ModelState.AddModelError(string.Empty, "Invalid login attempt.");
             return View(model);
         }
 
-        private bool TryAcquireAccountAttempt(string accountKey)
+        private async Task<bool> TryAcquireAccountAttemptAsync(
+            string accountKey,
+            string clientSignal)
         {
-            var decision = _loginAttemptLimiter.Check(accountKey);
+            var decision = await _loginAttemptLimiter.CheckAsync(
+                accountKey,
+                clientSignal,
+                HttpContext.RequestAborted);
             if (decision.IsAllowed)
             {
                 return true;

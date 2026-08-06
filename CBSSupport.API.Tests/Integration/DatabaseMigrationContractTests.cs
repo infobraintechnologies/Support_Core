@@ -235,6 +235,20 @@ public sealed class DatabaseMigrationContractTests
     }
 
     [Fact]
+    public void DistributedLoginThrottleMigration_UsesBoundedSharedStateAndRestrictedDml()
+    {
+        var sql = ReadMigration("202608061100_create_distributed_login_throttling.sql");
+
+        Assert.Contains("CREATE TABLE digital.login_throttle_buckets", sql, StringComparison.Ordinal);
+        Assert.Contains("PRIMARY KEY (bucket_kind, bucket_key)", sql, StringComparison.Ordinal);
+        Assert.Contains("ix_login_throttle_buckets_cleanup", sql, StringComparison.Ordinal);
+        Assert.Contains("REVOKE ALL ON TABLE digital.login_throttle_buckets FROM PUBLIC", sql, StringComparison.Ordinal);
+        Assert.Contains("GRANT SELECT, INSERT, UPDATE, DELETE", sql, StringComparison.Ordinal);
+        Assert.Contains("REVOKE TRUNCATE", sql, StringComparison.Ordinal);
+        Assert.Contains("last_touched_at", sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AttachmentSchema_EnforcesTenantUploaderAndMessageBindingComposites()
     {
         var sql = ReadMigration("202607261040_enforce_attachment_relational_invariants.sql");
