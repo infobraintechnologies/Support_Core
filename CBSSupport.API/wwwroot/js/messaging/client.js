@@ -159,8 +159,15 @@
             return conversations;
         }
 
-        async function getOrCreateGroup(clientId, signal) {
-            const conversation = await api.getOrCreateGroup(clientId, signal);
+        async function getOrCreateGroup(signal) {
+            const conversation = await api.getOrCreateGroup(signal);
+            store.upsertConversation(conversation);
+            emit("conversations", store.listConversations());
+            return conversation;
+        }
+
+        async function getOrCreateGroupForTenant(clientId, signal) {
+            const conversation = await api.getOrCreateGroupForTenant(clientId, signal);
             store.upsertConversation(conversation);
             emit("conversations", store.listConversations());
             return conversation;
@@ -348,6 +355,7 @@
             retry,
             listConversations,
             getOrCreateGroup,
+            getOrCreateGroupForTenant,
             getAvailableAdmins: api.getAvailableAdmins,
             getAvailableClientUsers: api.getAvailableClientUsers,
             getOrCreatePrivate,

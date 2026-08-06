@@ -21,8 +21,8 @@ window.AdminDashboard = (() => {
             if (!currentClientId) {
                 const [statsRes, ticketsRes, inquiriesRes] = await Promise.all([
                     fetch('/v1/api/dashboard/stats/all'),
-                    fetch('/v1/api/instructions/tickets/all'),
-                    fetch('/v1/api/instructions/inquiries/all')
+                    fetch('/api/v1/admin/tickets'),
+                    fetch('/api/v1/admin/inquiries')
                 ]);
 
                 if (!statsRes.ok || !ticketsRes.ok || !inquiriesRes.ok) {
@@ -33,8 +33,8 @@ window.AdminDashboard = (() => {
                 const allTickets = await ticketsRes.json();
                 const allInquiries = await inquiriesRes.json();
 
-                const ticketData = allTickets.data || [];
-                const inquiryData = allInquiries.data || [];
+                const ticketData = allTickets.items || allTickets.data || [];
+                const inquiryData = allInquiries.items || allInquiries.data || [];
 
                 updateBasicStats(stats, ticketData, inquiryData);
                 updateUrgentSections(ticketData, inquiryData);
@@ -54,8 +54,8 @@ window.AdminDashboard = (() => {
     async function loadClientSpecificDashboard(currentClientId) {
         try {
             const [ticketsRes, inquiriesRes] = await Promise.all([
-                fetch(`/v1/api/instructions/tickets/${currentClientId}`),
-                fetch(`/v1/api/instructions/inquiries/${currentClientId}`)
+                fetch(`/api/v1/admin/tickets?clientId=${encodeURIComponent(currentClientId)}`),
+                fetch(`/api/v1/admin/inquiries?clientId=${encodeURIComponent(currentClientId)}`)
             ]);
 
             if (!ticketsRes.ok || !inquiriesRes.ok) {

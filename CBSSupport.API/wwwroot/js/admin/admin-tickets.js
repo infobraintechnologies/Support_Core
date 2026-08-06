@@ -10,8 +10,8 @@ window.AdminTickets = (() => {
         if (ticketTable.length && !$.fn.DataTable.isDataTable('#ticketsTable')) {
             ticketsTable = ticketTable.DataTable({
                 "ajax": {
-                    "url": "/v1/api/instructions/tickets/all",
-                    "dataSrc": "data"
+                    "url": "/api/v1/admin/tickets",
+                    "dataSrc": "items"
                 },
                 "columns": [
                     {
@@ -127,7 +127,7 @@ window.AdminTickets = (() => {
 
     async function loadTicketDetails(ticketId) {
         try {
-            const response = await fetch(`/v1/api/instructions/tickets/${ticketId}/details`);
+            const response = await fetch(`/api/v1/tickets/${ticketId}`);
             if (!response.ok) throw new Error('Failed to load ticket details');
 
             const ticket = await response.json();
@@ -179,10 +179,10 @@ window.AdminTickets = (() => {
             const updateBtn = $('#btn-update-ticket');
             updateBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Updating...');
 
-            const response = await fetch(`/v1/api/instructions/tickets/${currentTicketData.id}/status`, {
+            const response = await fetch(`/api/v1/admin/tickets/${currentTicketData.id}/status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isCompleted: isCompleted, expectedVersion: currentTicketData.version })
+                body: JSON.stringify({ status: newStatus, expectedVersion: currentTicketData.version })
             });
 
             if (!response.ok) {
@@ -193,7 +193,7 @@ window.AdminTickets = (() => {
             const result = await response.json();
             console.log('🎫 AdminTickets: Update response:', result);
 
-            if (result.success) {
+            if (result && result.id) {
                 currentTicketData.version = result.version;
                 const currentUser = window.AdminCore?.getCurrentUser();
                 currentTicketData.status = newStatus;

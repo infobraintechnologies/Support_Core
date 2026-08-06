@@ -79,15 +79,26 @@ window.AdminChat = (() => {
         return Array.isArray(page) ? page : (page?.items || []);
     }
 
-    async function loadLegacySidebar(clientId) {
-        if (!clientId) {
-            return { internalChats: [], ticketChats: [], inquiryChats: [] };
-        }
-        const data = await fetchJson(`/v1/api/instructions/sidebar/${Number(clientId)}`);
+    async function loadInternalChats() {
+        const data = await fetchJson("/v1/api/instructions/by-type/internal-team-chat");
+        const seen = new Set();
+        const internalChats = (Array.isArray(data) ? data : [])
+            .filter(item => {
+                const id = Number(item.instructionId || item.id);
+                if (!Number.isSafeInteger(id) || id <= 0 || seen.has(id)) return false;
+                seen.add(id);
+                return true;
+            })
+            .map(item => ({
+                conversationId: item.instructionId || item.id,
+                displayName: "Internal Discussion",
+                subtitle: item.instruction || "No recent messages",
+                route: "internal-team-chat"
+            }));
         return {
-            internalChats: Array.isArray(data?.internalChats) ? data.internalChats : [],
-            ticketChats: Array.isArray(data?.ticketChats) ? data.ticketChats : [],
-            inquiryChats: Array.isArray(data?.inquiryChats) ? data.inquiryChats : []
+            internalChats,
+            ticketChats: [],
+            inquiryChats: []
         };
     }
 
@@ -96,15 +107,15 @@ window.AdminChat = (() => {
         setListsLoading();
         setConnectionStatus("loading");
 
-        const [v2Result, legacyResult] = await Promise.allSettled([
+        const [v2Result, internalResult] = await Promise.allSettled([
             listV2Conversations(),
-            loadLegacySidebar(currentClientId)
+            loadInternalChats()
         ]);
         if (requestId !== listRequest) return;
 
         const conversations = v2Result.status === "fulfilled" ? v2Result.value : [];
-        const legacy = legacyResult.status === "fulfilled"
-            ? legacyResult.value
+        const internal = internalResult.status === "fulfilled"
+            ? internalResult.value
             : { internalChats: [], ticketChats: [], inquiryChats: [] };
 
         if (v2Result.status === "rejected") {
@@ -115,12 +126,12 @@ window.AdminChat = (() => {
             renderV2Lists(conversations, currentClientId);
         }
 
-        if (legacyResult.status === "rejected") {
-            console.error("AdminChat: failed to load legacy conversation sections.", legacyResult.reason);
-            ["internal-chats", "ticket-chats", "inquiry-chats"]
-                .forEach(id => showListError(id, "Could not load this section."));
+        if (internalResult.status === "rejected") {
+            console.error("AdminChat: failed to load internal conversations.", internalResult.reason);
+            showListError("internal-chats", "Could not load internal conversations.");
+            renderLegacyLists({ internalChats: [], ticketChats: [], inquiryChats: [] }, true);
         } else {
-            renderLegacyLists(legacy, Boolean(currentClientId));
+            renderLegacyLists(internal, true);
         }
         restoreActiveListState();
         applyConversationFilters();
@@ -214,6 +225,24 @@ window.AdminChat = (() => {
                         privateContainer.appendChild(createV2ConversationItem(summary)));
             }
         }
+
+        for (const kind of ["ticket", "inquiry"]) {
+            const container = document.getElementById(`${kind}-chats`);
+            if (!container) continue;
+            const cases = active.filter(summary =>
+                String(summary.kind).toLowerCase() === kind
+                && selectedClientId
+                && String(summary.clientId) === String(selectedClientId));
+            container.replaceChildren();
+            if (!selectedClientId) {
+                container.appendChild(createListMessage("Choose a tenant to view this section."));
+            } else if (!cases.length) {
+                container.appendChild(createListMessage(`No ${kind} chats.`));
+            } else {
+                cases.forEach(summary =>
+                    container.appendChild(createV2ConversationItem(summary)));
+            }
+        }
     }
 
     function createV2ConversationItem(summary) {
@@ -221,10 +250,14 @@ window.AdminChat = (() => {
         const tenantName = getTenantName(summary.clientId);
         const title = kind === "private"
             ? (summary.clientDisplayName || `Client user ${summary.clientUserId}`)
-            : `${tenantName} group`;
+            : kind === "group"
+                ? `${tenantName} group`
+                : `${capitalize(kind)} #${summary.id}`;
         const subtitle = kind === "private"
             ? `Private · ${tenantName}`
-            : "Group conversation";
+            : kind === "group"
+                ? "Group conversation"
+                : `${tenantName} · ${capitalize(kind)} conversation`;
 
         const button = createConversationButton({
             id: summary.id,
@@ -248,8 +281,6 @@ window.AdminChat = (() => {
 
     function renderLegacyLists(data, hasTenant) {
         renderLegacySection("internal-chats", data.internalChats, "internal", hasTenant);
-        renderLegacySection("ticket-chats", data.ticketChats, "ticket", hasTenant);
-        renderLegacySection("inquiry-chats", data.inquiryChats, "inquiry", hasTenant);
     }
 
     function renderLegacySection(id, items, type, hasTenant) {
@@ -428,7 +459,7 @@ window.AdminChat = (() => {
         }
         button.disabled = true;
         try {
-            const conversation = await messaging()?.getOrCreateGroup(Number(clientId));
+            const conversation = await messaging()?.getOrCreateGroupForTenant(Number(clientId));
             await refreshAdminConversations(clientId);
             document.querySelector(
                 `.admin-conversation-item[data-id="${Number(conversation.id)}"]`)?.click();

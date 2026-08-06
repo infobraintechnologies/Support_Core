@@ -10,8 +10,8 @@ window.AdminInquiries = (() => {
         if (inquiryTable.length && !$.fn.DataTable.isDataTable('#inquiriesDataTable')) {
             inquiriesTable = inquiryTable.DataTable({
                 "ajax": {
-                    "url": "/v1/api/instructions/inquiries/all",
-                    "dataSrc": "data"
+                    "url": "/api/v1/admin/inquiries",
+                    "dataSrc": "items"
                 },
                 "columns": [
                     {
@@ -134,7 +134,7 @@ window.AdminInquiries = (() => {
         try {
             console.log(`❓ AdminInquiries: Loading inquiry details for ID: ${inquiryId}`);
 
-            const response = await fetch(`/v1/api/instructions/inquiries/${inquiryId}/details`);
+            const response = await fetch(`/api/v1/inquiries/${inquiryId}`);
             if (!response.ok) {
                 throw new Error(`Failed to load inquiry details: ${response.statusText}`);
             }
@@ -186,10 +186,10 @@ window.AdminInquiries = (() => {
             const updateBtn = $('#btn-update-inquiry');
             updateBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Updating...');
 
-            const response = await fetch(`/v1/api/instructions/inquiries/${currentInquiryData.id}/status`, {
+            const response = await fetch(`/api/v1/admin/inquiries/${currentInquiryData.id}/status`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isCompleted: isCompleted, expectedVersion: currentInquiryData.version })
+                body: JSON.stringify({ status: newOutcome, expectedVersion: currentInquiryData.version })
             });
 
             if (!response.ok) {
@@ -200,7 +200,7 @@ window.AdminInquiries = (() => {
             const result = await response.json();
             console.log('❓ AdminInquiries: Update response:', result);
 
-            if (result.success) {
+            if (result && result.id) {
                 currentInquiryData.version = result.version;
                 currentInquiryData.outcome = newOutcome;
 
@@ -344,10 +344,10 @@ window.AdminInquiries = (() => {
 
         try {
             const promises = selectedInquiries.map(inquiry =>
-                fetch(`/v1/api/instructions/inquiries/${inquiry.id}/status`, {
+                fetch(`/api/v1/admin/inquiries/${inquiry.id}/status`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ isCompleted: newStatus === 'Completed', expectedVersion: inquiry.version })
+                    body: JSON.stringify({ status: newStatus, expectedVersion: inquiry.version })
                 })
             );
 

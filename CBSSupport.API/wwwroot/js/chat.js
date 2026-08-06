@@ -10,11 +10,6 @@ document.addEventListener("DOMContentLoaded", () => {
         id: Number(serverData.currentUserId),
     };
 
-    let currentClient = {
-        id: Number(serverData.currentClientId),
-        name: String(serverData.currentUserName || "")
-    };
-
     let currentChatContext = {};
     let chatSwitchRequest = 0;
     const conversationsById = new Map();
@@ -55,7 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const messaging = window.CBSSupportMessaging.createClient({
         hubUrl: "/chathub",
         baseUrl: "/api/v1/conversations",
-        draftScope: `client:${currentClient.id}:${currentUser.id}`
+        draftScope: `client-user:${currentUser.id}`
     });
     const connection = messaging.connection;
     const attachmentsEnabled = document.body.dataset.attachmentsEnabled === "true";
@@ -538,9 +533,6 @@ document.addEventListener("DOMContentLoaded", () => {
             retry.addEventListener("click", loadConversations, { once: true });
         }
     }
-
-    // Ticket and inquiry events still call this legacy-named helper; messaging data is always V2.
-    const loadSidebarForClient = () => loadConversations();
 
     function updateActiveConversationItem() {
         document.querySelectorAll(".conversation-item.active").forEach(element => {
@@ -1162,11 +1154,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     Priority: priority,
                     expiryDate: expiryDate,
                     InstructionId: null,
-                    ClientId: currentClient.id,
-                    ClientAuthUserId: currentUser.id,
-                    InsertUser: currentUser.id,
-                    InstCategoryId: 101,
-                    ServiceId: 3,
                 };
 
                 try {
@@ -1189,7 +1176,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         });
                     }
 
-                    await loadSidebarForClient(currentClient.id);
+                    await loadConversations();
 
                     showNotificationToast(`Ticket #${createdTicket.id} created successfully!`, 'success');
 
@@ -1239,11 +1226,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 const chatMessage = {
                     Instruction: message,
                     InstructionId: null,
-                    ClientId: currentClient.id,
-                    ClientAuthUserId: currentUser.id,
-                    InsertUser: currentUser.id,
-                    InstCategoryId: 102,
-                    ServiceId: 3,
                 };
 
                 try {
@@ -1266,7 +1248,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         });
                     }
 
-                    await loadSidebarForClient(currentClient.id);
+                    await loadConversations();
 
                     showNotificationToast(`Inquiry #${createdInquiry.id} created successfully!`, 'success');
 
@@ -1393,7 +1375,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ticketsDataTable.ajax.reload(null, false);
         }
 
-        loadSidebarForClient(currentClient.id);
+        loadConversations();
     });
 
     connection.on("NewInquiryCreated", (data) => {
@@ -1403,7 +1385,7 @@ document.addEventListener("DOMContentLoaded", () => {
             inquiriesDataTable.ajax.reload(null, false);
         }
 
-        loadSidebarForClient(currentClient.id);
+        loadConversations();
     });
 
     async function init() {
