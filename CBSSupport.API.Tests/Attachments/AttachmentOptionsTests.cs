@@ -27,6 +27,32 @@ public sealed class AttachmentOptionsTests
         Assert.Throws<InvalidOperationException>(options.Validate);
     }
 
+    [Fact]
+    public void Validate_EnabledWithoutR2Credentials_Throws()
+    {
+        var options = new AttachmentOptions { Enabled = true };
+
+        Assert.Throws<InvalidOperationException>(options.Validate);
+    }
+
+    [Fact]
+    public void Validate_EnabledWithR2ServiceUrlAndCredentials_Succeeds()
+    {
+        var options = new AttachmentOptions
+        {
+            Enabled = true,
+            R2 = new R2StorageOptions
+            {
+                AccessKeyId = "test-access-key",
+                SecretAccessKey = "test-secret-key",
+                BucketName = "test-bucket",
+                ServiceUrl = "http://127.0.0.1:1"
+            }
+        };
+
+        options.Validate();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(5)]

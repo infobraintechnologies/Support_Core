@@ -185,7 +185,7 @@ if (string.IsNullOrEmpty(connectionString) && !isOpenApiGeneration)
 {
     throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 }
-connectionString ??= "Host=127.0.0.1;Port=5432;Database=openapi_generation;Username=unused;Password=unused";
+connectionString ??= "Host=127.0.0.1;Port=5432;Database=openapi_generation;Username=unused";
 
 // --- 3. Register your custom services---
 var attachmentOptions = builder.Configuration

@@ -77,6 +77,11 @@ public sealed class AttachmentOptions
             throw new InvalidOperationException(
                 "Attachment structural validation settings are outside the approved operating profile.");
         }
+
+        if (Enabled)
+        {
+            R2.Validate();
+        }
     }
 }
 
@@ -125,4 +130,17 @@ public sealed class R2StorageOptions
     public string SecretAccessKey { get; set; } = "";
     public string BucketName { get; set; } = "";
     public string? ServiceUrl { get; set; }
+
+    public void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(AccessKeyId)
+            || string.IsNullOrWhiteSpace(SecretAccessKey)
+            || string.IsNullOrWhiteSpace(BucketName)
+            || (string.IsNullOrWhiteSpace(ServiceUrl)
+                && string.IsNullOrWhiteSpace(AccountId)))
+        {
+            throw new InvalidOperationException(
+                "Attachments:R2 requires AccessKeyId, SecretAccessKey, BucketName, and AccountId or ServiceUrl when attachments are enabled.");
+        }
+    }
 }
