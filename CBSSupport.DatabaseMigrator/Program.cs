@@ -230,8 +230,7 @@ sealed record MigrationScript(string Version, string Sql, string Checksum, bool 
         }
 
         var sql = File.ReadAllText(path, Encoding.UTF8);
-        if (sql.Contains("BEGIN;", StringComparison.OrdinalIgnoreCase)
-            || sql.Contains("COMMIT;", StringComparison.OrdinalIgnoreCase))
+        if (ContainsTopLevelTransactionControl(sql))
         {
             throw new InvalidOperationException(
                 $"Migration {version} contains transaction control. The runner owns the transaction.");
@@ -247,6 +246,192 @@ sealed record MigrationScript(string Version, string Sql, string Checksum, bool 
             sql,
             Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sql))).ToLowerInvariant(),
             isTransactional);
+    }
+
+    private static bool ContainsTopLevelTransactionControl(string sql)
+    {
+        var executableSql = MaskCommentsAndQuotedContent(sql);
+
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            executableSql,
+            @"(?:\A|;)\s*(?:BEGIN(?:\s+(?:WORK|TRANSACTION))?|START\s+TRANSACTION|COMMIT(?:\s+(?:WORK|TRANSACTION))?|ROLLBACK(?:\s+(?:WORK|TRANSACTION))?)\s*;",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    }
+
+    private static string MaskCommentsAndQuotedContent(string sql)
+    {
+        var result = new StringBuilder(sql.Length);
+        var index = 0;
+        var blockCommentDepth = 0;
+        string? dollarQuoteDelimiter = null;
+
+        while (index < sql.Length)
+        {
+            if (dollarQuoteDelimiter is not null)
+            {
+                if (sql.AsSpan(index).StartsWith(dollarQuoteDelimiter, StringComparison.Ordinal))
+                {
+                    result.Append(' ', dollarQuoteDelimiter.Length);
+                    index += dollarQuoteDelimiter.Length;
+                    dollarQuoteDelimiter = null;
+                }
+                else
+                {
+                    AppendMaskedCharacter(result, sql[index]);
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (blockCommentDepth > 0)
+            {
+                if (index + 1 < sql.Length && sql[index] == '/' && sql[index + 1] == '*')
+                {
+                    result.Append("  ");
+                    index += 2;
+                    blockCommentDepth++;
+                }
+                else if (index + 1 < sql.Length && sql[index] == '*' && sql[index + 1] == '/')
+                {
+                    result.Append("  ");
+                    index += 2;
+                    blockCommentDepth--;
+                }
+                else
+                {
+                    AppendMaskedCharacter(result, sql[index]);
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (index + 1 < sql.Length && sql[index] == '-' && sql[index + 1] == '-')
+            {
+                result.Append("  ");
+                index += 2;
+
+                while (index < sql.Length && sql[index] is not '\r' and not '\n')
+                {
+                    result.Append(' ');
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (index + 1 < sql.Length && sql[index] == '/' && sql[index + 1] == '*')
+            {
+                result.Append("  ");
+                index += 2;
+                blockCommentDepth = 1;
+                continue;
+            }
+
+            if (sql[index] == '\'')
+            {
+                MaskQuotedValue(sql, result, ref index, '\'');
+                continue;
+            }
+
+            if (sql[index] == '"')
+            {
+                MaskQuotedValue(sql, result, ref index, '"');
+                continue;
+            }
+
+            if (sql[index] == '$'
+                && TryReadDollarQuoteDelimiter(sql, index, out var delimiter))
+            {
+                result.Append(' ', delimiter.Length);
+                index += delimiter.Length;
+                dollarQuoteDelimiter = delimiter;
+                continue;
+            }
+
+            result.Append(sql[index]);
+            index++;
+        }
+
+        return result.ToString();
+    }
+
+    private static void MaskQuotedValue(
+        string sql,
+        StringBuilder result,
+        ref int index,
+        char quote)
+    {
+        result.Append(' ');
+        index++;
+
+        while (index < sql.Length)
+        {
+            var current = sql[index];
+            AppendMaskedCharacter(result, current);
+            index++;
+
+            if (current != quote)
+            {
+                continue;
+            }
+
+            if (index < sql.Length && sql[index] == quote)
+            {
+                result.Append(' ');
+                index++;
+                continue;
+            }
+
+            break;
+        }
+    }
+
+    private static bool TryReadDollarQuoteDelimiter(
+        string sql,
+        int start,
+        out string delimiter)
+    {
+        var index = start + 1;
+
+        if (index < sql.Length && sql[index] == '$')
+        {
+            delimiter = "$$";
+            return true;
+        }
+
+        if (index >= sql.Length
+            || !(char.IsLetter(sql[index]) || sql[index] == '_'))
+        {
+            delimiter = string.Empty;
+            return false;
+        }
+
+        index++;
+
+        while (index < sql.Length
+               && (char.IsLetterOrDigit(sql[index]) || sql[index] == '_'))
+        {
+            index++;
+        }
+
+        if (index < sql.Length && sql[index] == '$')
+        {
+            delimiter = sql[start..(index + 1)];
+            return true;
+        }
+
+        delimiter = string.Empty;
+        return false;
+    }
+
+    private static void AppendMaskedCharacter(
+        StringBuilder result,
+        char character)
+    {
+        result.Append(character is '\r' or '\n' ? character : ' ');
     }
 }
 

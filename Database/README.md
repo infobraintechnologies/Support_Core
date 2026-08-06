@@ -40,26 +40,44 @@ Never edit an applied migration. Write a new timestamped forward-fix instead.
 3. Run `Preflight/202607221010_verify_instruction_state_and_indexes.sql` before approving the state, tenant-constraint, concurrency, and index migrations.
 4. Run `Preflight/202607221100_verify_messaging_v2_readiness.sql` against a sanitized production-like copy. Resolve missing/noncanonical roots, tenant mismatches, tenantless group/private roots, and duplicate Group roots before approval. Archive the private-review inventory with the review. Duplicate Group roots require explicit business remediation; the migration never chooses a winner because a tenant may have only one Group conversation ever.
 5. Apply `202607221110_create_messaging_v2_schema`, `202607221120_backfill_messaging_v2_history`, and the non-transactional `202607221130_create_messaging_v2_indexes` through the approved runner. The runner must not be interrupted during the concurrent-index migration unless the operator follows its invalid-index recovery note.
-6. Run `Preflight/202607261000_verify_case_conversation_readiness.sql`. Resolve every orphan, tenant mismatch, and invalid ticket/inquiry type/category result before continuing. Historical replies may use the reviewed legacy `100` type/category sentinel.
-7. Apply `202607261005_normalize_legacy_case_reply_shape.sql` separately. It
+6. Apply `202608051200_complete_legacy_private_mapping_gate` through the approved
+   runner. Its transactional guards prove canonical roots, access/root tenant
+   ownership, participant tenant membership, required FKs, and active-pair
+   uniqueness before adding its new constraints. Existing `NeedsReview` rows are
+   preserved. Existing `Active`/`Archived` rows are accepted only when the
+   repository-defined `LegacyPrivateApproved` Admin audit evidence matches the
+   current tenant and participant IDs; state alone is never treated as approval.
+   The migration reconstructs a resolved content-free review row from that audit
+   evidence without changing the existing access state. It is safe to rerun on an
+   unapplied database: canonical roots are inserted with `ON CONFLICT DO NOTHING`,
+   and review/audit evidence is inserted only once. It deliberately creates no
+   participant mapping from message history.
+7. Run `Preflight/202608051210_verify_legacy_private_mapping_gate.sql` after every
+   remediation batch. Archive both deterministic result sets. The row report has
+   only conversation/tenant IDs and remediation codes/actions; it does not expose
+   instruction content. Leave `Messaging:Features:PrivateEnabled=false` until the
+   final gate result is `Ready` (zero Invalid and zero NeedsReview). An attempted
+   startup with the flag true otherwise fails closed.
+8. Run `Preflight/202607261000_verify_case_conversation_readiness.sql`. Resolve every orphan, tenant mismatch, and invalid ticket/inquiry type/category result before continuing. Historical replies may use the reviewed legacy `100` type/category sentinel.
+9. Apply `202607261005_normalize_legacy_case_reply_shape.sql` separately. It
    locks instruction writes, repairs only same-tenant canonical case replies whose
    type/category dimensions are either `100` or already match the root, and fails
    closed for every other mismatch. Archive the applied checksum and repaired-row
    notice, then rerun the case readiness preflight; all four integrity result sets
    must return zero rows.
-8. Apply `202607261010_modernize_case_conversations.sql` with
+10. Apply `202607261010_modernize_case_conversations.sql` with
    `Attachments:Enabled=false`. Existing canonical ticket and inquiry roots become
    sequence `1`; replies are ordered by
    `COALESCE(datetime, insert_date), id` beginning at `2`; the allocator is
    upserted to `MAX(conversation_sequence) + 1`. The disabled application path
    must keep text history, sends, replay, and outbox delivery operational without
    querying attachment tables because `202607261020` has not run yet.
-9. Keep attachments disabled for a documented, uninterrupted 24-hour observation
+11. Keep attachments disabled for a documented, uninterrupted 24-hour observation
    gate after the Phase 1 deployment. Verify case history, sends, idempotent
    replay, allocator monotonicity, outbox dispatch, and SignalR delivery. Record
    the gate start/end timestamps and evidence. This repository change does not
    claim that the operational wait has occurred.
-10. Apply the ordered attachment schema and forward-fix migrations while the
+12. Apply the ordered attachment schema and forward-fix migrations while the
    feature remains disabled, including
    `202608031000_structural_attachment_validation_mode.sql`. Configure private R2
    and explicitly select `Attachments:SecurityMode=StructuralValidationOnly`.
@@ -87,6 +105,13 @@ must be inserted atomically at sequence `1` with their allocator initialized to
 
 The confirmed mapping for historical `client_auth_user_id` values is a prerequisite, not a replacement, for the preflight: the preflight also detects tenant mismatches and records the exact current foreign-key name.
 
+Rollback/forward-fix for the legacy Private gate: once applied, preserve the
+review and audit evidence. If the rollout must be halted, keep Private messaging
+disabled and use the pre-deployment database backup only under the approved
+restore runbook. Do not delete `NeedsReview` rows, resequence instruction history,
+or turn the flag on to bypass the gate; correct data with a reviewed forward-fix
+and rerun the read-only preflight.
+
 ## Commands
 
 Preview the scripts and checksums without connecting to PostgreSQL:
@@ -106,6 +131,18 @@ Remove-Item Env:CBSSUPPORT_MIGRATIONS_CONNECTION
 
 Never put the connection string in a migration, source file, command history shared
 with others, or Git.
+
+## Empty local migration-validation database
+
+The ordered migration set assumes the externally owned foundational schemas and
+tables already exist. It is not a complete production database bootstrap. For a
+disposable local validation database only, run
+`Bootstrap/local_migration_foundation.sql` in pgAdmin first. The script creates
+only local stand-ins for `admin.users`, `internal.clients`,
+`internal.support_users`, and `digital.instructions`; it does not create the
+migration ledger or any Messaging V2/attachment tables. Run it only against a
+new empty local database, then run `CBSSupport.DatabaseMigrator` from the
+repository root. Never run this bootstrap against the shared IP database.
 
 Attachment activation, R2 CORS, worker topology, health degradation, and the
 24-hour gate are detailed in
