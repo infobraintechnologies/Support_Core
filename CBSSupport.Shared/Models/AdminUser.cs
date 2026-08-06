@@ -18,6 +18,10 @@ namespace CBSSupport.Shared.Models
         [Column("password_hash")]
         public string PasswordHash { get; set; } = string.Empty;
 
+        [Column("security_stamp")]
+        [System.Text.Json.Serialization.JsonIgnore]
+        public byte[] SecurityStamp { get; set; } = [];
+
         [Column("role_id")]
         public int RoleId { get; set; }
 

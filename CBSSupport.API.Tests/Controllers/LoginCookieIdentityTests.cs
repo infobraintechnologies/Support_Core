@@ -28,6 +28,7 @@ public sealed class LoginCookieIdentityTests
             FullName = "Admin User",
             PasswordHash = "password-hash",
             PasswordSalt = "password-salt",
+            SecurityStamp = Enumerable.Repeat((byte)7, 32).ToArray(),
             Status = true
         };
         var authentication = new RecordingAuthenticationService();
@@ -49,8 +50,7 @@ public sealed class LoginCookieIdentityTests
         Assert.Equal(Roles.Admin, authentication.Principal?.FindFirstValue(ClaimTypes.Role));
         Assert.True(SecurityStamps.Matches(
             authentication.Principal!.FindFirstValue(CustomClaimTypes.SecurityStamp)!,
-            user.PasswordHash,
-            user.PasswordSalt));
+            user.SecurityStamp));
     }
 
     [Fact]
@@ -64,6 +64,7 @@ public sealed class LoginCookieIdentityTests
             FullName = "Client User",
             PasswordHash = "password-hash",
             PasswordSalt = "password-salt",
+            SecurityStamp = Enumerable.Repeat((byte)8, 32).ToArray(),
             Status = true
         };
         var authentication = new RecordingAuthenticationService();

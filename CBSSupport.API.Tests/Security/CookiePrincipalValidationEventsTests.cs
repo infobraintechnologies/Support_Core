@@ -75,7 +75,10 @@ public sealed class CookiePrincipalValidationEventsTests
     public async Task ValidatePrincipal_AdministratorPasswordChanged_RejectsCookie()
     {
         var issuedUser = CreateAdminUser(passwordHash: "old-hash", passwordSalt: "old-salt");
-        var currentUser = CreateAdminUser(passwordHash: "new-hash", passwordSalt: "new-salt");
+        var currentUser = CreateAdminUser(
+            passwordHash: "new-hash",
+            passwordSalt: "new-salt",
+            stampByte: 8);
         var authentication = new RecordingAuthenticationService();
         var context = CreateContext(
             CreateAdminPrincipal(issuedUser),
@@ -131,7 +134,7 @@ public sealed class CookiePrincipalValidationEventsTests
     public async Task ValidatePrincipal_ClientPasswordChanged_RejectsCookie()
     {
         var issuedUser = CreateClientUser();
-        var currentUser = CreateClientUser();
+        var currentUser = CreateClientUser(stampByte: 12);
         currentUser.PasswordHash = "replacement-hash";
         currentUser.PasswordSalt = "replacement-salt";
         var authentication = new RecordingAuthenticationService();
@@ -157,7 +160,7 @@ public sealed class CookiePrincipalValidationEventsTests
                 new Claim(JwtClaimTypes.Role, Roles.Admin),
                 new Claim(
                     CustomClaimTypes.SecurityStamp,
-                    SecurityStamps.Create(user.PasswordHash, user.PasswordSalt))
+                    SecurityStamps.Create(user.SecurityStamp))
             ],
             "Bearer",
             JwtClaimTypes.Name,
@@ -170,10 +173,54 @@ public sealed class CookiePrincipalValidationEventsTests
         Assert.Equal(1, repository.AdminByIdCalls);
     }
 
+    [Fact]
+    public async Task AccountPrincipalValidator_StaleJwtStamp_RejectsAfterRevokeAll()
+    {
+        var issuedUser = CreateAdminUser(stampByte: 7);
+        var currentUser = CreateAdminUser(stampByte: 8);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(JwtClaimTypes.Subject, issuedUser.Id.ToString()),
+                new Claim(JwtClaimTypes.Role, Roles.Admin),
+                new Claim(
+                    CustomClaimTypes.SecurityStamp,
+                    SecurityStamps.Create(issuedUser.SecurityStamp))
+            ],
+            "Bearer",
+            JwtClaimTypes.Name,
+            JwtClaimTypes.Role));
+
+        var isValid = await new AccountPrincipalValidator(
+                new StubUserRepository { AdminById = currentUser },
+                SecurityStamps)
+            .ValidateAsync(principal);
+
+        Assert.False(isValid);
+    }
+
+    [Fact]
+    public async Task AccountPrincipalValidator_TwoDevicesBecomeStaleWhileNewStampRemainsValid()
+    {
+        var oldUser = CreateAdminUser(stampByte: 7);
+        var newUser = CreateAdminUser(stampByte: 8);
+        var repository = new StubUserRepository { AdminById = newUser };
+        var validator = new AccountPrincipalValidator(repository, SecurityStamps);
+        var oldStamp = SecurityStamps.Create(oldUser.SecurityStamp);
+        var newStamp = SecurityStamps.Create(newUser.SecurityStamp);
+
+        var oldDevice = await validator.ValidateAsync(CreateAdminPrincipalWithStamp(oldUser, oldStamp));
+        var secondOldDevice = await validator.ValidateAsync(CreateAdminPrincipalWithStamp(oldUser, oldStamp));
+        var newDevice = await validator.ValidateAsync(CreateAdminPrincipalWithStamp(newUser, newStamp));
+
+        Assert.False(oldDevice);
+        Assert.False(secondOldDevice);
+        Assert.True(newDevice);
+    }
+
     public static TheoryData<ClaimsPrincipal> MalformedPrincipals()
     {
         var user = CreateAdminUser();
-        var validStamp = SecurityStamps.Create(user.PasswordHash, user.PasswordSalt);
+        var validStamp = SecurityStamps.Create(user.SecurityStamp);
         return new TheoryData<ClaimsPrincipal>
         {
             CreatePrincipal(
@@ -232,7 +279,15 @@ public sealed class CookiePrincipalValidationEventsTests
             new Claim(ClaimTypes.Role, Roles.Admin),
             new Claim(
                 CustomClaimTypes.SecurityStamp,
-                SecurityStamps.Create(user.PasswordHash, user.PasswordSalt)));
+                SecurityStamps.Create(user.SecurityStamp)));
+
+    private static ClaimsPrincipal CreateAdminPrincipalWithStamp(
+        AdminUser user,
+        string stamp) =>
+        CreatePrincipal(
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Role, Roles.Admin),
+            new Claim(CustomClaimTypes.SecurityStamp, stamp));
 
     private static ClaimsPrincipal CreateClientPrincipal(ClientUser user) =>
         CreatePrincipal(
@@ -241,7 +296,7 @@ public sealed class CookiePrincipalValidationEventsTests
             new Claim(CustomClaimTypes.ClientId, user.ClientId.ToString()),
             new Claim(
                 CustomClaimTypes.SecurityStamp,
-                SecurityStamps.Create(user.PasswordHash, user.PasswordSalt)));
+                SecurityStamps.Create(user.SecurityStamp)));
 
     private static ClaimsPrincipal CreatePrincipal(params Claim[] claims) =>
         new(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
@@ -250,7 +305,8 @@ public sealed class CookiePrincipalValidationEventsTests
         bool status = true,
         DateTimeOffset? deactiveDate = null,
         string passwordHash = "password-hash",
-        string passwordSalt = "password-salt") =>
+        string passwordSalt = "password-salt",
+        byte stampByte = 7) =>
         new()
         {
             Id = 7,
@@ -258,11 +314,12 @@ public sealed class CookiePrincipalValidationEventsTests
             FullName = "Admin User",
             PasswordHash = passwordHash,
             PasswordSalt = passwordSalt,
+            SecurityStamp = Enumerable.Repeat(stampByte, 32).ToArray(),
             Status = status,
             DeactiveDate = deactiveDate
         };
 
-    private static ClientUser CreateClientUser() =>
+    private static ClientUser CreateClientUser(byte stampByte = 11) =>
         new()
         {
             Id = 11,
@@ -271,6 +328,7 @@ public sealed class CookiePrincipalValidationEventsTests
             FullName = "Client User",
             PasswordHash = "password-hash",
             PasswordSalt = "password-salt",
+            SecurityStamp = Enumerable.Repeat(stampByte, 32).ToArray(),
             Status = true
         };
 

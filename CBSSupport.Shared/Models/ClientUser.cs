@@ -11,6 +11,9 @@
         public string PasswordHash { get; set; } = string.Empty;
         public string PasswordSalt { get; set; } = string.Empty;
 
+        [System.Text.Json.Serialization.JsonIgnore]
+        public byte[] SecurityStamp { get; set; } = [];
+
         public bool Status { get; set; }
         public DateTimeOffset? DeactiveDate { get; set; }
     }

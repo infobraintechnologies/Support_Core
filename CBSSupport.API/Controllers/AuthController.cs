@@ -102,7 +102,7 @@ namespace CBSSupport.API.Controllers
                 new Claim(CustomClaimTypes.AdminTenantAccess, "*"),
                 new Claim(
                     CustomClaimTypes.SecurityStamp,
-                    _securityStamps.Create(user.PasswordHash, user.PasswordSalt)),
+                    _securityStamps.Create(user.SecurityStamp)),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
