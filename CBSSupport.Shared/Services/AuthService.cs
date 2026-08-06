@@ -5,6 +5,9 @@ namespace CBSSupport.Shared.Services
 {
     public class AuthService : IAuthService
     {
+        private const string DummyPasswordHash =
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        private const string DummyPasswordSalt = "AAAAAAAAAAAAAAAAAAAAAA==";
         private readonly IUserRepository _userRepository;
         private readonly PasswordHashOptions _passwordHashOptions;
 
@@ -19,7 +22,11 @@ namespace CBSSupport.Shared.Services
         public async Task<AdminUser?> ValidateUserAsync(string username, string password)
         {
             var user = await _userRepository.GetByUsernameAsync(username);
-            if (user == null || !IsActive(user.Status, user.DeactiveDate)) return null;
+            if (user == null || !IsActive(user.Status, user.DeactiveDate))
+            {
+                VerifyAgainstDummy(password);
+                return null;
+            }
 
             bool isPasswordValid = PasswordHelper.VerifyPassword(
                 password,
@@ -36,6 +43,7 @@ namespace CBSSupport.Shared.Services
 
             if (clientUser == null || !IsActive(clientUser.Status, clientUser.DeactiveDate))
             {
+                VerifyAgainstDummy(password);
                 return null;
             }
 
@@ -66,5 +74,14 @@ namespace CBSSupport.Shared.Services
 
         private static bool IsActive(bool status, DateTimeOffset? deactiveDate) =>
             status && deactiveDate is null;
+
+        private void VerifyAgainstDummy(string password)
+        {
+            _ = PasswordHelper.VerifyPassword(
+                password,
+                DummyPasswordHash,
+                DummyPasswordSalt,
+                _passwordHashOptions.Pepper);
+        }
     }
 }

@@ -111,21 +111,9 @@ builder.Services.AddSingleton(loginSecurityOptions);
 builder.Services.AddSingleton(jwtSecurityOptions);
 builder.Services.AddSingleton(passwordHashOptions);
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<ILoginAttemptLimiter, LoginAttemptLimiter>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy(LoginRateLimitPolicies.PerIp, httpContext =>
-        RateLimitPartition.GetSlidingWindowLimiter(
-            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            _ => new SlidingWindowRateLimiterOptions
-            {
-                PermitLimit = loginSecurityOptions.PerIpPermitLimit,
-                Window = loginSecurityOptions.PerIpWindow,
-                SegmentsPerWindow = loginSecurityOptions.PerIpSegments,
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
     options.AddPolicy(MessagingRateLimitPolicies.MessageSend, httpContext =>
         RateLimitPartition.GetTokenBucketLimiter(
             GetMessagingRateLimitKey(httpContext),
@@ -275,6 +263,9 @@ builder.Services.AddSingleton<IAccountSecurityStampStore>(
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IAccountSecurityStampService, DataProtectionAccountSecurityStampService>();
 builder.Services.AddSingleton<IAccountSecurityStampRotationService, AccountSecurityStampRotationService>();
+builder.Services.AddSingleton<ILoginThrottleStore>(
+    new LoginThrottleStore(connectionString));
+builder.Services.AddSingleton<ILoginAttemptLimiter, LoginAttemptLimiter>();
 builder.Services.AddSingleton<IAccountPrincipalValidator, AccountPrincipalValidator>();
 builder.Services.AddScoped<CookiePrincipalValidationEvents>();
 builder.Services.AddScoped<JwtPrincipalValidationEvents>();

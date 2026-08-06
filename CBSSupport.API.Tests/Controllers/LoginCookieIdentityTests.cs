@@ -131,15 +131,21 @@ public sealed class LoginCookieIdentityTests
 
     private sealed class AllowAllLoginAttemptLimiter : ILoginAttemptLimiter
     {
-        public LoginAttemptDecision Check(string accountKey) => LoginAttemptDecision.Allowed;
+        public Task<LoginAttemptDecision> CheckAsync(
+            string accountKey,
+            string clientSignal,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(LoginAttemptDecision.Allowed);
 
-        public void RecordFailure(string accountKey)
-        {
-        }
+        public Task RecordFailureAsync(
+            string accountKey,
+            string clientSignal,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public void Reset(string accountKey)
-        {
-        }
+        public Task ResetAsync(
+            string accountKey,
+            string clientSignal,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class RecordingAuthenticationService : IAuthenticationService
