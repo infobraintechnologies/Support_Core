@@ -44,8 +44,9 @@ public sealed class InstructionsController : ControllerBase
     [HttpPost("support-group")]
     public IActionResult SaveSupportGroupChat(CreateInstructionRequest request) => NotFound();
 
-    [HttpPost("clients/{clientId:long}/support-group")]
     [Authorize(Policy = Policies.AdminOnly)]
+    [NonAction]
+    [Obsolete("The client-ID route was removed. Use the authorized admin tenant selection endpoint and Messaging V2.")]
     public IActionResult SaveAdminSupportGroupChat(
         long clientId,
         CreateInstructionRequest request) => NotFound();
@@ -164,7 +165,8 @@ public sealed class InstructionsController : ControllerBase
         return messages.Count == 0 ? NotFound() : Ok(messages);
     }
 
-    [HttpGet("sidebar/{clientId:long}")]
+    [NonAction]
+    [Obsolete("The client-ID sidebar route was removed. Use Messaging V2 and the authorized admin tenant selection endpoint.")]
     public async Task<IActionResult> GetSidebar(
         long clientId,
         CancellationToken cancellationToken = default)
@@ -179,7 +181,8 @@ public sealed class InstructionsController : ControllerBase
         return Ok(sidebar);
     }
 
-    [HttpGet("tickets/{clientId:long}")]
+    [NonAction]
+    [Obsolete("The client-ID route was removed. Use /api/v1/tickets for clients or /api/v1/admin/tickets for administrators.")]
     public async Task<IActionResult> GetTicketsForClient(long clientId)
     {
         if (!await CanAccessTenantAsync(clientId))
@@ -199,7 +202,8 @@ public sealed class InstructionsController : ControllerBase
         return Ok(new { data = tickets });
     }
 
-    [HttpGet("inquiries/{clientId:long}")]
+    [NonAction]
+    [Obsolete("The client-ID route was removed. Use /api/v1/inquiries for clients or /api/v1/admin/inquiries for administrators.")]
     public async Task<IActionResult> GetInquiriesForClient(long clientId)
     {
         if (!await CanAccessTenantAsync(clientId))

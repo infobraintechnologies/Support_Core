@@ -174,7 +174,7 @@ public sealed class TicketsInquiriesApiV1ControllerTests
     {
         var chat = new RecordingChatService
         {
-            Detail = (id, _) => new TicketViewModel { Id = 10, InstTypeId = ConversationTypes.MigrationTicket, Status = "Open", Date = DateTime.UtcNow }
+            Detail = (id, _) => new TicketViewModel { Id = 10, InstTypeId = ConversationTypes.MigrationTicket, ClientId = ClientId, Status = "Open", Date = DateTime.UtcNow }
         };
         var controller = CreateTicketsController(new RecordingCaseConversationService(), chat, CreateAdminPrincipal());
 
@@ -351,6 +351,7 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         {
             Id = 10,
             InstTypeId = ConversationTypes.MigrationTicket,
+            ClientId = ClientId,
             Status = "Resolved",
             Date = DateTime.UtcNow,
             CreatedBy = "Alice"
@@ -394,6 +395,14 @@ public sealed class TicketsInquiriesApiV1ControllerTests
     public async Task UpdateTicketStatus_NoOpTransition_ReturnsConflictWithoutWriting()
     {
         var chat = new RecordingChatService();
+        chat.Detail = (_, _) => new TicketViewModel
+        {
+            Id = 10,
+            InstTypeId = ConversationTypes.MigrationTicket,
+            ClientId = ClientId,
+            Status = "Open",
+            Date = DateTime.UtcNow
+        };
         var tickets = new RecordingTicketService { MutationResult = new(CaseMutationStatus.InvalidState, 1, ClientId) };
         var controller = new AdminTicketsController(chat, tickets) { ControllerContext = ControllerContextFor(CreateAdminPrincipal()) };
 
@@ -432,6 +441,7 @@ public sealed class TicketsInquiriesApiV1ControllerTests
             {
                 Id = 14,
                 InstTypeId = ConversationTypes.AccountsInquiry,
+                ClientId = ClientId,
                 Outcome = "Completed",
                 Date = DateTime.UtcNow
             }

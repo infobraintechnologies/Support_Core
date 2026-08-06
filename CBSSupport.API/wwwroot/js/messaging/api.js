@@ -163,11 +163,21 @@
             return parseResponse(response);
         }
 
-        async function getOrCreateGroup(clientId, signal) {
-            const target = Number(clientId) > 0
-                ? `/api/v1/admin/clients/${Number(clientId)}/group-conversation`
-                : `${baseUrl}/group`;
-            const response = await fetch(target, {
+        async function getOrCreateGroup(signal) {
+            const response = await fetch(`${baseUrl}/group`, {
+                method: "POST",
+                credentials: "same-origin",
+                signal
+            });
+            return parseResponse(response);
+        }
+
+        async function getOrCreateGroupForTenant(clientId, signal) {
+            const id = Number(clientId);
+            if (!Number.isSafeInteger(id) || id <= 0) {
+                throw new Error("A tenant must be explicitly selected.");
+            }
+            const response = await fetch(`/api/v1/admin/clients/${id}/group-conversation`, {
                 method: "POST",
                 credentials: "same-origin",
                 signal
@@ -180,6 +190,7 @@
             getMessages,
             sendMessage,
             getOrCreateGroup,
+            getOrCreateGroupForTenant,
             getAvailableAdmins,
             getAvailableClientUsers,
             getOrCreatePrivate,

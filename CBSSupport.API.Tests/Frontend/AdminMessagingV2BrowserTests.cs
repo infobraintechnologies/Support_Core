@@ -9,11 +9,13 @@ public sealed class AdminMessagingV2BrowserTests
 
         Assert.Contains("/api/v1/conversations?limit=100", source, StringComparison.Ordinal);
         Assert.Contains("listV2Conversations()", source, StringComparison.Ordinal);
-        Assert.Contains("loadLegacySidebar(currentClientId)", source, StringComparison.Ordinal);
+        Assert.Contains("loadInternalChats()", source, StringComparison.Ordinal);
+        Assert.Contains("/v1/api/instructions/by-type/internal-team-chat", source, StringComparison.Ordinal);
         Assert.Contains("No assigned private chats.", source, StringComparison.Ordinal);
         Assert.Contains("applyConversationFilters", source, StringComparison.Ordinal);
         Assert.Contains("String(summary.kind).toLowerCase() === \"private\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("/v1/api/instructions/sidebar/${currentClientId}`);", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("/v1/api/instructions/sidebar/", source, StringComparison.Ordinal);
     }
 
     [Fact]

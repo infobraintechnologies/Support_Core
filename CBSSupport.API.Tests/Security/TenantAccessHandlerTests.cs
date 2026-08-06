@@ -17,6 +17,30 @@ public sealed class TenantAccessHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_ScopedAdminWithAccess_Succeeds()
+    {
+        var context = CreateContext(
+            CreatePrincipal(Roles.Admin, new Claim(CustomClaimTypes.AdminTenantAccess, "42")),
+            new TenantResource(42));
+
+        await new TenantAccessHandler().HandleAsync(context);
+
+        Assert.True(context.HasSucceeded);
+    }
+
+    [Fact]
+    public async Task HandleAsync_ScopedAdminWithoutAccess_DoesNotSucceed()
+    {
+        var context = CreateContext(
+            CreatePrincipal(Roles.Admin, new Claim(CustomClaimTypes.AdminTenantAccess, "7")),
+            new TenantResource(42));
+
+        await new TenantAccessHandler().HandleAsync(context);
+
+        Assert.False(context.HasSucceeded);
+    }
+
+    [Fact]
     public async Task HandleAsync_ClientAccessingOwnTenant_Succeeds()
     {
         var context = CreateContext(
