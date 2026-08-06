@@ -8,13 +8,14 @@ namespace CBSSupport.API.Tests.Services;
 public sealed class AuthServiceTests
 {
     private const string Password = "correct horse battery staple";
+    private const string Pepper = "test-company-pepper";
     private static readonly Lazy<(string Hash, string Salt)> Credentials = new(CreateCredentials);
 
     [Fact]
     public async Task ValidateUserAsync_ActiveAccountWithValidPassword_ReturnsUser()
     {
         var user = CreateAdminUser(status: true, deactiveDate: null);
-        var service = new AuthService(new StubUserRepository { AdminByUsername = user });
+        var service = CreateService(new StubUserRepository { AdminByUsername = user });
 
         var result = await service.ValidateUserAsync(user.Username, Password);
 
@@ -32,7 +33,7 @@ public sealed class AuthServiceTests
         var user = CreateAdminUser(
             status,
             hasDeactiveDate ? DateTimeOffset.UtcNow : null);
-        var service = new AuthService(new StubUserRepository { AdminByUsername = user });
+        var service = CreateService(new StubUserRepository { AdminByUsername = user });
 
         var result = await service.ValidateUserAsync(user.Username, Password);
 
@@ -43,7 +44,7 @@ public sealed class AuthServiceTests
     public async Task ValidateClientUserAsync_ActiveAccountWithValidPassword_ReturnsUser()
     {
         var user = CreateClientUser(status: true, deactiveDate: null);
-        var service = new AuthService(new StubUserRepository { ClientByUsername = user });
+        var service = CreateService(new StubUserRepository { ClientByUsername = user });
 
         var result = await service.ValidateClientUserAsync(user.ClientId, user.Username, Password);
 
@@ -61,7 +62,7 @@ public sealed class AuthServiceTests
         var user = CreateClientUser(
             status,
             hasDeactiveDate ? DateTimeOffset.UtcNow : null);
-        var service = new AuthService(new StubUserRepository { ClientByUsername = user });
+        var service = CreateService(new StubUserRepository { ClientByUsername = user });
 
         var result = await service.ValidateClientUserAsync(user.ClientId, user.Username, Password);
 
@@ -102,9 +103,12 @@ public sealed class AuthServiceTests
 
     private static (string Hash, string Salt) CreateCredentials()
     {
-        var (hash, salt) = PasswordHelper.HashPassword(Password);
+        var (hash, salt) = PasswordHelper.HashPassword(Password, Pepper);
         return (hash, salt);
     }
+
+    private static AuthService CreateService(StubUserRepository repository) =>
+        new(repository, new PasswordHashOptions { Pepper = Pepper });
 
     private sealed class StubUserRepository : IUserRepository
     {
