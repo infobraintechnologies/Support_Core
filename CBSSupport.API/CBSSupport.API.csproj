@@ -6,11 +6,11 @@
 
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.66" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.7" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.7" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="9.0.7" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="9.0.7" />
-    <PackageReference Include="Npgsql" Version="9.0.3" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,12 +18,14 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>57e10f8f-03f8-4a02-b507-6569404c8b07</UserSecretsId>
     <OpenApiDocumentsDirectory>$(MSBuildProjectDirectory)/../artifacts/openapi</OpenApiDocumentsDirectory>
     <OpenApiGenerateDocumentsOptions>--document-name v1 --file-name cbs-support-api --openapi-version OpenApi3_0</OpenApiGenerateDocumentsOptions>
+    <!-- The legacy OpenAPI stack is retained until the planned removal. Its .NET 9 build-time generator cannot run against a net10.0 assembly. -->
+    <OpenApiGenerateDocumentsOnBuild>false</OpenApiGenerateDocumentsOnBuild>
   </PropertyGroup>
 
 </Project>

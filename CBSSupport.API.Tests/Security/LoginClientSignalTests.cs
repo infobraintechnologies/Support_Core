@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace CBSSupport.API.Tests.Security;
 
@@ -16,7 +17,7 @@ public sealed class LoginClientSignalTests
     {
         var proxy = IPAddress.Parse("192.0.2.10");
         using var server = CreateServer(proxy);
-        using var client = server.CreateClient();
+        using var client = server.GetTestClient();
         client.DefaultRequestHeaders.Add("X-Forwarded-For", "198.51.100.10");
 
         var response = await client.GetStringAsync("/");
@@ -29,7 +30,7 @@ public sealed class LoginClientSignalTests
     {
         var proxy = IPAddress.Parse("192.0.2.11");
         using var server = CreateServer(IPAddress.Parse("192.0.2.10"), proxy);
-        using var client = server.CreateClient();
+        using var client = server.GetTestClient();
         client.DefaultRequestHeaders.Add("X-Forwarded-For", "198.51.100.10");
 
         var response = await client.GetStringAsync("/");
@@ -37,27 +38,30 @@ public sealed class LoginClientSignalTests
         Assert.Equal(proxy.ToString(), response);
     }
 
-    private static TestServer CreateServer(IPAddress trustedProxy, IPAddress? actualProxy = null)
+    private static WebApplication CreateServer(IPAddress trustedProxy, IPAddress? actualProxy = null)
     {
         actualProxy ??= trustedProxy;
-        return new TestServer(
-            new WebHostBuilder()
-                .ConfigureServices(services =>
-                    services.Configure<ForwardedHeadersOptions>(options =>
-                    {
-                        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
-                        options.KnownProxies.Add(trustedProxy);
-                    }))
-                .Configure(application =>
-                {
-                    application.Use(async (context, next) =>
-                    {
-                        context.Connection.RemoteIpAddress = actualProxy;
-                        await next();
-                    });
-                    application.UseForwardedHeaders();
-                    application.Run(context => context.Response.WriteAsync(
-                        LoginAccountKey.ClientSignal(context.Connection.RemoteIpAddress)));
-                }));
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            EnvironmentName = Environments.Development
+        });
+        builder.WebHost.UseTestServer();
+        builder.Services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+            options.KnownProxies.Add(trustedProxy);
+        });
+
+        var application = builder.Build();
+        application.Use(async (context, next) =>
+        {
+            context.Connection.RemoteIpAddress = actualProxy;
+            await next();
+        });
+        application.UseForwardedHeaders();
+        application.Run(context => context.Response.WriteAsync(
+            LoginAccountKey.ClientSignal(context.Connection.RemoteIpAddress)));
+        application.Start();
+        return application;
     }
 }
