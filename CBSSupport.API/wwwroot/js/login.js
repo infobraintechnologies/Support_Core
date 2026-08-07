@@ -3,7 +3,6 @@
 document.addEventListener("DOMContentLoaded", function () {
     const adminRadio = document.getElementById('adminRole');
     const clientRadio = document.getElementById('clientRole');
-    const roleTypeHidden = document.getElementById('roleTypeHidden');
     const roleSelectorSlider = document.querySelector('.role-selector-slider');
 
     const adminForm = document.getElementById('adminForm');
@@ -16,8 +15,8 @@ document.addEventListener("DOMContentLoaded", function () {
         if (clientRadio.checked) {
             roleSelectorSlider.classList.add('client');
 
-            adminForm.style.display = 'none';
-            clientForm.style.display = 'block';
+            adminForm.hidden = true;
+            clientForm.hidden = false;
 
             adminInputs.forEach(input => input.disabled = true);
             clientInputs.forEach(input => input.disabled = false);
@@ -25,8 +24,8 @@ document.addEventListener("DOMContentLoaded", function () {
         } else {
             roleSelectorSlider.classList.remove('client');
 
-            adminForm.style.display = 'block';
-            clientForm.style.display = 'none';
+            adminForm.hidden = false;
+            clientForm.hidden = true;
 
             adminInputs.forEach(input => input.disabled = false);
             clientInputs.forEach(input => input.disabled = true);

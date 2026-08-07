@@ -20,6 +20,10 @@ export default defineConfig({
   outputDir: 'test-results',
   projects: [
     {
+      name: 'login',
+      testMatch: 'login-accessibility.spec.mjs'
+    },
+    {
       name: 'support',
       testMatch: 'admin-support-regressions.spec.mjs',
       use: {

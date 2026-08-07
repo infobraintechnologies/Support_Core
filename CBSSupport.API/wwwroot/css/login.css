@@ -80,6 +80,19 @@ body {
     border-radius: 0.5rem;
     padding: 4px;
     margin-bottom: 1.5rem;
+    border: 0;
+}
+
+.visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
 }
 
     .role-selector .form-check {
@@ -98,11 +111,24 @@ body {
     }
 
     .role-selector .form-check-input {
-        display: none;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
     }
 
         .role-selector .form-check-input:checked + .form-check-label {
             color: #fff;
+        }
+
+        .role-selector .form-check-input:focus-visible + .form-check-label {
+            outline: 3px solid #111827;
+            outline-offset: 2px;
         }
 
 .role-selector-slider {
@@ -128,6 +154,19 @@ body {
     background-color: #f9fafb;
     border: 1px solid #d1d5db;
     padding: 0.8rem 1rem;
+}
+
+.form-control:focus-visible,
+.form-check-input[type="checkbox"]:focus-visible,
+.btn-login:focus-visible {
+    outline: 3px solid #111827;
+    outline-offset: 2px;
+}
+
+.password-recovery-help {
+    max-width: 22rem;
+    color: #4b5563;
+    line-height: 1.4;
 }
 
 .form-group.disabled {
@@ -183,5 +222,13 @@ body {
 
     100% {
         transform: translateY(0px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .branding-logo,
+    .role-selector-slider {
+        animation: none;
+        transition: none;
     }
 }
