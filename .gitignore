@@ -45,12 +45,6 @@ secrets.*.json
 *.pfx
 *.p12
 
-# MAUI specific
-platforms/
-**/Resources/Raw/*.*
-*.apk
-*.aab
-
 # Logs
 *.log
 
