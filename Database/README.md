@@ -97,6 +97,12 @@ Never edit an applied migration. Write a new timestamped forward-fix instead.
     account/source pair receives a five-failure exponential backoff capped at
     fifteen minutes. A successful login clears only that pair's backoff state;
     the source window remains active.
+15. Apply `202608071000_create_security_audit_events.sql` before enabling the
+    corresponding application build. Provision separate migration/table-owner
+    and retention/review roles; never make the runtime role the audit-table
+    owner. Verify the append-only trigger and grants, then review audit-write
+    failures and retention status operationally. The default audit retention is
+    400 days and network context is masked to IPv4 `/24` or IPv6 `/64`.
 
 StructuralValidationOnly performs no malware scanning and does not require ClamAV,
 port 3310, scanner health, or signature definitions. It must not be represented as

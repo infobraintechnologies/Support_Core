@@ -1,4 +1,5 @@
 using CBSSupport.Shared.Data;
+using Microsoft.AspNetCore.Http;
 
 namespace CBSSupport.API.Security;
 
@@ -45,8 +46,12 @@ public sealed class AccountSecurityStampRotationService(
     IAccountSecurityStampStore store,
     IAccountSecurityStampService stamps,
     IHubConnectionRevocationNotifier revocations,
-    ILogger<AccountSecurityStampRotationService> logger) : IAccountSecurityStampRotationService
+    ILogger<AccountSecurityStampRotationService> logger,
+    ISecurityAuditWriter? securityAudit = null,
+    IHttpContextAccessor? httpContextAccessor = null) : IAccountSecurityStampRotationService
 {
+    private readonly ISecurityAuditWriter _securityAudit = securityAudit ?? new NullSecurityAuditWriter();
+
     public Task<bool> RevokeAllSessionsAsync(
         AccountReference account,
         CancellationToken cancellationToken = default) =>
@@ -84,11 +89,24 @@ public sealed class AccountSecurityStampRotationService(
         CancellationToken cancellationToken = default)
     {
         var replacementStamp = stamps.Generate();
-        var rotated = await store.RotateAsync(
-            account,
-            replacementStamp,
-            expectedStamp,
-            cancellationToken);
+        var auditEvent = CreateAuditEvent(account, reason);
+        var rotated = store is ITransactionalAccountSecurityStampStore transactionalStore
+            ? await transactionalStore.RotateWithAuditAsync(
+                account,
+                replacementStamp,
+                expectedStamp,
+                auditEvent,
+                cancellationToken)
+            : await store.RotateAsync(account, replacementStamp, expectedStamp, cancellationToken);
+        if (store is not ITransactionalAccountSecurityStampStore || !rotated)
+        {
+            await _securityAudit.AppendAsync(
+                auditEvent with
+                {
+                    Outcome = rotated ? SecurityAuditOutcomes.Success : SecurityAuditOutcomes.Failure
+                },
+                cancellationToken);
+        }
         if (rotated)
         {
             try
@@ -116,5 +134,43 @@ public sealed class AccountSecurityStampRotationService(
         }
 
         return rotated;
+    }
+
+    private SecurityAuditEvent CreateAuditEvent(
+        AccountReference account,
+        SecurityStampRotationReason reason)
+    {
+        var context = httpContextAccessor?.HttpContext;
+        var currentActor = context is null
+            ? new SecurityAuditActor(SecurityAuditActorKinds.System, null, null)
+            : SecurityAuditContext.FromPrincipal(context.User);
+        if (currentActor.ActorKind == SecurityAuditActorKinds.Anonymous)
+        {
+            currentActor = new SecurityAuditActor(SecurityAuditActorKinds.System, null, null);
+        }
+
+        return new SecurityAuditEvent(
+            account.Kind == AccountKind.Client ? currentActor.TenantId : null,
+            currentActor.ActorKind,
+            currentActor.ActorUserId,
+            "Account",
+            account.UserId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            reason switch
+            {
+                SecurityStampRotationReason.RevokeAllSessions => "RevokeAll",
+                SecurityStampRotationReason.PasswordChange => "PasswordChanged",
+                SecurityStampRotationReason.PasswordReset => "PasswordReset",
+                SecurityStampRotationReason.RoleChange => "RoleChanged",
+                SecurityStampRotationReason.AccountCompromise => "AccountCompromise",
+                _ => "SecurityStampChanged"
+            },
+            SecurityAuditOutcomes.Success,
+            DateTimeOffset.UtcNow,
+            context is null
+                ? null
+                : System.Diagnostics.Activity.Current?.Id ?? context.TraceIdentifier,
+            context is null ? null : SecurityAuditContext.MaskIp(context.Connection.RemoteIpAddress),
+            new Dictionary<string, string?> { ["feature"] = "identity" },
+            new Dictionary<string, string?> { ["reason"] = reason.ToString() });
     }
 }

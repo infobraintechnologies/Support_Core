@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using CBSSupport.Shared.Contracts;
+using CBSSupport.Shared.Data;
 using Dapper;
 using Npgsql;
 
@@ -121,8 +122,12 @@ public sealed record CaseMutationCommand(
     DateTime? ExpiryDate,
     bool IsCompleted);
 
-public sealed class CaseMutationCommandHandler(string connectionString) : ICaseMutationCommandHandler
+public sealed class CaseMutationCommandHandler(
+    string connectionString,
+    ISecurityAuditWriter? securityAudit = null) : ICaseMutationCommandHandler
 {
+    private readonly ISecurityAuditWriter _securityAudit = securityAudit ?? new NullSecurityAuditWriter();
+
     public async Task<CaseMutationResult> ExecuteAsync(
         CaseMutationCommand command,
         CancellationToken cancellationToken = default)
@@ -261,6 +266,27 @@ public sealed class CaseMutationCommandHandler(string connectionString) : ICaseM
                 },
                 transaction,
                 cancellationToken: cancellationToken));
+            await _securityAudit.AppendAsync(
+                connection,
+                transaction,
+                new SecurityAuditEvent(
+                    changed.ClientId,
+                    SecurityAuditActorKinds.Admin,
+                    actorUserId,
+                    command.ConversationKind,
+                    command.CaseId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    command.AuditAction,
+                    SecurityAuditOutcomes.Success,
+                    new DateTimeOffset(occurredAt, TimeSpan.Zero),
+                    Activity.Current?.Id,
+                    null,
+                    new Dictionary<string, string?> { ["feature"] = "case" },
+                    new Dictionary<string, string?>
+                    {
+                        ["operation"] = isEdit ? "DetailsUpdated" : "StatusTransition",
+                        ["version"] = changed.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    }),
+                cancellationToken);
             await CaseNotificationWriter.InsertAsync(
                 connection,
                 transaction,

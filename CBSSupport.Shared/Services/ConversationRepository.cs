@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Diagnostics;
 using CBSSupport.Shared.Contracts;
+using CBSSupport.Shared.Data;
 using CBSSupport.Shared.Models;
 using Dapper;
 using Npgsql;
@@ -83,13 +84,16 @@ public sealed class ConversationRepository : IConversationRepository
 
     private readonly string _connectionString;
     private readonly bool _attachmentsEnabled;
+    private readonly ISecurityAuditWriter _securityAudit;
 
     public ConversationRepository(
         string connectionString,
-        bool attachmentsEnabled)
+        bool attachmentsEnabled,
+        ISecurityAuditWriter? securityAudit = null)
     {
         _connectionString = connectionString;
         _attachmentsEnabled = attachmentsEnabled;
+        _securityAudit = securityAudit ?? new NullSecurityAuditWriter();
         DefaultTypeMap.MatchNamesWithUnderscores = true;
     }
 
@@ -225,6 +229,23 @@ public sealed class ConversationRepository : IConversationRepository
                 },
                 transaction,
                 cancellationToken: cancellationToken));
+            await _securityAudit.AppendAsync(
+                connection,
+                transaction,
+                new SecurityAuditEvent(
+                    clientId,
+                    actor.IsAdmin ? SecurityAuditActorKinds.Admin : SecurityAuditActorKinds.Client,
+                    actor.UserId,
+                    conversationKind,
+                    conversationId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    "CaseCreated",
+                    SecurityAuditOutcomes.Success,
+                    new DateTimeOffset(occurredAt, TimeSpan.Zero),
+                    Activity.Current?.Id,
+                    null,
+                    new Dictionary<string, string?> { ["feature"] = "case" },
+                    new Dictionary<string, string?> { ["conversationKind"] = conversationKind }),
+                cancellationToken);
             await CaseNotificationWriter.InsertAsync(
                 connection,
                 transaction,
@@ -1098,6 +1119,32 @@ public sealed class ConversationRepository : IConversationRepository
                 cancellationToken: cancellationToken));
         }
 
+        await _securityAudit.AppendAsync(
+            connection,
+            transaction,
+            new SecurityAuditEvent(
+                access.ClientId,
+                actor.IsAdmin ? SecurityAuditActorKinds.Admin : SecurityAuditActorKinds.Client,
+                actor.UserId,
+                access.IsTicket ? ConversationKinds.Ticket
+                    : access.IsInquiry ? ConversationKinds.Inquiry
+                    : access.IsPrivate ? ConversationKinds.Private
+                    : ConversationKinds.Group,
+                conversationId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "MessageCreated",
+                SecurityAuditOutcomes.Success,
+                new DateTimeOffset(sentAt, TimeSpan.Zero),
+                Activity.Current?.Id,
+                null,
+                new Dictionary<string, string?> { ["feature"] = "messaging" },
+                new Dictionary<string, string?>
+                {
+                    ["messageId"] = messageId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["sequence"] = sequence.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ["attachmentCount"] = attachmentIds.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                }),
+            cancellationToken);
+
         var eventId = Guid.NewGuid();
         const string outboxSql = """
             INSERT INTO digital.conversation_outbox (
@@ -1812,7 +1859,7 @@ public sealed class ConversationRepository : IConversationRepository
             cancellationToken: cancellationToken));
     }
 
-    private static async Task InsertAuditAsync(
+    private async Task InsertAuditAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         long conversationId,
@@ -1845,6 +1892,22 @@ public sealed class ConversationRepository : IConversationRepository
             },
             transaction,
             cancellationToken: cancellationToken));
+        await _securityAudit.AppendAsync(
+            connection,
+            transaction,
+            new SecurityAuditEvent(
+                clientId,
+                actor.IsAdmin ? SecurityAuditActorKinds.Admin : SecurityAuditActorKinds.Client,
+                actor.UserId,
+                "Conversation",
+                conversationId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                action,
+                SecurityAuditOutcomes.Success,
+                DateTimeOffset.UtcNow,
+                Activity.Current?.Id,
+                null,
+                new Dictionary<string, string?> { ["feature"] = "messaging" }),
+            cancellationToken);
     }
 
     private static async Task InsertAccessChangedOutboxAsync(

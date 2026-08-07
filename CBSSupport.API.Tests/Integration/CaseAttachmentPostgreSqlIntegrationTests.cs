@@ -1102,6 +1102,79 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         }
     }
 
+    [PostgreSqlIntegrationFact]
+    public async Task SecurityAudit_RuntimeRoleCannotAlterHistoryAndRollbackRemovesUncommittedEvent()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyMigrationAsync("202608071000_create_security_audit_events.sql");
+        await database.ExecuteAsync("""
+            INSERT INTO digital.security_audit_events (
+                tenant_id, actor_kind, actor_user_id, target_kind, target_id,
+                action, outcome, source_context, details)
+            VALUES (42, 'Client', 7, 'Account', '7',
+                    'AuthenticationSucceeded', 'Success', '{}'::jsonb, '{}'::jsonb);
+            """);
+
+        await using (var connection = new NpgsqlConnection(database.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await connection.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO digital.security_audit_events (
+                    tenant_id, actor_kind, actor_user_id, target_kind, target_id,
+                    action, outcome, source_context, details)
+                VALUES (42, 'Client', 7, 'Account', '7',
+                        'RevokeAll', 'Success', '{}'::jsonb, '{}'::jsonb);
+                """,
+                transaction: transaction));
+            await transaction.RollbackAsync();
+        }
+
+        Assert.Equal(1L, await database.QuerySingleAsync<long>(
+            "SELECT count(*) FROM digital.security_audit_events;"));
+
+        var roleName = $"cbs_security_audit_test_{Guid.NewGuid():N}";
+        try
+        {
+            await database.ExecuteAsync($$"""
+                CREATE ROLE "{{roleName}}" NOLOGIN;
+                GRANT "{{roleName}}" TO CURRENT_USER;
+                GRANT USAGE ON SCHEMA digital TO "{{roleName}}";
+                GRANT SELECT, INSERT ON digital.security_audit_events TO "{{roleName}}";
+                GRANT USAGE ON SEQUENCE digital.security_audit_events_audit_id_seq TO "{{roleName}}";
+                """);
+
+            await using var connection = new NpgsqlConnection(database.ConnectionString);
+            await connection.OpenAsync();
+            await connection.ExecuteAsync($$"""SET ROLE "{{roleName}}";""");
+            await Assert.ThrowsAsync<PostgresException>(() => connection.ExecuteAsync(
+                "UPDATE digital.security_audit_events SET action = 'tampered' WHERE audit_id = 1;"));
+            await Assert.ThrowsAsync<PostgresException>(() => connection.ExecuteAsync(
+                "DELETE FROM digital.security_audit_events WHERE audit_id = 1;"));
+            await Assert.ThrowsAsync<PostgresException>(() => connection.ExecuteAsync(
+                "ALTER TABLE digital.security_audit_events DISABLE TRIGGER trg_security_audit_events_append_only;"));
+            await connection.ExecuteAsync("RESET ROLE;");
+        }
+        finally
+        {
+            await database.ExecuteAsync($$"""
+                DO $cleanup$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{roleName}}') THEN
+                        EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE digital.security_audit_events FROM %I', '{{roleName}}');
+                        EXECUTE format('REVOKE ALL PRIVILEGES ON SEQUENCE digital.security_audit_events_audit_id_seq FROM %I', '{{roleName}}');
+                        EXECUTE format('REVOKE ALL PRIVILEGES ON SCHEMA digital FROM %I', '{{roleName}}');
+                        EXECUTE format('REVOKE %I FROM CURRENT_USER', '{{roleName}}');
+                        EXECUTE format('DROP ROLE %I', '{{roleName}}');
+                    END IF;
+                END
+                $cleanup$;
+                """);
+        }
+    }
+
     private static Task SeedTicketCaseAsync(TestDatabase database, long caseId, long clientId) =>
         database.ExecuteAsync("""
             INSERT INTO digital.instructions (
@@ -1392,6 +1465,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             await ApplyMigrationAsync("202608041100_create_case_audit.sql");
             await ApplyMigrationAsync("202608051000_add_case_notification_delivery.sql");
             await ApplyMigrationAsync("202608051100_finalize_recipient_notification_state.sql");
+            await ApplyMigrationAsync("202608071000_create_security_audit_events.sql");
         }
 
         public async Task SeedGroupConversationsAsync()

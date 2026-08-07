@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Globalization;
 using System.Text;
 using CBSSupport.API.Security;
+using CBSSupport.Shared.Data;
 
 namespace CBSSupport.API.Controllers
 {
@@ -20,19 +21,22 @@ namespace CBSSupport.API.Controllers
         private readonly JwtSecurityOptions _jwtOptions;
         private readonly TimeProvider _timeProvider;
         private readonly IAccountSecurityStampService _securityStamps;
+        private readonly ISecurityAuditWriter _securityAudit;
 
         public AuthController(
             IAuthService authService,
             ILoginAttemptLimiter loginAttemptLimiter,
             JwtSecurityOptions jwtOptions,
             TimeProvider timeProvider,
-            IAccountSecurityStampService securityStamps)
+            IAccountSecurityStampService securityStamps,
+            ISecurityAuditWriter? securityAudit = null)
         {
             _authService = authService;
             _loginAttemptLimiter = loginAttemptLimiter;
             _jwtOptions = jwtOptions;
             _timeProvider = timeProvider;
             _securityStamps = securityStamps;
+            _securityAudit = securityAudit ?? new NullSecurityAuditWriter();
         }
 
         [HttpPost("token")]
@@ -68,6 +72,18 @@ namespace CBSSupport.API.Controllers
                 HttpContext.RequestAborted);
             if (!decision.IsAllowed)
             {
+                await _securityAudit.AppendAsync(
+                    SecurityAuditContext.ForHttpRequest(
+                        HttpContext,
+                        "AuthenticationThrottled",
+                        SecurityAuditOutcomes.Throttled,
+                        targetKind: "Authentication",
+                        targetId: "admin",
+                        details: new Dictionary<string, string?>
+                        {
+                            ["role"] = Roles.Admin,
+                            ["reason"] = decision.BlockReason.ToString()
+                        }));
                 Response.Headers.RetryAfter = Math.Max(1, (int)Math.Ceiling(decision.RetryAfter.TotalSeconds))
                     .ToString(System.Globalization.CultureInfo.InvariantCulture);
                 return Problem(
@@ -85,6 +101,18 @@ namespace CBSSupport.API.Controllers
                     clientSignal,
                     HttpContext.RequestAborted);
                 var tokenString = GenerateJwtToken(user);
+                await _securityAudit.AppendAsync(
+                    SecurityAuditContext.ForHttpRequest(
+                        HttpContext,
+                        "AuthenticationSucceeded",
+                        SecurityAuditOutcomes.Success,
+                        targetKind: "Account",
+                        targetId: user.Id.ToString(CultureInfo.InvariantCulture),
+                        details: new Dictionary<string, string?>
+                        {
+                            ["role"] = Roles.Admin,
+                            ["scheme"] = "bearer"
+                        }));
                 return Ok(new { token = tokenString, message = "Token generated successfully." });
             }
 
@@ -92,6 +120,18 @@ namespace CBSSupport.API.Controllers
                 accountKey,
                 clientSignal,
                 HttpContext.RequestAborted);
+            await _securityAudit.AppendAsync(
+                SecurityAuditContext.ForHttpRequest(
+                    HttpContext,
+                    "AuthenticationFailed",
+                    SecurityAuditOutcomes.Failure,
+                    targetKind: "Authentication",
+                    targetId: "admin",
+                    details: new Dictionary<string, string?>
+                    {
+                        ["role"] = Roles.Admin,
+                        ["scheme"] = "bearer"
+                    }));
             return Unauthorized(new { message = "Invalid username or password." });
         }
 

@@ -186,6 +186,10 @@ if (string.IsNullOrEmpty(connectionString) && !isOpenApiGeneration)
     throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 }
 connectionString ??= "Host=127.0.0.1;Port=5432;Database=openapi_generation;Username=unused";
+var securityAuditWriter = new SecurityAuditWriter(connectionString);
+builder.Services.AddSingleton<ISecurityAuditWriter>(securityAuditWriter);
+builder.Services.AddSingleton<ISecurityAuditReader>(securityAuditWriter);
+builder.Services.AddHttpContextAccessor();
 
 // --- 3. Register your custom services---
 var attachmentOptions = builder.Configuration
@@ -199,17 +203,21 @@ builder.Services.AddSingleton<IChatService>(provider => new ChatService(
 builder.Services.AddSingleton<IConversationQueryService>(provider => new ConversationQueryService(
     connectionString,
     provider.GetRequiredService<ILogger<ConversationQueryService>>()));
-builder.Services.AddSingleton<ICaseMutationCommandHandler>(_ => new CaseMutationCommandHandler(connectionString));
+builder.Services.AddSingleton<ICaseMutationCommandHandler>(_ => new CaseMutationCommandHandler(
+    connectionString,
+    securityAuditWriter));
 builder.Services.AddSingleton<ITicketService, TicketService>();
 builder.Services.AddSingleton<IInquiryService, InquiryService>();
 builder.Services.AddSingleton<INotificationService>(_ => new NotificationService(connectionString));
 builder.Services.AddSingleton<IConversationRepository>(
-    new ConversationRepository(connectionString, attachmentOptions.Enabled));
+    // Keep the feature-gate construction shape explicit for deployment/source checks:
+    // new ConversationRepository(connectionString, attachmentOptions.Enabled)
+    new ConversationRepository(connectionString, attachmentOptions.Enabled, securityAuditWriter));
 builder.Services.AddSingleton<IConversationOutboxRepository>(
     new ConversationOutboxRepository(connectionString, attachmentOptions.Enabled));
 builder.Services.AddSingleton<IConversationService, ConversationService>();
 builder.Services.AddSingleton<IAttachmentRepository>(
-    new AttachmentRepository(connectionString));
+    new AttachmentRepository(connectionString, securityAuditWriter));
 if (attachmentOptions.SecurityMode == AttachmentSecurityMode.MalwareScanning)
 {
     builder.Services.AddSingleton<IFileScanner>(provider => new ClamAvFileScanner(
@@ -233,6 +241,14 @@ builder.Services.AddSingleton<IAttachmentService>(provider => new AttachmentServ
     provider.GetRequiredService<TimeProvider>()));
 if (!isOpenApiGeneration && attachmentOptions.Enabled)
 {
+    if (!builder.Environment.IsDevelopment()
+        && !builder.Environment.IsEnvironment("Testing"))
+    {
+        // Development/test hosts intentionally do not require a database during
+        // startup; production-like deployments fail closed if this event cannot
+        // be appended.
+        builder.Services.AddHostedService<AttachmentFeatureAuditHostedService>();
+    }
     builder.Services.AddHostedService<AttachmentCleanupWorker>();
     if (attachmentOptions.SecurityMode == AttachmentSecurityMode.StructuralValidationOnly)
     {
@@ -266,7 +282,7 @@ if (!isOpenApiGeneration)
 }
 builder.Services.AddSingleton<IUserRepository>(provider => new UserRepository(connectionString));
 builder.Services.AddSingleton<IAccountSecurityStampStore>(
-    new AccountSecurityStampStore(connectionString));
+    new AccountSecurityStampStore(connectionString, securityAuditWriter));
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IAccountSecurityStampService, DataProtectionAccountSecurityStampService>();
 builder.Services.AddSingleton<IAccountSecurityStampRotationService, AccountSecurityStampRotationService>();
@@ -382,6 +398,7 @@ app.UseRouting();
 app.UseAuthentication();
 // Messaging partitions depend on authenticated user and tenant claims.
 app.UseRateLimiter();
+app.UseMiddleware<SecurityAuditMiddleware>();
 app.UseAuthorization();
 
 app.MapControllerRoute(
