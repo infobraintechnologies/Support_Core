@@ -68,3 +68,4 @@ project.fragment.lock.json
 CBSSupport.API/Properties/launchSettings.json
 Database/Operations/r2-cors.example.json
 CBSSupport.API/Properties/launchSettings.json
+scripts/generate-support-user-insert.ps1
