@@ -9,7 +9,7 @@ CBS Support is a modern support system built using .NET technologies. The soluti
 
 ## Technologies Used
 
-- .NET 9.0
+- .NET 10.0 LTS
 - ASP.NET Core
 - .NET MAUI
 - SignalR for real-time communication
@@ -18,7 +18,7 @@ CBS Support is a modern support system built using .NET technologies. The soluti
 
 ## Prerequisites
 
-- .NET 9.0 SDK
+- .NET 10.0 SDK (the repository pins a supported SDK in `global.json`)
 - Visual Studio 2022 or later (recommended)
 - PostgreSQL database server
 - For MAUI development:
@@ -88,6 +88,7 @@ CBS Support is a modern support system built using .NET technologies. The soluti
 - Use Visual Studio 2022 for the best development experience
 - Keep the shared library clean and focused on common functionality
 - Follow the existing code style and patterns
+- OpenAPI document generation remains intentionally deferred while the legacy OpenAPI stack is retained for planned removal.
 
 ### SignalR deployment mode
 
