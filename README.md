@@ -4,14 +4,14 @@
 CBS Support is a modern support system built using .NET technologies. The solution consists of multiple projects:
 
 - **CBSSupport.API**: A web API built with ASP.NET Core that handles backend operations and real-time communication using SignalR
-- **CBSSupport.MAUIApp**: A cross-platform mobile/desktop application built with .NET MAUI
 - **CBSSupport.Shared**: A shared library containing common models and utilities
+- **CBSSupport.API.Tests**: Unit, API, integration, and contract tests for the supported application
+- **CBSSupport.DatabaseMigrator**: Legacy migration runner retained only for existing operational compatibility
 
 ## Technologies Used
 
 - .NET 10.0 LTS
 - ASP.NET Core
-- .NET MAUI
 - SignalR for real-time communication
 - PostgreSQL with Dapper ORM
 - Bootstrap for UI styling
@@ -21,10 +21,6 @@ CBS Support is a modern support system built using .NET technologies. The soluti
 - .NET 10.0 SDK (the repository pins a supported SDK in `global.json`)
 - Visual Studio 2022 or later (recommended)
 - PostgreSQL database server
-- For MAUI development:
-  - Windows 10 version 1809 or higher for Windows development
-  - macOS Catalina (10.15) or higher for iOS/macOS development
-  - Android SDK for Android development
 
 ## Setup Instructions
 
@@ -46,16 +42,8 @@ CBS Support is a modern support system built using .NET technologies. The soluti
    dotnet run
    ```
 
-4. **MAUI App Setup**
-   ```bash
-   cd CBSSupport.MAUIApp
-   dotnet restore
-   dotnet build
-   ```
-
-5. **Running the Application**
+4. **Running the Application**
    - For API: The application will be available at `https://localhost:5001`
-   - For MAUI app: Run through Visual Studio or use `dotnet run`
 
 ## Project Structure
 
@@ -63,11 +51,6 @@ CBS Support is a modern support system built using .NET technologies. The soluti
   - Web API project with SignalR hubs
   - Database interactions using Dapper
   - RESTful endpoints
-
-- `CBSSupport.MAUIApp/`
-  - Cross-platform UI application
-  - SignalR client integration
-  - Responsive UI design
 
 - `CBSSupport.Shared/`
   - Shared models
@@ -77,14 +60,14 @@ CBS Support is a modern support system built using .NET technologies. The soluti
 ## Features
 
 - Real-time communication using SignalR
-- Cross-platform support (Windows, Android, iOS, macOS)
+- Responsive browser-based support workflows
 - Modern responsive UI
 - Secure API endpoints
 - Database integration with PostgreSQL
 
 ## Development Notes
 
-- Ensure all required SDKs are installed for the platforms you're targeting
+- Ensure the .NET 10 SDK and PostgreSQL are installed
 - Use Visual Studio 2022 for the best development experience
 - Keep the shared library clean and focused on common functionality
 - Follow the existing code style and patterns
