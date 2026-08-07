@@ -22,7 +22,7 @@ public sealed class DataProtectionPersistenceTests
         var exception = Assert.Throws<InvalidOperationException>(
             () =>
             {
-                _ = options.ResolveKeyRingPath(environment, isOpenApiGeneration: false);
+                _ = options.ResolveKeyRingPath(environment);
             });
 
         Assert.Contains("durable shared location", exception.Message, StringComparison.Ordinal);
@@ -33,10 +33,10 @@ public sealed class DataProtectionPersistenceTests
     {
         var options = new CbsDataProtectionOptions { KeyRingPath = "keys" };
         var environment = new TestHostEnvironment("Production");
-        var resolvedPath = options.ResolveKeyRingPath(environment, isOpenApiGeneration: false);
+        var resolvedPath = options.ResolveKeyRingPath(environment);
 
         var exception = Assert.Throws<InvalidOperationException>(
-            () => options.Validate(environment, resolvedPath, isOpenApiGeneration: false));
+            () => options.Validate(environment, resolvedPath));
 
         Assert.Contains("absolute path", exception.Message, StringComparison.Ordinal);
     }

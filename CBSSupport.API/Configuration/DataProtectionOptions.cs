@@ -33,7 +33,7 @@ public sealed class DataProtectionOptions
     public bool IsDevelopmentOrTesting(IHostEnvironment environment) =>
         environment.IsDevelopment() || environment.IsEnvironment("Testing");
 
-    public string ResolveKeyRingPath(IHostEnvironment environment, bool isOpenApiGeneration)
+    public string ResolveKeyRingPath(IHostEnvironment environment)
     {
         if (!string.IsNullOrWhiteSpace(KeyRingPath))
         {
@@ -52,7 +52,7 @@ public sealed class DataProtectionOptions
                 "DataProtection-Keys");
         }
 
-        if (environment.IsEnvironment("Testing") || isOpenApiGeneration)
+        if (environment.IsEnvironment("Testing"))
         {
             return Path.Combine(
                 Path.GetTempPath(),
@@ -65,22 +65,21 @@ public sealed class DataProtectionOptions
             "Ephemeral or process-local keys are not supported.");
     }
 
-    public string ResolveAtRestProtection(IHostEnvironment environment, bool isOpenApiGeneration)
+    public string ResolveAtRestProtection(IHostEnvironment environment)
     {
         if (!string.IsNullOrWhiteSpace(AtRestProtection))
         {
             return AtRestProtection.Trim();
         }
 
-        return IsDevelopmentOrTesting(environment) || isOpenApiGeneration
+        return IsDevelopmentOrTesting(environment)
             ? "None"
             : "Certificate";
     }
 
     public void Validate(
         IHostEnvironment environment,
-        string resolvedKeyRingPath,
-        bool isOpenApiGeneration)
+        string resolvedKeyRingPath)
     {
         if (string.IsNullOrWhiteSpace(ApplicationName))
         {
@@ -88,7 +87,7 @@ public sealed class DataProtectionOptions
                 "DataProtection:ApplicationName must be a non-empty stable application name.");
         }
 
-        var protection = ResolveAtRestProtection(environment, isOpenApiGeneration);
+        var protection = ResolveAtRestProtection(environment);
         if (!protection.Equals("None", StringComparison.OrdinalIgnoreCase)
             && !protection.Equals("Certificate", StringComparison.OrdinalIgnoreCase)
             && !protection.Equals("Platform", StringComparison.OrdinalIgnoreCase))
@@ -97,7 +96,7 @@ public sealed class DataProtectionOptions
                 "DataProtection:AtRestProtection must be Certificate, Platform, or None.");
         }
 
-        if (IsDevelopmentOrTesting(environment) || isOpenApiGeneration)
+        if (IsDevelopmentOrTesting(environment))
         {
             return;
         }
@@ -240,15 +239,14 @@ public static class DataProtectionServiceCollectionExtensions
     public static IServiceCollection AddCbsDataProtection(
         this IServiceCollection services,
         IConfiguration configuration,
-        IHostEnvironment environment,
-        bool isOpenApiGeneration = false)
+        IHostEnvironment environment)
     {
         var options = configuration
             .GetSection(DataProtectionOptions.SectionName)
             .Get<DataProtectionOptions>() ?? new DataProtectionOptions();
-        var keyRingPath = options.ResolveKeyRingPath(environment, isOpenApiGeneration);
+        var keyRingPath = options.ResolveKeyRingPath(environment);
         options.KeyRingPath = keyRingPath;
-        options.Validate(environment, keyRingPath, isOpenApiGeneration);
+        options.Validate(environment, keyRingPath);
         DataProtectionKeyRingPermissions.Ensure(keyRingPath, environment, options.EnforcePrivateKeyRingPermissions);
 
         var dataProtectionBuilder = services
@@ -256,7 +254,7 @@ public static class DataProtectionServiceCollectionExtensions
             .SetApplicationName(options.ApplicationName)
             .PersistKeysToFileSystem(new DirectoryInfo(keyRingPath));
 
-        var protection = options.ResolveAtRestProtection(environment, isOpenApiGeneration);
+        var protection = options.ResolveAtRestProtection(environment);
         if (protection.Equals("Certificate", StringComparison.OrdinalIgnoreCase))
         {
             dataProtectionBuilder.ProtectKeysWithCertificate(options.LoadCertificate());
@@ -273,10 +271,7 @@ public static class DataProtectionServiceCollectionExtensions
         }
 
         services.AddSingleton(options);
-        if (!isOpenApiGeneration)
-        {
-            services.AddHostedService<DataProtectionStartupValidator>();
-        }
+        services.AddHostedService<DataProtectionStartupValidator>();
 
         return services;
     }

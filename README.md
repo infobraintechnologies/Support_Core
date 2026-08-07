@@ -6,7 +6,6 @@ CBS Support is a modern support system built using .NET technologies. The soluti
 - **CBSSupport.API**: A web API built with ASP.NET Core that handles backend operations and real-time communication using SignalR
 - **CBSSupport.Shared**: A shared library containing common models and utilities
 - **CBSSupport.API.Tests**: Unit, API, integration, and contract tests for the supported application
-- **CBSSupport.DatabaseMigrator**: Legacy migration runner retained only for existing operational compatibility
 
 ## Technologies Used
 
@@ -71,7 +70,9 @@ CBS Support is a modern support system built using .NET technologies. The soluti
 - Use Visual Studio 2022 for the best development experience
 - Keep the shared library clean and focused on common functionality
 - Follow the existing code style and patterns
-- OpenAPI document generation remains intentionally deferred while the legacy OpenAPI stack is retained for planned removal.
+- Database changes are reviewed SQL scripts under `Database/Migrations`, with
+  read-only checks under `Database/Preflight` and deployment run through pgAdmin
+  or psql by an authorized operator.
 
 ### SignalR deployment mode
 

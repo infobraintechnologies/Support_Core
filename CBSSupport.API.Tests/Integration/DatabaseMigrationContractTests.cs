@@ -3,28 +3,6 @@ namespace CBSSupport.API.Tests.Integration;
 public sealed class DatabaseMigrationContractTests
 {
     [Fact]
-    public void MigrationRunner_AlwaysPackagesCanonicalMigrationBytes()
-    {
-        var project = File.ReadAllText(Path.Combine(
-            FindRepositoryRoot(),
-            "CBSSupport.DatabaseMigrator",
-            "CBSSupport.DatabaseMigrator.csproj"));
-
-        Assert.Contains(
-            "CopyToOutputDirectory=\"Always\"",
-            project,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "CopyToPublishDirectory=\"Always\"",
-            project,
-            StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "CopyToOutputDirectory=\"PreserveNewest\"",
-            project,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void CaseReplyNormalization_RepairsOnlyReviewedLegacySentinelShape()
     {
         var sql = ReadMigration(
