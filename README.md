@@ -89,6 +89,24 @@ CBS Support is a modern support system built using .NET technologies. The soluti
 - Keep the shared library clean and focused on common functionality
 - Follow the existing code style and patterns
 
+### SignalR deployment mode
+
+The current supported deployment mode is:
+
+```text
+SignalR__DeploymentMode=SingleInstance
+```
+
+The built-in ASP.NET Core SignalR lifetime manager is sufficient for the
+current single-API-instance deployment. Authentication, security-stamp
+validation, server-controlled tenant/conversation membership, and local
+revocation connection tracking remain enabled.
+
+Multiple API replicas are currently unsupported. Before horizontally scaling
+the API, the company must select and approve a distributed SignalR mechanism;
+sticky sessions alone do not provide cross-instance message propagation. See
+`.context/SIGNALR_SCALE_OUT.md` for the deployment decision and deferred work.
+
 ## Contributing
 
 1. Fork the repository

@@ -44,6 +44,7 @@ public interface IAccountSecurityStampRotationService
 public sealed class AccountSecurityStampRotationService(
     IAccountSecurityStampStore store,
     IAccountSecurityStampService stamps,
+    IHubConnectionRevocationNotifier revocations,
     ILogger<AccountSecurityStampRotationService> logger) : IAccountSecurityStampRotationService
 {
     public Task<bool> RevokeAllSessionsAsync(
@@ -90,6 +91,23 @@ public sealed class AccountSecurityStampRotationService(
             cancellationToken);
         if (rotated)
         {
+            try
+            {
+                await revocations.NotifyAsync(account, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "Security stamp rotated for {AccountKind} user {UserId}, but SignalR revocation fan-out was unavailable",
+                    account.Kind,
+                    account.UserId);
+            }
+
             logger.LogInformation(
                 "Security stamp rotated for {AccountKind} user {UserId} because of {Reason}",
                 account.Kind,

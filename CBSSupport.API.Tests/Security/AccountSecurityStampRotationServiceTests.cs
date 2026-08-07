@@ -16,6 +16,7 @@ public sealed class AccountSecurityStampRotationServiceTests
         var service = new AccountSecurityStampRotationService(
             store,
             stamps,
+            new LocalHubConnectionRevocationNotifier(new ActiveHubConnectionRegistry()),
             NullLogger<AccountSecurityStampRotationService>.Instance);
         var currentStamp = Enumerable.Repeat((byte)3, 32).ToArray();
         var account = new AccountReference(AccountKind.Client, 11);
@@ -37,6 +38,7 @@ public sealed class AccountSecurityStampRotationServiceTests
         var service = new AccountSecurityStampRotationService(
             store,
             new DataProtectionAccountSecurityStampService(new EphemeralDataProtectionProvider()),
+            new LocalHubConnectionRevocationNotifier(new ActiveHubConnectionRegistry()),
             NullLogger<AccountSecurityStampRotationService>.Instance);
         var account = new AccountReference(AccountKind.Administrator, 7);
 
