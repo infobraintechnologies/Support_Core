@@ -22,11 +22,12 @@
         </div>
         <div class="login-form-panel">
             <h2>Welcome Back</h2>
-            <p class="text-muted mb-4">Please select your role and sign in.</p>
+            <p id="roleHelp" class="text-muted mb-4">Please select your role and sign in.</p>
 
             <form id="mainLoginForm" asp-controller="Login" asp-action="Index" method="post" asp-antiforgery="true">
 
-                <div class="role-selector" id="roleSelectorContainer">
+                <fieldset class="role-selector" id="roleSelectorContainer" aria-describedby="roleHelp">
+                    <legend class="visually-hidden">Sign in as</legend>
                     <div class="role-selector-slider"></div>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="roleType" id="adminRole" value="admin" checked>
@@ -36,12 +37,13 @@
                         <input class="form-check-input" type="radio" name="roleType" id="clientRole" value="client">
                         <label class="form-check-label" for="clientRole">Client</label>
                     </div>
-                </div>
+                </fieldset>
 
                 <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
 
                 <!-- ADMIN FORM (Initially visible) -->
-                <div id="adminForm">
+                <div id="adminForm" role="group" aria-labelledby="adminFormHeading">
+                    <h3 id="adminFormHeading" class="visually-hidden">Administrator sign in</h3>
                     <div class="mb-3">
                         <label asp-for="Username" class="form-label"></label>
                         <input asp-for="Username" class="form-control" />
@@ -55,7 +57,8 @@
                 </div>
 
                 <!-- CLIENT FORM (Initially hidden) -->
-                <div id="clientForm" style="display: none;">
+                <div id="clientForm" role="group" aria-labelledby="clientFormHeading" hidden>
+                    <h3 id="clientFormHeading" class="visually-hidden">Client sign in</h3>
                     <div class="mb-3">
                         <label asp-for="ClientLogin.ClientCode" class="form-label"></label>
                         <input asp-for="ClientLogin.ClientCode" class="form-control" type="number" />
@@ -79,7 +82,9 @@
                         <input type="checkbox" asp-for="RememberMe" class="form-check-input" />
                         <label asp-for="RememberMe" class="form-check-label"></label>
                     </div>
-                    <a href="#" class="text-decoration-none">Forgot Password?</a>
+                    <span id="passwordRecoveryHelp" class="password-recovery-help" role="note">
+                        Password recovery is not available online. Contact your CBS Support administrator for help with your credentials.
+                    </span>
                 </div>
                 <div class="d-grid">
                     <button type="submit" class="btn btn-login text-white">SIGN IN</button>
