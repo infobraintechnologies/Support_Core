@@ -13,24 +13,19 @@ the ordered migration set:
 
 It intentionally creates no data, migration ledger, Messaging V2 tables, case
 audit tables, notification tables, attachment tables, or Private review table.
-Those are created by `CBSSupport.DatabaseMigrator`.
+Those are created by the ordered SQL deployment steps.
 
 ## Use
 
 1. Create a new empty local PostgreSQL database.
 2. Open pgAdmin Query Tool connected to that database.
 3. Execute `local_migration_foundation.sql` and allow it to `COMMIT`.
-4. From the repository root, run the approved migrator:
-
-```powershell
-$env:CBSSUPPORT_MIGRATIONS_CONNECTION = '<local connection string>'
-dotnet run --project .\CBSSupport.DatabaseMigrator\CBSSupport.DatabaseMigrator.csproj -- --dry-run
-dotnet run --project .\CBSSupport.DatabaseMigrator\CBSSupport.DatabaseMigrator.csproj -- --applied-by $env:USERNAME
-```
+4. From the repository root, inspect the ordered scripts and execute them through
+   the reviewed manual deployment process using pgAdmin or psql.
 
 5. Run the read-only preflight SQL under `Database/Preflight`.
-6. Run the migrator again and run the preflight again to verify idempotency.
-7. Clear the connection-string environment variable when finished.
+6. Archive deployment and preflight evidence; do not create or update
+   `digital.schema_migrations` for a new migration.
 
 The production definitions of the externally owned `admin` and `internal`
 domains are not stored in this repository. This bootstrap is intentionally a

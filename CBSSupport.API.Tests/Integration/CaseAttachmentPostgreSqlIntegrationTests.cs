@@ -10,7 +10,7 @@ namespace CBSSupport.API.Tests.Integration;
 public sealed class CaseAttachmentPostgreSqlIntegrationTests
 {
     [Fact]
-    public void MigrationRunner_UsesRepositorySourceInsteadOfGeneratedBuildCopies()
+    public void MigrationSource_UsesRepositorySourceInsteadOfGeneratedBuildCopies()
     {
         var path = TestDatabase.ResolveMigrationSourcePath(
             "202607261005_normalize_legacy_case_reply_shape.sql");

@@ -5,28 +5,34 @@
 
 ## Required execution contract
 
-`CBSSupport.DatabaseMigrator` is the approved migration runner. It must be used
-for migrations; pgAdmin remains appropriate for the read-only scripts under
-`Preflight`.
+Migrations are manually deployed through a reviewed operational runbook. Apply
+the ordered SQL scripts with pgAdmin or psql by an authorized operator, then run
+the corresponding read-only checks under `Preflight` and archive the evidence.
+Do not add an automatic migration runner, EF Core migrations, or another
+migration framework. Application startup must never mutate the database schema.
 
-The runner:
-
-1. Acquire a PostgreSQL advisory lock so only one migration process runs.
-2. Read `Migrations/*.sql` in lexical order.
-3. Calculate the lowercase SHA-256 checksum of each file.
-4. Compare each version and checksum with `digital.schema_migrations`.
-5. Run an unapplied transactional migration and insert its ledger row only after the script succeeds, within the same transaction.
-6. Reject an already-applied version whose checksum has changed.
-7. Run explicitly non-transactional migrations, such as `CREATE INDEX CONCURRENTLY`, separately and record them only after success.
-
-The first migration bootstraps `digital.schema_migrations`; the runner applies the
-file and inserts its matching ledger record in the same bootstrap transaction.
-
-Migrations must not include `BEGIN` or `COMMIT`; the runner owns the transaction.
-Use `-- migration-transaction: false` only for migrations such as `CREATE INDEX
-CONCURRENTLY`, which PostgreSQL does not permit inside a transaction.
+The existing `digital.schema_migrations` table and historical migration records
+are retained as database history. New manual deployments must not create or
+update that ledger unless a reviewed operational procedure explicitly requires it.
+Follow each script's documented transaction and non-transactional-operation
+requirements, including special handling for `CREATE INDEX CONCURRENTLY`.
 
 Never edit an applied migration. Write a new timestamped forward-fix instead.
+
+## Manual deployment procedure
+
+1. Develop and review the timestamped SQL script and its read-only preflight.
+2. Test the script against a disposable local PostgreSQL database created with
+   `Bootstrap/local_migration_foundation.sql`.
+3. When existing-data compatibility matters, test against an approved clone or
+   backup and archive the preflight output.
+4. Obtain application/DBA review before deployment.
+5. An authorized operator applies the script manually through pgAdmin or `psql`.
+6. Run the corresponding preflight and post-deployment verification SQL, then
+   record the deployment evidence in the operational change record.
+
+The API never applies schema changes at startup. Do not connect these checks or
+tests to shared, staging, or production databases from a developer workstation.
 
 ## Current sequence
 
@@ -36,12 +42,12 @@ Never edit an applied migration. Write a new timestamped forward-fix instead.
    `NOT NULL` `integer` single-column primary/unique key while
    `digital.instructions.client_id` remains `bigint`; it does not alter
    `internal.clients`.
-2. Apply the approved scripts through `CBSSupport.DatabaseMigrator`. It first creates and records `digital.schema_migrations`, then applies the canonical-principal migration.
+2. Apply the approved scripts as a manually reviewed deployment step, then archive operator evidence. Do not add a new ledger row.
 3. Run `Preflight/202607221010_verify_instruction_state_and_indexes.sql` before approving the state, tenant-constraint, concurrency, and index migrations.
 4. Run `Preflight/202607221100_verify_messaging_v2_readiness.sql` against a sanitized production-like copy. Resolve missing/noncanonical roots, tenant mismatches, tenantless group/private roots, and duplicate Group roots before approval. Archive the private-review inventory with the review. Duplicate Group roots require explicit business remediation; the migration never chooses a winner because a tenant may have only one Group conversation ever.
-5. Apply `202607221110_create_messaging_v2_schema`, `202607221120_backfill_messaging_v2_history`, and the non-transactional `202607221130_create_messaging_v2_indexes` through the approved runner. The runner must not be interrupted during the concurrent-index migration unless the operator follows its invalid-index recovery note.
-6. Apply `202608051200_complete_legacy_private_mapping_gate` through the approved
-   runner. Its transactional guards prove canonical roots, access/root tenant
+5. Apply `202607221110_create_messaging_v2_schema`, `202607221120_backfill_messaging_v2_history`, and the non-transactional `202607221130_create_messaging_v2_indexes` as ordered, manually reviewed deployment steps. Follow the invalid-index recovery note if the concurrent-index operation is interrupted.
+6. Apply `202608051200_complete_legacy_private_mapping_gate` as a reviewed
+   deployment step. Its transactional guards prove canonical roots, access/root tenant
    ownership, participant tenant membership, required FKs, and active-pair
    uniqueness before adding its new constraints. Existing `NeedsReview` rows are
    preserved. Existing `Active`/`Archived` rows are accepted only when the
@@ -132,26 +138,6 @@ restore runbook. Do not delete `NeedsReview` rows, resequence instruction histor
 or turn the flag on to bypass the gate; correct data with a reviewed forward-fix
 and rerun the read-only preflight.
 
-## Commands
-
-Preview the scripts and checksums without connecting to PostgreSQL:
-
-```powershell
-dotnet run --project .\CBSSupport.DatabaseMigrator -- --dry-run
-```
-
-For an approved local/test database, set the connection string only in the current
-PowerShell session, then run the migrator:
-
-```powershell
-$env:CBSSUPPORT_MIGRATIONS_CONNECTION = '<connection string from approved secret storage>'
-dotnet run --project .\CBSSupport.DatabaseMigrator -- --applied-by $env:USERNAME
-Remove-Item Env:CBSSUPPORT_MIGRATIONS_CONNECTION
-```
-
-Never put the connection string in a migration, source file, command history shared
-with others, or Git.
-
 ## Empty local migration-validation database
 
 The ordered migration set assumes the externally owned foundational schemas and
@@ -161,8 +147,9 @@ disposable local validation database only, run
 only local stand-ins for `admin.users`, `internal.clients`,
 `internal.support_users`, and `digital.instructions`; it does not create the
 migration ledger or any Messaging V2/attachment tables. Run it only against a
-new empty local database, then run `CBSSupport.DatabaseMigrator` from the
-repository root. Never run this bootstrap against the shared IP database.
+new empty local database, then execute the ordered SQL manually through the
+reviewed deployment process. Never run this bootstrap against the shared IP
+database.
 
 Attachment activation, R2 CORS, worker topology, health degradation, and the
 24-hour gate are detailed in
