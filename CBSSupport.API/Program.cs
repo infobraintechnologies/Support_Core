@@ -36,6 +36,13 @@ builder.Services.AddCbsDataProtection(
     builder.Environment,
     isOpenApiGeneration);
 
+var signalRDeploymentOptions = builder.Configuration
+    .GetSection(SignalRDeploymentOptions.SectionName)
+    .Get<SignalRDeploymentOptions>() ?? new SignalRDeploymentOptions();
+signalRDeploymentOptions.Validate();
+builder.Services.AddSingleton(signalRDeploymentOptions);
+builder.Services.AddSingleton<IHubConnectionRevocationNotifier, LocalHubConnectionRevocationNotifier>();
+
 builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = RequestSizeLimits.MaximumBodySizeBytes);
 builder.Services.Configure<IISServerOptions>(options =>
