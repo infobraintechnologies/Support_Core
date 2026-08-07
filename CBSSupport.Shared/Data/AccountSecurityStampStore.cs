@@ -20,7 +20,20 @@ public interface IAccountSecurityStampStore
         CancellationToken cancellationToken = default);
 }
 
-public sealed class AccountSecurityStampStore(string connectionString) : IAccountSecurityStampStore
+public interface ITransactionalAccountSecurityStampStore
+{
+    Task<bool> RotateWithAuditAsync(
+        AccountReference account,
+        byte[] replacementStamp,
+        byte[]? expectedStamp,
+        SecurityAuditEvent auditEvent,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed class AccountSecurityStampStore(
+    string connectionString,
+    ISecurityAuditWriter? securityAudit = null)
+    : IAccountSecurityStampStore, ITransactionalAccountSecurityStampStore
 {
     public async Task<bool> RotateAsync(
         AccountReference account,
@@ -79,5 +92,75 @@ public sealed class AccountSecurityStampStore(string connectionString) : IAccoun
             cancellationToken: cancellationToken);
         var updatedId = await connection.QuerySingleOrDefaultAsync<long?>(command);
         return updatedId is not null;
+    }
+
+    public async Task<bool> RotateWithAuditAsync(
+        AccountReference account,
+        byte[] replacementStamp,
+        byte[]? expectedStamp,
+        SecurityAuditEvent auditEvent,
+        CancellationToken cancellationToken = default)
+    {
+        if (account.UserId <= 0 || replacementStamp.Length != 32
+            || expectedStamp is { Length: not 32 })
+        {
+            throw new ArgumentException("Invalid account security-stamp input.");
+        }
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var sql = account.Kind switch
+            {
+                AccountKind.Administrator => """
+                    UPDATE admin.users
+                    SET security_stamp = @ReplacementStamp
+                    WHERE id = @UserId
+                      AND (@ExpectedStamp IS NULL OR security_stamp = @ExpectedStamp)
+                    RETURNING id;
+                    """,
+                AccountKind.Client => """
+                    UPDATE internal.support_users
+                    SET security_stamp = @ReplacementStamp
+                    WHERE id = @UserId
+                      AND (@ExpectedStamp IS NULL OR security_stamp = @ExpectedStamp)
+                    RETURNING id;
+                    """,
+                _ => throw new ArgumentOutOfRangeException(nameof(account))
+            };
+            var updatedId = await connection.QuerySingleOrDefaultAsync<long?>(new CommandDefinition(
+                sql,
+                new { account.UserId, ReplacementStamp = replacementStamp, ExpectedStamp = expectedStamp },
+                transaction,
+                cancellationToken: cancellationToken));
+            if (updatedId is null)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return false;
+            }
+
+            long? tenantId = null;
+            if (account.Kind == AccountKind.Client)
+            {
+                tenantId = await connection.QuerySingleOrDefaultAsync<long?>(new CommandDefinition(
+                    "SELECT client_id::bigint FROM internal.support_users WHERE id = @UserId;",
+                    new { account.UserId },
+                    transaction,
+                    cancellationToken: cancellationToken));
+            }
+
+            var effectiveAudit = auditEvent with { TenantId = tenantId ?? auditEvent.TenantId };
+            var writer = securityAudit ?? new NullSecurityAuditWriter();
+            await writer.AppendAsync(connection, transaction, effectiveAudit, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return true;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 }

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using CBSSupport.API.Security;
+using CBSSupport.Shared.Data;
 
 namespace CBSSupport.API.Controllers
 {
@@ -15,15 +16,18 @@ namespace CBSSupport.API.Controllers
         private readonly IAuthService _authService;
         private readonly ILoginAttemptLimiter _loginAttemptLimiter;
         private readonly IAccountSecurityStampService _securityStamps;
+        private readonly ISecurityAuditWriter _securityAudit;
 
         public LoginController(
             IAuthService authService,
             ILoginAttemptLimiter loginAttemptLimiter,
-            IAccountSecurityStampService securityStamps)
+            IAccountSecurityStampService securityStamps,
+            ISecurityAuditWriter? securityAudit = null)
         {
             _authService = authService;
             _loginAttemptLimiter = loginAttemptLimiter;
             _securityStamps = securityStamps;
+            _securityAudit = securityAudit ?? new NullSecurityAuditWriter();
         }
 
         [HttpGet]
@@ -56,7 +60,7 @@ namespace CBSSupport.API.Controllers
 
                 var accountKey = LoginAccountKey.ForAdministrator(model.Username);
                 var clientSignal = LoginAccountKey.ClientSignal(HttpContext.Connection.RemoteIpAddress);
-                if (!await TryAcquireAccountAttemptAsync(accountKey, clientSignal))
+                if (!await TryAcquireAccountAttemptAsync(accountKey, clientSignal, "admin"))
                 {
                     return View(model);
                 }
@@ -83,6 +87,15 @@ namespace CBSSupport.API.Controllers
 
                     await SignInUser(claims, model.RememberMe, "/AdminSupport");
 
+                    await _securityAudit.AppendAsync(
+                        SecurityAuditContext.ForHttpRequest(
+                            HttpContext,
+                            "AuthenticationSucceeded",
+                            SecurityAuditOutcomes.Success,
+                            targetKind: "Account",
+                            targetId: adminUser.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            details: new Dictionary<string, string?> { ["role"] = Roles.Admin }));
+
                     return RedirectToAction("Index", "AdminSupport");
                 }
 
@@ -90,6 +103,14 @@ namespace CBSSupport.API.Controllers
                     accountKey,
                     clientSignal,
                     HttpContext.RequestAborted);
+                await _securityAudit.AppendAsync(
+                    SecurityAuditContext.ForHttpRequest(
+                        HttpContext,
+                        "AuthenticationFailed",
+                        SecurityAuditOutcomes.Failure,
+                        targetKind: "Authentication",
+                        targetId: "admin",
+                        details: new Dictionary<string, string?> { ["role"] = Roles.Admin }));
             }
             else if (model.RoleType == "client" && model.ClientLogin != null)
             {
@@ -104,7 +125,7 @@ namespace CBSSupport.API.Controllers
                     model.ClientLogin.ClientCode.Value,
                     model.ClientLogin.Username);
                 var clientSignal = LoginAccountKey.ClientSignal(HttpContext.Connection.RemoteIpAddress);
-                if (!await TryAcquireAccountAttemptAsync(accountKey, clientSignal))
+                if (!await TryAcquireAccountAttemptAsync(accountKey, clientSignal, "client"))
                 {
                     return View(model);
                 }
@@ -136,6 +157,16 @@ namespace CBSSupport.API.Controllers
 
                     await SignInUser(claims, model.RememberMe, "/Support");
 
+                    await _securityAudit.AppendAsync(
+                        SecurityAuditContext.ForHttpRequest(
+                            HttpContext,
+                            "AuthenticationSucceeded",
+                            SecurityAuditOutcomes.Success,
+                            clientUser.ClientId,
+                            "Account",
+                            clientUser.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            new Dictionary<string, string?> { ["role"] = Roles.Client }));
+
                     return RedirectToAction("Index", "Support");
                 }
 
@@ -143,6 +174,14 @@ namespace CBSSupport.API.Controllers
                     accountKey,
                     clientSignal,
                     HttpContext.RequestAborted);
+                await _securityAudit.AppendAsync(
+                    SecurityAuditContext.ForHttpRequest(
+                        HttpContext,
+                        "AuthenticationFailed",
+                        SecurityAuditOutcomes.Failure,
+                        targetKind: "Authentication",
+                        targetId: "client",
+                        details: new Dictionary<string, string?> { ["role"] = Roles.Client }));
             }
 
             ModelState.AddModelError(string.Empty, "Invalid login attempt.");
@@ -151,7 +190,8 @@ namespace CBSSupport.API.Controllers
 
         private async Task<bool> TryAcquireAccountAttemptAsync(
             string accountKey,
-            string clientSignal)
+            string clientSignal,
+            string role)
         {
             var decision = await _loginAttemptLimiter.CheckAsync(
                 accountKey,
@@ -168,6 +208,18 @@ namespace CBSSupport.API.Controllers
             ModelState.AddModelError(
                 string.Empty,
                 "Too many login attempts. Wait before trying again.");
+            await _securityAudit.AppendAsync(
+                SecurityAuditContext.ForHttpRequest(
+                    HttpContext,
+                    "AuthenticationThrottled",
+                    SecurityAuditOutcomes.Throttled,
+                    targetKind: "Authentication",
+                    targetId: role,
+                    details: new Dictionary<string, string?>
+                    {
+                        ["role"] = role,
+                        ["reason"] = decision.BlockReason.ToString()
+                    }));
             return false;
         }
 
@@ -191,6 +243,11 @@ namespace CBSSupport.API.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Logout()
         {
+            await _securityAudit.AppendAsync(
+                SecurityAuditContext.ForHttpRequest(
+                    HttpContext,
+                    "Logout",
+                    SecurityAuditOutcomes.Success));
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return RedirectToAction("Index", "Login");
         }

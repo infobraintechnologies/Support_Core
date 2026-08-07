@@ -2,6 +2,7 @@ using System.Security.Claims;
 using CBSSupport.API.Security;
 using CBSSupport.API.Configuration;
 using CBSSupport.Shared.Contracts;
+using CBSSupport.Shared.Data;
 using CBSSupport.Shared.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -322,9 +323,11 @@ public sealed class ConversationsController(
 public sealed class AdminClientConversationsController(
     IConversationService conversations,
     IAuthorizationService authorizationService,
-    IOptions<MessagingFeatureOptions> featureOptions) : ControllerBase
+    IOptions<MessagingFeatureOptions> featureOptions,
+    ISecurityAuditWriter? securityAudit = null) : ControllerBase
 {
     private readonly MessagingFeatureOptions _features = featureOptions.Value;
+    private readonly ISecurityAuditWriter _securityAudit = securityAudit ?? new NullSecurityAuditWriter();
 
     [HttpPost("group-conversation")]
     [EnableRateLimiting(MessagingRateLimitPolicies.ConversationCreation)]
@@ -381,11 +384,22 @@ public sealed class AdminClientConversationsController(
             User.FindFirstValue(ClaimTypes.Name) ?? User.Identity?.Name ?? $"User {userId}");
     }
 
-    private async Task<bool> CanAccessTenantAsync(long clientId) =>
-        (await authorizationService.AuthorizeAsync(
+    private async Task<bool> CanAccessTenantAsync(long clientId)
+    {
+        var allowed = (await authorizationService.AuthorizeAsync(
             User,
             new TenantResource(clientId),
             TenantAccessRequirement.Instance)).Succeeded;
+        await _securityAudit.AppendAsync(
+            SecurityAuditContext.ForHttpRequest(
+                HttpContext,
+                "AdministratorTenantSelected",
+                allowed ? SecurityAuditOutcomes.Success : SecurityAuditOutcomes.Denied,
+                allowed ? clientId : null,
+                "Tenant",
+                clientId.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        return allowed;
+    }
 }
 
 public static class MessagingRateLimitPolicies

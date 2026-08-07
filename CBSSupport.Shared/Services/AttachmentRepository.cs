@@ -1,12 +1,17 @@
 using System.Text.Json;
+using CBSSupport.Shared.Data;
 using CBSSupport.Shared.Contracts;
 using Dapper;
 using Npgsql;
 
 namespace CBSSupport.Shared.Services;
 
-public sealed class AttachmentRepository(string connectionString) : IAttachmentRepository
+public sealed class AttachmentRepository(
+    string connectionString,
+    ISecurityAuditWriter? securityAudit = null) : IAttachmentRepository
 {
+    private readonly ISecurityAuditWriter _securityAudit = securityAudit ?? new NullSecurityAuditWriter();
+
     static AttachmentRepository()
     {
         SqlMapper.SetTypeMap(
@@ -1253,7 +1258,7 @@ public sealed class AttachmentRepository(string connectionString) : IAttachmentR
                 transaction,
                 cancellationToken: cancellationToken));
 
-    private static async Task InsertAuditAsync(
+    private async Task InsertAuditAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
         AttachmentRecord attachment,
@@ -1289,6 +1294,26 @@ public sealed class AttachmentRepository(string connectionString) : IAttachmentR
             },
             transaction,
             cancellationToken: cancellationToken));
+        await _securityAudit.AppendAsync(
+            connection,
+            transaction,
+            new SecurityAuditEvent(
+                attachment.ClientId,
+                actor?.IsAdmin == true
+                    ? SecurityAuditActorKinds.Admin
+                    : actor is null
+                        ? SecurityAuditActorKinds.System
+                        : SecurityAuditActorKinds.Client,
+                actor?.UserId,
+                "Attachment",
+                attachment.Id.ToString("D"),
+                action,
+                SecurityAuditOutcomes.Success,
+                occurredAt,
+                System.Diagnostics.Activity.Current?.Id,
+                null,
+                new Dictionary<string, string?> { ["feature"] = "attachments" }),
+            cancellationToken);
     }
 
     internal static DynamicParameters CreateIntentParameters(

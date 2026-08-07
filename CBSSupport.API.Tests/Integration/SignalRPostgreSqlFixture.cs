@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -277,14 +276,9 @@ internal sealed class SignalRPostgreSqlFixture : IAsyncDisposable
                 services.AddSingleton<IChatService>(
                     new ChatService(connectionString, NullLogger<ChatService>.Instance));
             });
-            builder.ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddInMemoryCollection(
-                    new Dictionary<string, string?>
-                    {
-                        ["ConnectionStrings:DefaultConnection"] = connectionString,
-                        ["Jwt:Enabled"] = "false",
-                        ["Security:PasswordHashing:Pepper"] = "test-company-pepper"
-                    }));
+            builder.UseSetting("ConnectionStrings:DefaultConnection", connectionString);
+            builder.UseSetting("Jwt:Enabled", "false");
+            builder.UseSetting("Security:PasswordHashing:Pepper", "test-company-pepper");
         }
     }
 
