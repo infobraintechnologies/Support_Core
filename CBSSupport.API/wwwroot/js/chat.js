@@ -22,6 +22,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let clientUnreadNotificationCount = 0;
     let clientNotificationPollingInterval = null;
+    let isSendingMessage = false;
+    let isCreatingTicket = false;
+    let isCreatingInquiry = false;
 
     const fullscreenBtn = document.getElementById("fullscreen-btn");
     const messageInput = document.getElementById("message-input");
@@ -94,13 +97,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!sendButton) return;
         const hasActiveConversation = Number(currentChatContext.id) > 0;
         const canAttach = supportsAttachments(currentChatContext);
-        if (messageInput) messageInput.disabled = !hasActiveConversation;
+        if (messageInput) messageInput.disabled = !hasActiveConversation || isSendingMessage;
         if (attachmentButton) {
             attachmentButton.hidden = !canAttach;
             attachmentButton.disabled = !canAttach;
         }
         if (attachmentInput) attachmentInput.disabled = !canAttach;
         sendButton.disabled = !hasActiveConversation
+            || isSendingMessage
             || (!messageInput?.value.trim()
                 && !(canAttach && attachmentComposer?.getReadyIds().length > 0));
     }
@@ -797,6 +801,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function sendMessage(clientMessageId = null) {
         if (!messageInput) return;
+        if (isSendingMessage && !clientMessageId) return;
 
         const conversationId = Number(currentChatContext.id);
         if (!Number.isSafeInteger(conversationId) || conversationId <= 0) {
@@ -823,6 +828,8 @@ document.addEventListener("DOMContentLoaded", () => {
             messageInput.value = "";
             updateSendButtonState();
         }
+        isSendingMessage = true;
+        updateSendButtonState();
         try {
             if (clientMessageId && messaging.retry) {
                 await messaging.retry(conversationId, clientMessageId);
@@ -841,6 +848,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 messageInput.value = messaging.store.loadDraft(conversationId) || messageText;
             }
             if (sendState) sendState.textContent = "Message failed to send. Use Retry to try again.";
+            updateSendButtonState();
+        } finally {
+            isSendingMessage = false;
             updateSendButtonState();
         }
     }
@@ -1125,6 +1135,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (createTicketForm) {
             createTicketForm.addEventListener("submit", async (e) => {
                 e.preventDefault();
+                if (isCreatingTicket) return;
 
                 const subjectSelect = document.getElementById("ticketSubject");
                 const descriptionInput = document.getElementById("ticketDescription")
@@ -1156,6 +1167,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     InstructionId: null,
                 };
 
+                isCreatingTicket = true;
+                const submitButton = createTicketForm.querySelector("[type=submit]");
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.setAttribute("aria-busy", "true");
+                }
                 try {
                     const response = await fetch(`/v1/api/instructions/${ticketTypeRoute}`, {
                         method: 'POST',
@@ -1186,6 +1203,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 } catch (error) {
                     console.error("Error creating ticket:", error);
                     showNotificationToast(`Error: ${error.message}`, 'error');
+                } finally {
+                    isCreatingTicket = false;
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.removeAttribute("aria-busy");
+                    }
                 }
             });
         }
@@ -1199,6 +1222,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (createInquiryForm) {
             createInquiryForm.addEventListener("submit", async (e) => {
                 e.preventDefault();
+                if (isCreatingInquiry) return;
 
                 const subjectSelect = document.getElementById("inquirySubject");
                 const messageInput = document.getElementById("inquiryMessage");
@@ -1228,6 +1252,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     InstructionId: null,
                 };
 
+                isCreatingInquiry = true;
+                const submitButton = createInquiryForm.querySelector("[type=submit]");
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.setAttribute("aria-busy", "true");
+                }
                 try {
                     const response = await fetch(`/v1/api/instructions/${inquiryRoute}`, {
                         method: 'POST',
@@ -1258,6 +1288,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 } catch (error) {
                     console.error("Error creating inquiry:", error);
                     showNotificationToast(`Error: ${error.message}`, 'error');
+                } finally {
+                    isCreatingInquiry = false;
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.removeAttribute("aria-busy");
+                    }
                 }
             });
         }
@@ -1554,12 +1590,18 @@ document.addEventListener("DOMContentLoaded", () => {
                         "data": "topic",
                         "title": '<i class="fas fa-question-circle me-1"></i>Topic',
                         "width": "25%",
-                        "className": "fw-semibold text-primary"
+                        "className": "fw-semibold text-primary",
+                        "render": function (data) {
+                            return escapeHtml(data || 'General Inquiry');
+                        }
                     },
                     {
                         "data": "inquiredBy",
                         "title": '<i class="fas fa-user me-1"></i>Inquired By',
-                        "width": "20%"
+                        "width": "20%",
+                        "render": function (data) {
+                            return escapeHtml(data || 'Unknown');
+                        }
                     },
                     {
                         "data": "date",

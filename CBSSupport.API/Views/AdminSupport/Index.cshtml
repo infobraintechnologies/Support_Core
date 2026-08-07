@@ -25,10 +25,10 @@
                 <i class="fas fa-shield-alt"></i> Admin Panel
             </div>
             <ul class="sidebar-nav">
-                <li class="nav-item"><a class="nav-link active" data-page="dashboard"><i class="fas fa-fw fa-tachometer-alt"></i> Dashboard</a></li>
-                <li class="nav-item"><a class="nav-link" data-page="chats"><i class="fas fa-fw fa-comments"></i> Chats</a></li>
-                <li class="nav-item"><a class="nav-link" data-page="ticket-management"><i class="fas fa-fw fa-ticket-alt"></i> Ticket Management</a></li>
-                <li class="nav-item"><a class="nav-link" data-page="inquiry-management"><i class="fas fa-fw fa-question-circle"></i> Inquiry Management</a></li>
+                <li class="nav-item"><a class="nav-link active" href="#dashboard" data-page="dashboard"><i class="fas fa-fw fa-tachometer-alt" aria-hidden="true"></i> Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="#chats" data-page="chats"><i class="fas fa-fw fa-comments" aria-hidden="true"></i> Chats</a></li>
+                <li class="nav-item"><a class="nav-link" href="#ticket-management" data-page="ticket-management"><i class="fas fa-fw fa-ticket-alt" aria-hidden="true"></i> Ticket Management</a></li>
+                <li class="nav-item"><a class="nav-link" href="#inquiry-management" data-page="inquiry-management"><i class="fas fa-fw fa-question-circle" aria-hidden="true"></i> Inquiry Management</a></li>
             </ul>
 
             <div class="sidebar-footer">
@@ -59,8 +59,8 @@
                         </div>
 
                         <div class="header-notification-container">
-                            <button class="btn btn-outline-secondary header-notification-btn" id="admin-notification-btn" title="Notifications">
-                                <i class="fas fa-bell"></i>
+                            <button class="btn btn-outline-secondary header-notification-btn" id="admin-notification-btn" title="Notifications" aria-label="Notifications">
+                                <i class="fas fa-bell" aria-hidden="true"></i>
                                 <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
                                       id="admin-notification-count" style="display: none;">0</span>
                             </button>
@@ -282,8 +282,8 @@
                         </button>
 
                         <div class="header-notification-container">
-                            <button class="btn btn-outline-secondary header-notification-btn" id="admin-notification-btn-chats" title="Notifications">
-                                <i class="fas fa-bell"></i>
+                        <button class="btn btn-outline-secondary header-notification-btn" id="admin-notification-btn-chats" title="Notifications" aria-label="Notifications">
+                            <i class="fas fa-bell" aria-hidden="true"></i>
                                 <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
                                       id="admin-notification-count-chats" style="display: none;">0</span>
                             </button>
@@ -425,10 +425,10 @@
                                         type="button" style="display: none;">
                                     <i class="fas fa-archive me-1" aria-hidden="true"></i>Archive
                                 </button>
-                                <button class="btn btn-outline-secondary btn-sm" id="chat-info-btn" title="Chat Info" style="display: none;">
+                                <button class="btn btn-outline-secondary btn-sm" id="chat-info-btn" title="Chat Info" aria-label="Chat info" style="display: none;">
                                     <i class="fas fa-info-circle"></i>
                                 </button>
-                                <button class="btn btn-outline-secondary btn-sm" id="chat-settings-btn" title="Settings" style="display: none;">
+                                <button class="btn btn-outline-secondary btn-sm" id="chat-settings-btn" title="Settings" aria-label="Chat settings" style="display: none;">
                                     <i class="fas fa-cog"></i>
                                 </button>
                             </div>
@@ -478,7 +478,7 @@
                                 <label for="message-input" class="visually-hidden">Message</label>
                                 <textarea class="form-control" placeholder="Type a message…"
                                           id="message-input" rows="1" maxlength="4000" disabled></textarea>
-                                <button class="btn btn-primary" type="button" id="send-button" disabled>
+                                <button class="btn btn-primary" type="button" id="send-button" aria-label="Send message" disabled>
                                     <i class="fas fa-paper-plane"></i>
                                     <span class="d-none d-sm-inline ms-1">Send</span>
                                 </button>
