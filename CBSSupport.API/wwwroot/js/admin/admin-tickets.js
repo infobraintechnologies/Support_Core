@@ -26,17 +26,26 @@ window.AdminTickets = (() => {
                     {
                         "data": "clientName",
                         "title": "Client",
-                        "width": "15%"
+                        "width": "15%",
+                        "render": function (data) {
+                            return AdminUtils.escapeHtml(data || 'Unknown');
+                        }
                     },
                     {
                         "data": "subject",
                         "title": "Subject",
-                        "width": "25%"
+                        "width": "25%",
+                        "render": function (data) {
+                            return AdminUtils.escapeHtml(data || 'General Support');
+                        }
                     },
                     {
                         "data": "createdBy",
                         "title": "Created By",
-                        "width": "15%"
+                        "width": "15%",
+                        "render": function (data) {
+                            return AdminUtils.escapeHtml(data || 'Unknown');
+                        }
                     },
                     {
                         "data": "status",

@@ -59,6 +59,7 @@ platforms/
 
 # npm packages (if used)
 node_modules/
+browser-tests/test-results/
 
 # .NET
 project.lock.json
