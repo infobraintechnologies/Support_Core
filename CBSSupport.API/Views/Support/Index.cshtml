@@ -190,7 +190,7 @@
     </div>
 
     <div class="modal fade" id="newPrivateChatModal" tabindex="-1"
-         aria-labelledby="newPrivateChatModalLabel" aria-hidden="true">
+         aria-labelledby="newPrivateChatModalLabel" aria-describedby="newPrivateChatModalDescription" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
@@ -198,7 +198,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted">Choose an available support administrator.</p>
+                    <p class="text-muted" id="newPrivateChatModalDescription">Choose an available support administrator.</p>
                     <label for="available-admins-search" class="form-label">Search administrators</label>
                     <input type="search" id="available-admins-search" class="form-control mb-3"
                            autocomplete="off" placeholder="Search by name" />
@@ -215,7 +215,7 @@
         </div>
     </div>
 
-    <div class="modal fade" id="newSupportTicketModal" tabindex="-1" aria-labelledby="newSupportTicketModalLabel" aria-hidden="true">
+    <div class="modal fade" id="newSupportTicketModal" tabindex="-1" aria-labelledby="newSupportTicketModalLabel" aria-describedby="newSupportTicketModalDescription" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
@@ -223,6 +223,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <p class="text-muted" id="newSupportTicketModalDescription">Create a support request for your organization.</p>
                     <form id="supportTicketForm" novalidate>
                         <div class="row">
                             <div class="col-md-12 mb-3">
@@ -275,86 +276,7 @@
         </div>
     </div>
 
-    <div class="modal fade" id="viewTicketDetailsModal" tabindex="-1" aria-labelledby="viewTicketDetailsModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="viewTicketDetailsModalLabel">Ticket Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="ticket-details-view">
-                        <dl class="row">
-                            <dt class="col-sm-3">Ticket ID</dt>
-                            <dd class="col-sm-9"><span id="details-id"></span></dd>
-                            <dt class="col-sm-3">Status</dt>
-                            <dd class="col-sm-9"><span id="details-status"></span></dd>
-                            <dt class="col-sm-3">Priority</dt>
-                            <dd class="col-sm-9"><span id="details-priority"></span></dd>
-                            <dt class="col-sm-3">Subject</dt>
-                            <dd class="col-sm-9"><span id="details-subject"></span></dd>
-                            <dt class="col-sm-3">Date Submitted</dt>
-                            <dd class="col-sm-9"><span id="details-date"></span></dd>
-                            <dt class="col-sm-3">Expected Resolution</dt>
-                            <dd class="col-sm-9"><span id="details-expiryDate"></span></dd>
-                            <dt class="col-sm-3">Created By</dt>
-                            <dd class="col-sm-9"><span id="details-createdBy"></span></dd>
-                            <dt class="col-sm-3">Resolved By</dt>
-                            <dd class="col-sm-9"><span id="details-resolvedBy"></span></dd>
-                            <dt class="col-sm-3">Description</dt>
-                            <dd class="col-sm-9"><p id="details-description" style="white-space: pre-wrap;"></p></dd>
-                            <dt class="col-sm-3">Remarks</dt>
-                            <dd class="col-sm-9">
-                                <p id="details-remarks" style="white-space: pre-wrap;"></p>
-                            </dd>
-                        </dl>
-                    </div>
-                    <form id="editTicketForm" novalidate style="display: none;">
-                        <input type="hidden" id="edit-ticketId">
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label for="edit-fullName" class="form-label">Full Name *</label>
-                                <input type="text" class="form-control" id="edit-fullName" required>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="edit-ticketSubject" class="form-label">Subject *</label>
-                            <select id="edit-ticketSubject" class="form-select" required></select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="edit-ticketPriority" class="form-label">Priority *</label>
-                            <select id="edit-ticketPriority" class="form-select" required>
-                                <option value="Low">Low</option>
-                                <option value="Normal">Medium</option>
-                                <option value="Urgent">High</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="edit-ticketExpiryDate" class="form-label">Expected Resolution Time *</label>
-                            <input type="datetime-local" class="form-control" id="edit-ticketExpiryDate" required />
-                        </div>
-                        <div class="mb-3">
-                            <label for="edit-ticketDescription" class="form-label">Description *</label>
-                            <textarea class="form-control" id="edit-ticketDescription" rows="5" required></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label for="edit-ticketRemarks" class="form-label">Remarks</label>
-                            <textarea class="form-control" id="edit-ticketRemarks" rows="3"></textarea>
-                        </div>
-                        <p class="text-danger small">* Required fields.</p>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-primary me-auto" id="editTicketBtn">Edit</button>
-                    <button type="submit" form="editTicketForm" class="btn btn-success me-auto" id="saveChangesBtn" style="display: none;">Save Changes</button>
-                    <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display: none;">Cancel</button>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="closeModalBtn">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="viewInquiryDetailsModal" tabindex="-1" aria-labelledby="viewInquiryDetailsModalLabel" aria-hidden="true">
+    <div class="modal fade" id="viewInquiryDetailsModal" tabindex="-1" aria-labelledby="viewInquiryDetailsModalLabel" aria-describedby="inquiry-details-view" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
@@ -400,7 +322,7 @@
         </div>
     </div>
 
-    <div class="modal fade" id="newInquiryModal" tabindex="-1" aria-labelledby="newInquiryModalLabel" aria-hidden="true">
+    <div class="modal fade" id="newInquiryModal" tabindex="-1" aria-labelledby="newInquiryModalLabel" aria-describedby="newInquiryModalDescription" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
@@ -408,6 +330,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <p class="text-muted" id="newInquiryModalDescription">Send a question to the support team.</p>
                     <form id="inquiryForm">
                         <div class="mb-3">
                             <label for="inquiryTo" class="form-label">To: </label>
@@ -480,7 +403,7 @@
         </div>
     </div>
 
-    <div class="modal fade" id="viewTicketDetailsModal" tabindex="-1" aria-labelledby="viewTicketDetailsModalLabel" aria-hidden="true">
+    <div class="modal fade" id="viewTicketDetailsModal" tabindex="-1" aria-labelledby="viewTicketDetailsModalLabel" aria-describedby="ticket-details-view" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
@@ -499,6 +422,10 @@
                                 <label class="form-label-sm">Date Submitted</label>
                                 <p id="details-date">...</p>
                             </div>
+                            <div class="col-md-6">
+                                <label class="form-label-sm">Expected Resolution</label>
+                                <p id="details-expiryDate">...</p>
+                            </div>
                         </div>
                         <div class="row mb-3">
                             <div class="col-md-6">
@@ -508,6 +435,16 @@
                             <div class="col-md-6">
                                 <label class="form-label-sm">Priority</label>
                                 <div id="details-priority"></div>
+                            </div>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label-sm">Created By</label>
+                                <p id="details-createdBy">...</p>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label-sm">Resolved By</label>
+                                <p id="details-resolvedBy">...</p>
                             </div>
                         </div>
                         <div class="mb-3">

@@ -85,6 +85,77 @@ test('modal focus is trapped and restored to the opener', async ({ page }) => {
   await expect(opener).toBeFocused();
 });
 
+test('multiple support rows keep IDs unique, modal content isolated, and focus restorable', async ({ page }) => {
+  const state = createApiState();
+  await installSignalRStub(page);
+  await installApiFixtures(page, state);
+  await openInterface(page, '/Support');
+
+  await expect(page.locator('#supportTicketsDataTable tbody tr')).toHaveCount(2);
+  await expect(page.locator('#inquiriesDataTable tbody tr')).toHaveCount(2);
+
+  const accessibilityIssues = await page.evaluate(() => {
+    const elements = [...document.querySelectorAll('[id]')];
+    const counts = new Map();
+    for (const element of elements) counts.set(element.id, (counts.get(element.id) || 0) + 1);
+
+    const duplicateIds = [...counts.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([id]) => id);
+    const missingAriaReferences = [];
+    for (const element of document.querySelectorAll('[aria-labelledby], [aria-describedby]')) {
+      for (const attribute of ['aria-labelledby', 'aria-describedby']) {
+        for (const id of (element.getAttribute(attribute) || '').split(/\s+/).filter(Boolean)) {
+          if (!document.getElementById(id)) missingAriaReferences.push(`${element.id}:${attribute}:${id}`);
+        }
+      }
+    }
+    const missingLabelTargets = [...document.querySelectorAll('label[for]')]
+      .filter(label => !document.getElementById(label.htmlFor))
+      .map(label => `${label.htmlFor}:${label.textContent.trim()}`);
+
+    return { duplicateIds, missingAriaReferences, missingLabelTargets };
+  });
+  expect(accessibilityIssues).toEqual({
+    duplicateIds: [],
+    missingAriaReferences: [],
+    missingLabelTargets: []
+  });
+
+  const ticketModal = page.locator('#viewTicketDetailsModal');
+  const firstTicketOpener = page.locator('#view-ticket-details-100');
+  await firstTicketOpener.focus();
+  await page.keyboard.press('Enter');
+  await expect(ticketModal).toHaveClass(/show/);
+  await expect(ticketModal.locator('#details-id')).toHaveText('#100');
+  await expect(ticketModal.locator('#details-subject')).toHaveText('Migration issue');
+  await expect(ticketModal.locator('#details-description')).toHaveText('Migration details for ticket 100.');
+  await expect(page.locator('.modal.show')).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.closest('#viewTicketDetailsModal') !== null)).toBe(true);
+  for (let i = 0; i < 10; i += 1) await page.keyboard.press('Tab');
+  await expect.poll(() => page.evaluate(() => document.activeElement?.closest('#viewTicketDetailsModal') !== null)).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(ticketModal).not.toHaveClass(/show/);
+  await expect(firstTicketOpener).toBeFocused();
+
+  const secondTicketOpener = page.locator('#view-ticket-details-99');
+  await secondTicketOpener.click();
+  await expect(ticketModal.locator('#details-id')).toHaveText('#99');
+  await expect(ticketModal.locator('#details-subject')).toContainText('script');
+  await expect(ticketModal.locator('#details-description')).toHaveText('Training details for ticket 99.');
+  await ticketModal.getByRole('button', { name: 'Close' }).click();
+  await expect(secondTicketOpener).toBeFocused();
+
+  const inquiryModal = page.locator('#viewInquiryDetailsModal');
+  await page.locator('#view-inquiry-details-101').click();
+  await expect(inquiryModal).toHaveClass(/show/);
+  await expect(inquiryModal.locator('#inquiry-details-id')).toHaveText('#INQ-101');
+  await expect(inquiryModal.locator('#inquiry-details-topic')).toHaveText('Account access');
+  await expect(inquiryModal.locator('#inquiry-details-description')).toHaveText('Access details for inquiry 101.');
+  await inquiryModal.getByRole('button', { name: 'Close' }).click();
+  await expect(page.locator('#view-inquiry-details-101')).toBeFocused();
+});
+
 for (const status of [400, 401, 403, 409, 429, 500]) {
   test(`support message failure ${status} has a retryable UI state`, async ({ page }) => {
     const state = createApiState();

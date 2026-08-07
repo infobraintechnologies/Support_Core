@@ -111,7 +111,7 @@ public sealed class LoginThrottleStore(string connectionString) : ILoginThrottle
                 transaction,
                 cancellationToken: cancellationToken));
 
-        var accountBlockedUntil = await connection.QuerySingleOrDefaultAsync<DateTimeOffset?>(
+        var accountBlockedUntil = await connection.QuerySingleOrDefaultAsync<DateTime?>(
             new CommandDefinition(
                 """
                 SELECT blocked_until
@@ -126,8 +126,8 @@ public sealed class LoginThrottleStore(string connectionString) : ILoginThrottle
         await transaction.CommitAsync(cancellationToken);
         return new LoginThrottleSnapshot(
             source.RequestCount,
-            source.WindowStartedAt + sourceWindow,
-            accountBlockedUntil);
+            ToUtc(source.WindowStartedAt) + sourceWindow,
+            accountBlockedUntil is null ? null : ToUtc(accountBlockedUntil.Value));
     }
 
     public async Task RecordFailureAsync(
@@ -185,7 +185,11 @@ public sealed class LoginThrottleStore(string connectionString) : ILoginThrottle
                 transaction,
                 cancellationToken: cancellationToken));
 
-        if (failure.BlockedUntil is not null && failure.BlockedUntil > now
+        var failureBlockedUntil = failure.BlockedUntil is null
+            ? (DateTimeOffset?)null
+            : ToUtc(failure.BlockedUntil.Value);
+
+        if (failureBlockedUntil is not null && failureBlockedUntil > now
             || failure.FailedAttempts < failedAttemptsBeforeBackoff)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -295,10 +299,22 @@ public sealed class LoginThrottleStore(string connectionString) : ILoginThrottle
         }
     }
 
-    private sealed record SourceBucket(int RequestCount, DateTimeOffset WindowStartedAt);
+    private static DateTimeOffset ToUtc(DateTime value) =>
+        new(DateTime.SpecifyKind(value, DateTimeKind.Utc));
 
-    private sealed record FailureBucket(
-        int FailedAttempts,
-        int BackoffLevel,
-        DateTimeOffset? BlockedUntil);
+    private sealed class SourceBucket
+    {
+        public int RequestCount { get; set; }
+
+        public DateTime WindowStartedAt { get; set; }
+    }
+
+    private sealed class FailureBucket
+    {
+        public int FailedAttempts { get; set; }
+
+        public int BackoffLevel { get; set; }
+
+        public DateTime? BlockedUntil { get; set; }
+    }
 }

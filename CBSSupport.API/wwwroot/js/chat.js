@@ -25,6 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let isSendingMessage = false;
     let isCreatingTicket = false;
     let isCreatingInquiry = false;
+    const modalOpeners = new WeakMap();
 
     const fullscreenBtn = document.getElementById("fullscreen-btn");
     const messageInput = document.getElementById("message-input");
@@ -241,28 +242,56 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    function populateTicketDetailsModal(ticketData) {
+    function wireModalFocus(modalElement) {
+        if (!modalElement || modalElement.dataset.focusRestoreWired === "true") return;
+
+        modalElement.dataset.focusRestoreWired = "true";
+        modalElement.addEventListener("show.bs.modal", event => {
+            if (event.relatedTarget instanceof HTMLElement) {
+                modalOpeners.set(modalElement, event.relatedTarget);
+            }
+        });
+        modalElement.addEventListener("hidden.bs.modal", () => {
+            const opener = modalOpeners.get(modalElement);
+            if (opener?.isConnected && !opener.hasAttribute("disabled")) {
+                opener.focus({ preventScroll: true });
+            }
+            modalOpeners.delete(modalElement);
+        });
+    }
+
+    function setModalText(modalElement, id, value) {
+        const element = modalElement?.querySelector(`#${id}`);
+        if (element) element.textContent = value == null ? "" : String(value);
+    }
+
+    function setModalHtml(modalElement, id, value) {
+        const element = modalElement?.querySelector(`#${id}`);
+        if (element) element.innerHTML = value;
+    }
+
+    function populateTicketDetailsModal(ticketData, modalElement) {
         console.log('Populating modal with:', ticketData);
 
-        $('#details-id').text(`#${ticketData.id || 'N/A'}`);
-        $('#details-subject').text(ticketData.subject || 'N/A');
+        setModalText(modalElement, "details-id", `#${ticketData.id || "N/A"}`);
+        setModalText(modalElement, "details-subject", ticketData.subject || "N/A");
 
         if (ticketData.date) {
             const date = new Date(ticketData.date);
-            $('#details-date').text(date.toLocaleString());
+            setModalText(modalElement, "details-date", date.toLocaleString());
         } else {
-            $('#details-date').text('N/A');
+            setModalText(modalElement, "details-date", "N/A");
         }
 
-        $('#details-createdBy').text(ticketData.createdBy || 'N/A');
-        $('#details-resolvedBy').text(ticketData.resolvedBy || 'N/A');
+        setModalText(modalElement, "details-createdBy", ticketData.createdBy || "N/A");
+        setModalText(modalElement, "details-resolvedBy", ticketData.resolvedBy || "N/A");
 
         const status = ticketData.status || 'Pending';
         const statusClass = `badge-status-${status.toLowerCase()}`;
-        $('#details-status').html(`<span class="badge ${statusClass}">${escapeHtml(status)}</span>`);
+        setModalHtml(modalElement, "details-status", `<span class="badge ${statusClass}">${escapeHtml(status)}</span>`);
 
-        $('#details-priority').html(generatePriorityBadge(ticketData.priority));
-        $('#details-description').text(ticketData.instruction || ticketData.description || 'No description provided.');
+        setModalHtml(modalElement, "details-priority", generatePriorityBadge(ticketData.priority));
+        setModalText(modalElement, "details-description", ticketData.instruction || ticketData.description || "No description provided.");
 
         let remarksText = 'N/A';
         try {
@@ -273,54 +302,37 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {
             remarksText = ticketData.remarks || 'N/A';
         }
-        $('#details-remarks').text(remarksText);
+        setModalText(modalElement, "details-remarks", remarksText);
 
         if (ticketData.expiryDate) {
             const expiryDate = new Date(ticketData.expiryDate);
-            $('#details-expiryDate').text(expiryDate.toLocaleString());
+            setModalText(modalElement, "details-expiryDate", expiryDate.toLocaleString());
         } else {
-            $('#details-expiryDate').text('N/A');
+            setModalText(modalElement, "details-expiryDate", "N/A");
         }
     }
 
-    function populateInquiryDetailsModal(inquiryData) {
+    function populateInquiryDetailsModal(inquiryData, modalElement) {
         console.log('Populating inquiry modal with:', inquiryData);
 
-        $('#inquiry-details-id').text(`#INQ-${inquiryData.id || 'N/A'}`);
-        $('#inquiry-details-topic').text(inquiryData.topic || 'N/A');
+        setModalText(modalElement, "inquiry-details-id", `#INQ-${inquiryData.id || "N/A"}`);
+        setModalText(modalElement, "inquiry-details-topic", inquiryData.topic || "N/A");
 
         if (inquiryData.date) {
             const date = new Date(inquiryData.date);
-            $('#inquiry-details-date').text(date.toLocaleString());
+            setModalText(modalElement, "inquiry-details-date", date.toLocaleString());
         } else {
-            $('#inquiry-details-date').text('N/A');
+            setModalText(modalElement, "inquiry-details-date", "N/A");
         }
 
-        $('#inquiry-details-inquiredBy').text(inquiryData.inquiredBy || 'N/A');
+        setModalText(modalElement, "inquiry-details-inquiredBy", inquiryData.inquiredBy || "N/A");
 
         const outcome = inquiryData.outcome || 'Pending';
         const mappedOutcome = outcome === 'Completed' ? 'Resolved' : outcome;
         const outcomeClass = `badge-status-${mappedOutcome.toLowerCase()}`;
-        $('#inquiry-details-outcome').html(`<span class="badge ${outcomeClass}">${escapeHtml(outcome)}</span>`);
+        setModalHtml(modalElement, "inquiry-details-outcome", `<span class="badge ${outcomeClass}">${escapeHtml(outcome)}</span>`);
 
-        $('#inquiry-details-description').text(inquiryData.description || inquiryData.instruction || 'No description provided.');
-    }
-
-    function closeTicketModal() {
-        const modalElement = document.getElementById('viewTicketDetailsModal');
-        const modalInstance = bootstrap.Modal.getInstance(modalElement);
-
-        if (modalInstance) {
-            modalInstance.hide();
-        }
-
-        setTimeout(() => {
-            const backdrops = document.querySelectorAll('.modal-backdrop');
-            backdrops.forEach(backdrop => backdrop.remove());
-            document.body.classList.remove('modal-open');
-            document.body.style.overflow = '';
-            document.body.style.paddingRight = '';
-        }, 150);
+        setModalText(modalElement, "inquiry-details-description", inquiryData.description || inquiryData.instruction || "No description provided.");
     }
 
     if (fullscreenBtn) {
@@ -1114,23 +1126,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function initializeTicketSystem() {
-        const newTicketBtn = document.getElementById("newSupportTicketBtn");
-        const newInquiryBtn = document.getElementById("newInquiryBtn");
-
         const createTicketModalEl = document.getElementById("newSupportTicketModal");
         const createInquiryModalEl = document.getElementById("newInquiryModal");
 
-        const createTicketModal = createTicketModalEl ? new bootstrap.Modal(createTicketModalEl) : null;
-        const createInquiryModal = createInquiryModalEl ? new bootstrap.Modal(createInquiryModalEl) : null;
+        const createTicketModal = createTicketModalEl ? bootstrap.Modal.getOrCreateInstance(createTicketModalEl) : null;
+        const createInquiryModal = createInquiryModalEl ? bootstrap.Modal.getOrCreateInstance(createInquiryModalEl) : null;
 
         const createTicketForm = document.getElementById("supportTicketForm");
         const createInquiryForm = document.getElementById("inquiryForm");
-
-        if (newTicketBtn) {
-            newTicketBtn.addEventListener("click", () => {
-                if (createTicketModal) createTicketModal.show();
-            });
-        }
 
         if (createTicketForm) {
             createTicketForm.addEventListener("submit", async (e) => {
@@ -1210,12 +1213,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         submitButton.removeAttribute("aria-busy");
                     }
                 }
-            });
-        }
-
-        if (newInquiryBtn) {
-            newInquiryBtn.addEventListener("click", () => {
-                if (createInquiryModal) createInquiryModal.show();
             });
         }
 
@@ -1425,6 +1422,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     async function init() {
+        document.querySelectorAll(".modal").forEach(wireModalFocus);
+
         try {
             await messaging.start();
             if (connectionStatus) {
@@ -1518,12 +1517,13 @@ document.addEventListener("DOMContentLoaded", () => {
                         "width": "15%",
                         "className": "text-center",
                         "render": function (data, type, row) {
+                            const rowId = escapeHtml(row.id);
                             return `
                         <div class="action-buttons">
-                            <button class="btn-icon-action view-details-btn" title="View Details" data-bs-toggle="tooltip">
+                            <button type="button" id="view-ticket-details-${rowId}" class="btn-icon-action view-details-btn" title="View Details" aria-label="View ticket #${rowId} details" data-bs-toggle="tooltip">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <button class="btn-icon-action start-chat-btn" title="Open Chat" data-bs-toggle="tooltip">
+                            <button type="button" id="open-ticket-chat-${rowId}" class="btn-icon-action start-chat-btn" title="Open Chat" aria-label="Open chat for ticket #${rowId}" data-bs-toggle="tooltip">
                                 <i class="fas fa-comments"></i>
                             </button>
                         </div>`;
@@ -1641,12 +1641,13 @@ document.addEventListener("DOMContentLoaded", () => {
                         "width": "20%",
                         "className": "text-center",
                         "render": function (data, type, row) {
+                            const rowId = escapeHtml(row.id);
                             return `
                     <div class="action-buttons">
-                        <button class="btn-icon-action view-details-btn" title="View Details" data-bs-toggle="tooltip">
+                        <button type="button" id="view-inquiry-details-${rowId}" class="btn-icon-action view-details-btn" title="View Details" aria-label="View inquiry #${rowId} details" data-bs-toggle="tooltip">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <button class="btn-icon-action start-chat-btn" title="Open Chat" data-bs-toggle="tooltip">
+                        <button type="button" id="open-inquiry-chat-${rowId}" class="btn-icon-action start-chat-btn" title="Open Chat" aria-label="Open chat for inquiry #${rowId}" data-bs-toggle="tooltip">
                             <i class="fas fa-comments"></i>
                         </button>
                     </div>`;
@@ -1690,19 +1691,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         initializeTicketSystem();
-
-        const ticketModal = document.getElementById('viewTicketDetailsModal');
-        if (ticketModal) {
-            ticketModal.addEventListener('hidden.bs.modal', function () {
-                setTimeout(() => {
-                    const backdrops = document.querySelectorAll('.modal-backdrop');
-                    backdrops.forEach(backdrop => backdrop.remove());
-                    document.body.classList.remove('modal-open');
-                    document.body.style.overflow = '';
-                    document.body.style.paddingRight = '';
-                }, 50);
-            });
-        }
 
         const conversationListPanel = document.getElementById("conversation-list-panel");
         if (conversationListPanel) {
@@ -1797,10 +1785,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 currentTicketData = rowData;
 
-                populateTicketDetailsModal(rowData);
+                const modalElement = document.getElementById("viewTicketDetailsModal");
+                if (!modalElement) return;
 
-                const modal = new bootstrap.Modal(document.getElementById('viewTicketDetailsModal'));
-                modal.show();
+                modalOpeners.set(modalElement, this);
+                populateTicketDetailsModal(rowData, modalElement);
+                bootstrap.Modal.getOrCreateInstance(modalElement).show(this);
             });
         }
 
@@ -1827,10 +1817,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 console.log('Inquiry row data for modal:', rowData);
 
-                populateInquiryDetailsModal(rowData);
+                const modalElement = document.getElementById("viewInquiryDetailsModal");
+                if (!modalElement) return;
 
-                const modal = new bootstrap.Modal(document.getElementById('viewInquiryDetailsModal'));
-                modal.show();
+                modalOpeners.set(modalElement, this);
+                populateInquiryDetailsModal(rowData, modalElement);
+                bootstrap.Modal.getOrCreateInstance(modalElement).show(this);
             });
         }
     }

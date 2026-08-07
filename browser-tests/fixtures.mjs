@@ -121,10 +121,20 @@ export async function installApiFixtures(page, state) {
       return json(route, { items: [{ id: 101, topic: XSS_PAYLOAD, inquiredBy: XSS_PAYLOAD, outcome: 'Pending', clientName: 'Tenant One' }] });
     }
     if (path.endsWith('/instructions/tickets')) {
-      return json(route, { data: [{ id: 100, subject: XSS_PAYLOAD, date: '2026-08-07T08:00:00Z', status: 'Open', priority: 'Normal', clientName: 'Tenant One' }] });
+      return json(route, {
+        data: [
+          { id: 100, subject: 'Migration issue', description: 'Migration details for ticket 100.', date: '2026-08-07T08:00:00Z', status: 'Open', priority: 'Normal', clientName: 'Tenant One' },
+          { id: 99, subject: XSS_PAYLOAD, description: 'Training details for ticket 99.', date: '2026-08-06T08:00:00Z', status: 'Pending', priority: 'Low', clientName: 'Tenant One' }
+        ]
+      });
     }
     if (path.endsWith('/instructions/inquiries')) {
-      return json(route, { data: [{ id: 101, topic: XSS_PAYLOAD, inquiredBy: XSS_PAYLOAD, date: '2026-08-07T08:00:00Z', outcome: 'Pending', clientName: 'Tenant One' }] });
+      return json(route, {
+        data: [
+          { id: 101, topic: 'Account access', description: 'Access details for inquiry 101.', inquiredBy: 'Tenant One', date: '2026-08-07T08:00:00Z', outcome: 'Pending', clientName: 'Tenant One' },
+          { id: 100, topic: XSS_PAYLOAD, description: 'Sales details for inquiry 100.', inquiredBy: XSS_PAYLOAD, date: '2026-08-06T08:00:00Z', outcome: 'Completed', clientName: 'Tenant One' }
+        ]
+      });
     }
     if (request.method() === 'POST' && path.includes('/instructions/')) {
       if (state.writeDelay) await new Promise(resolve => setTimeout(resolve, state.writeDelay));
