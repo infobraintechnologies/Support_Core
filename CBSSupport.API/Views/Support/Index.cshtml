@@ -10,9 +10,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Client Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="~/css/tokens.css" asp-append-version="true" />
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link rel="stylesheet" href="~/css/chat.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body data-attachments-enabled="@attachmentsEnabled.ToString().ToLowerInvariant()">
 
@@ -20,9 +22,9 @@
 
     <header class="app-header">
         <div class="header-left">
-            <img src="~/images/infobrain-logo.jpg" alt="Balance Logo" class="header-logo" />
-            <button class="btn btn-icon"><i class="fas fa-bars"></i></button>
-            <div class="header-brand-text">INFOBRAIN TECHNOLOGIES PVT LTD (HEAD OFFICE.)</div>
+            <img src="~/images/infobrain-logo.jpg" alt="InfoBrain Technologies" class="header-logo" />
+            <div class="header-brand-text">CBS Support</div>
+            <span class="tenant-context">Client account @ViewBag.ClientId</span>
         </div>
         <div class="header-right">
             <div class="user-info">
@@ -55,8 +57,8 @@
                         </div>
                     </div>
                 </div>
-                <button class="btn btn-icon" data-bs-toggle="modal" data-bs-target="#userModal" title="User Actions">
-                    <i class="fas fa-users"></i>
+                <button class="btn btn-icon" data-bs-toggle="modal" data-bs-target="#userModal" title="User actions" aria-label="User actions">
+                    <i class="fas fa-user" aria-hidden="true"></i>
                 </button>
             </div>
         </div>

@@ -170,7 +170,7 @@ window.AdminDashboard = (() => {
             container.html(`
                 <div class="text-center text-success p-4">
                     <i class="fas fa-check-circle fa-3x mb-3"></i>
-                    <h6>🎉 No Critical Tickets!</h6>
+                    <h6>No critical tickets</h6>
                     <p class="text-muted mb-0">All tickets have been resolved.</p>
                 </div>
             `);
@@ -196,7 +196,7 @@ window.AdminDashboard = (() => {
                     </div>
                     <div class="unsolved-item-time">
                         <i class="fas fa-clock me-1"></i>${timeAgo}
-                        ${ticket.priority === 'Urgent' ? '<span class="badge bg-danger ms-2">🔥 CRITICAL</span>' : ''}
+                        ${ticket.priority === 'Urgent' ? '<span class="badge bg-danger ms-2">Critical</span>' : ''}
                     </div>
                 </div>
             `;
@@ -212,7 +212,7 @@ window.AdminDashboard = (() => {
             container.html(`
                 <div class="text-center text-success p-4">
                     <i class="fas fa-check-circle fa-3x mb-3"></i>
-                    <h6>✅ No Pending Inquiries!</h6>
+                    <h6>No pending inquiries</h6>
                     <p class="text-muted mb-0">All inquiries have been addressed.</p>
                 </div>
             `);

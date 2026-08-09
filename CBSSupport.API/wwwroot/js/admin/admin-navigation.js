@@ -10,9 +10,16 @@ window.AdminNavigation = (() => {
     // 🧭 PAGE NAVIGATION
     // ============================================
 
+    function setActivePageLink(pageName) {
+        const links = $('.admin-sidebar .nav-link');
+        links.removeClass('active').removeAttr('aria-current');
+        links.filter(`[data-page="${pageName}"]`)
+            .addClass('active')
+            .attr('aria-current', 'page');
+    }
+
     function navigateToTicketManagement(statusFilter = null) {
-        $('.admin-sidebar .nav-link.active').removeClass('active');
-        $('.admin-sidebar .nav-link[data-page="ticket-management"]').addClass('active');
+        setActivePageLink('ticket-management');
         $('.admin-page.active').removeClass('active');
         $('#ticket-management-page').addClass('active');
 
@@ -34,8 +41,7 @@ window.AdminNavigation = (() => {
     }
 
     function navigateToInquiryManagement(statusFilter = null) {
-        $('.admin-sidebar .nav-link.active').removeClass('active');
-        $('.admin-sidebar .nav-link[data-page="inquiry-management"]').addClass('active');
+        setActivePageLink('inquiry-management');
         $('.admin-page.active').removeClass('active');
         $('#inquiry-management-page').addClass('active');
 
@@ -57,8 +63,7 @@ window.AdminNavigation = (() => {
     }
 
     function navigateToChatsPage() {
-        $('.admin-sidebar .nav-link.active').removeClass('active');
-        $('.admin-sidebar .nav-link[data-page="chats"]').addClass('active');
+        setActivePageLink('chats');
         $('.admin-page.active').removeClass('active');
         $('#chats-page').addClass('active');
 
@@ -71,8 +76,7 @@ window.AdminNavigation = (() => {
     }
 
     function navigateToDashboard() {
-        $('.admin-sidebar .nav-link.active').removeClass('active');
-        $('.admin-sidebar .nav-link[data-page="dashboard"]').addClass('active');
+        setActivePageLink('dashboard');
         $('.admin-page.active').removeClass('active');
         $('#dashboard-page').addClass('active');
 
@@ -123,8 +127,7 @@ window.AdminNavigation = (() => {
             e.preventDefault();
             const pageName = $(this).data('page');
 
-            $('.admin-sidebar .nav-link.active').removeClass('active');
-            $(this).addClass('active');
+            setActivePageLink(pageName);
             $('.admin-page.active').removeClass('active');
             $('#' + pageName + '-page').addClass('active');
 

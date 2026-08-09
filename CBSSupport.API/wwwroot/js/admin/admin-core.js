@@ -45,9 +45,12 @@ window.AdminCore = (() => {
     function handleClientChange() {
         $('.client-switcher').on('change', function () {
             const selectedClientId = $(this).val();
+            const selectedClientName = $(this).find('option:selected').text();
             currentClientId = selectedClientId;
 
             $('.client-switcher').val(selectedClientId);
+            $('#admin-tenant-context').text(
+                selectedClientId ? `Scope: ${selectedClientName}` : 'Scope: All clients');
 
             const activePage = $('.admin-sidebar .nav-link.active').data('page');
 
@@ -157,6 +160,7 @@ window.AdminCore = (() => {
                     $('.client-switcher').html(optionsHtml);
                     currentClientId = "";
                     $('.client-switcher').val("");
+                    $('#admin-tenant-context').text('Scope: All clients');
 
                     console.log("✅ Client switchers populated");
                 }
