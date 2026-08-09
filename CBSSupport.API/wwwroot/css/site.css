@@ -795,6 +795,34 @@ button.recent-ticket-item:hover {
   background: var(--color-bg-muted);
 }
 
+.ticket-list-panel .panel-body {
+  padding: 0;
+}
+
+.ticket-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.ticket-table tbody tr {
+  cursor: pointer;
+}
+
+.ticket-table tbody tr:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.ticket-id {
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
 .avatar-initials,
 .avatar-initials.type-group,
 .avatar-initials.type-private,
