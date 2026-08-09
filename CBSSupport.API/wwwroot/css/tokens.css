@@ -269,14 +269,9 @@ textarea:focus-visible,
    ========================================================================== */
 
 .skeleton {
-  background: linear-gradient(90deg, var(--color-bg-muted) 25%, var(--color-border) 37%, var(--color-bg-muted) 63%);
-  background-size: 400% 100%;
-  animation: skeleton-shimmer 1.4s ease infinite;
+  background: var(--color-bg-muted);
+  animation: none;
   border-radius: var(--radius-sm);
-}
-@keyframes skeleton-shimmer {
-  0% { background-position: 100% 50%; }
-  100% { background-position: 0 50%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; background: var(--color-bg-muted); }

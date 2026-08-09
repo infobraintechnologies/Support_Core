@@ -20,6 +20,7 @@
 <body data-attachments-enabled="@attachmentsEnabled.ToString().ToLowerInvariant()">
 
     <div hidden aria-hidden="true">@Html.AntiForgeryToken()</div>
+    <a class="skip-link" href="#admin-main-content">Skip to main content</a>
 
     <div class="admin-container">
         <aside class="admin-sidebar">
@@ -52,7 +53,7 @@
             </div>
         </aside>
 
-        <main class="admin-content">
+        <main class="admin-content" id="admin-main-content" tabindex="-1">
 
             <!-- DASHBOARD PAGE -->
             <div id="dashboard-page" class="admin-page active">

@@ -14,6 +14,34 @@ test.beforeEach(async ({}, testInfo) => {
   testInfo.annotations.push({ type: 'environment', description: 'Requires CBS_SUPPORT_BROWSER_CLIENT_STORAGE_STATE for an authenticated client session.' });
 });
 
+test('client workspace stays operable across supported viewport widths', async ({ page }) => {
+  const state = createApiState();
+  await installSignalRStub(page);
+  await installApiFixtures(page, state);
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 800 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await openInterface(page, '/Support');
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      bodyOverflowY: getComputedStyle(document.body).overflowY
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    if (viewport.width <= 768) expect(layout.bodyOverflowY).not.toBe('hidden');
+
+    await expect(page.getByRole('button', { name: 'Notifications' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'New Support Ticket' })).toBeVisible();
+    await expect(page.getByLabel('Search conversations')).toBeVisible();
+  }
+});
+
 test('client notification and toast payloads are rendered as text', async ({ page }) => {
   const state = createApiState();
   await installSignalRStub(page);
