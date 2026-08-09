@@ -19,6 +19,7 @@
 <body class="client-portal" data-attachments-enabled="@attachmentsEnabled.ToString().ToLowerInvariant()">
 
     <div hidden aria-hidden="true">@Html.AntiForgeryToken()</div>
+    <a class="skip-link" href="#client-main-content">Skip to main content</a>
 
     <header class="app-header">
         <div class="header-left">
@@ -61,7 +62,7 @@
         </div>
     </header>
 
-    <main class="dashboard-container" aria-label="Client support workspace">
+    <main class="dashboard-container" id="client-main-content" tabindex="-1" aria-label="Client support workspace">
         <div id="conversation-list-panel" class="dashboard-panel client-conversation-panel">
             <div class="panel-header client-conversation-heading">
                 <div>

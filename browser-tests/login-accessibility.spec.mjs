@@ -5,7 +5,37 @@ test.skip(!process.env.CBS_SUPPORT_BROWSER_BASE_URL,
 
 async function openLogin(page) {
   await page.goto('/Login', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'Welcome Back' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+}
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 1024, height: 800 },
+  { width: 768, height: 1024 },
+  { width: 390, height: 844 }
+]) {
+  test(`login remains usable at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await openLogin(page);
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+
+    await expect(page.getByRole('group', { name: 'Sign in as' })).toBeVisible();
+    await expect(page.getByLabel('Username', { exact: true }).first()).toBeVisible();
+    await expect(page.getByLabel('Password', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+
+    const targetSizes = await page.evaluate(() => ({
+      rememberRow: document.querySelector('.form-check')?.getBoundingClientRect().height ?? 0,
+      submit: document.querySelector('.btn-login')?.getBoundingClientRect().height ?? 0
+    }));
+    expect(targetSizes.rememberRow).toBeGreaterThanOrEqual(40);
+    expect(targetSizes.submit).toBeGreaterThanOrEqual(40);
+  });
 }
 
 test('login role choices are labeled native radios with visible keyboard focus', async ({ page }) => {

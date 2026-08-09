@@ -335,6 +335,7 @@ window.AdminNotifications = (() => {
     function initialize() {
         const buttonIds = [
             'admin-notification-btn',
+            'admin-notification-btn-clients',
             'admin-notification-btn-chats',
             'admin-notification-btn-tickets',
             'admin-notification-btn-inquiries'

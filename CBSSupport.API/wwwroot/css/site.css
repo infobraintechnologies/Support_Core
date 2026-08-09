@@ -49,7 +49,7 @@ a:hover {
 }
 
 .btn-sm {
-  min-height: 34px;
+  min-height: 40px;
   padding: 0.3rem 0.6rem;
 }
 
@@ -251,6 +251,15 @@ a:hover {
   border-color: var(--color-accent);
 }
 
+.form-check {
+  min-height: 40px;
+}
+
+.form-check-input {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
 .text-danger,
 .invalid-feedback,
 .field-validation-error {
@@ -320,7 +329,31 @@ a:hover {
 }
 
 .dataTables_wrapper .dataTables_paginate .paginate_button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
   border-radius: var(--radius-sm) !important;
+}
+
+/* Keyboard users can move past the persistent application shells. */
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 2000;
+  padding: 0.65rem 0.85rem;
+  color: #fff;
+  background: var(--color-accent);
+  border-radius: var(--radius-md);
+  transform: translateY(calc(-100% - 1rem));
+  transition: transform var(--transition-fast);
+}
+
+.skip-link:focus-visible {
+  color: #fff;
+  transform: translateY(0);
 }
 
 /* Existing status and priority class compatibility */
@@ -1325,7 +1358,44 @@ button.recent-ticket-item:hover {
   text-align: right;
 }
 
-@media (max-width: 767.98px) {
+@media (max-width: 991.98px) {
+  body.client-portal {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .client-portal .app-header {
+    padding-right: 0.75rem;
+    padding-left: 0.75rem;
+  }
+
+  .client-portal .header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .client-portal .header-right,
+  .client-portal .header-actions {
+    flex: 0 0 auto;
+  }
+
+  .client-portal .app-header .user-info {
+    display: none;
+  }
+
+  .client-portal .tenant-context {
+    max-width: min(11rem, 32vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .client-portal .dashboard-container {
+    width: 100%;
+    min-height: calc(100dvh - 64px);
+  }
+}
+
+@media (max-width: 768px) {
   .btn,
   .form-control,
   .form-select {
@@ -1333,8 +1403,122 @@ button.recent-ticket-item:hover {
   }
 
   .admin-sidebar {
+    display: grid;
+    grid-template-areas:
+      "brand"
+      "navigation"
+      "account";
+    height: auto;
+    max-height: none;
+    overflow: visible;
     border-right: 0;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .admin-sidebar .sidebar-header {
+    grid-area: brand;
+    padding: 0.75rem 1rem;
+    text-align: left;
+  }
+
+  .admin-sidebar nav {
+    grid-area: navigation;
+    min-width: 0;
+    border-top: 1px solid var(--color-border);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .admin-sidebar .sidebar-nav {
+    display: flex;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+
+  .admin-sidebar .nav-item {
+    flex: 0 0 auto;
+  }
+
+  .admin-sidebar .nav-link {
+    min-height: 44px;
+    padding: 0.65rem 0.85rem;
+    white-space: nowrap;
+    border-bottom: 3px solid transparent;
+    border-left: 0;
+  }
+
+  .admin-sidebar .nav-link.active {
+    border-bottom-color: var(--color-accent);
+    border-left-color: transparent;
+  }
+
+  .admin-sidebar .sidebar-footer {
+    grid-area: account;
+    min-height: 44px;
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    border-top: 0;
+  }
+
+  .admin-sidebar .sidebar-footer .user-info {
+    display: none;
+  }
+
+  .admin-sidebar .admin-tenant-context {
+    margin-top: 0;
+  }
+
+  .admin-content {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .admin-page .page-header {
+    display: flex;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+
+  .admin-page .page-header > .d-flex {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.5rem !important;
+  }
+
+  .admin-page .page-header > .d-flex > .d-flex {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .admin-page .page-header .client-switcher,
+  .admin-page .page-header #status-filter-inquiries {
+    width: 100% !important;
+    min-width: 0;
+  }
+
+  .admin-page .page-header .header-notification-container {
+    margin-left: auto;
+  }
+
+  .header-notification-dropdown-menu,
+  .client-notification-dropdown-menu {
+    width: min(22rem, calc(100vw - 2rem));
+    max-height: calc(100dvh - 7rem);
+  }
+
+  .ticket-list-panel,
+  .ticket-detail-panel,
+  .inquiry-list-panel,
+  .inquiry-detail-panel {
+    overflow: visible;
+  }
+
+  #ticket-management-page .panel-body,
+  #inquiry-management-page .panel-body {
+    height: auto;
+    max-height: none;
   }
 
   .client-directory-toolbar {
@@ -1348,5 +1532,41 @@ button.recent-ticket-item:hover {
 
   .support-record-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .client-portal .header-logo {
+    width: 32px;
+    height: 32px;
+  }
+
+  .client-portal .header-left,
+  .client-portal .header-right,
+  .client-portal .header-actions {
+    gap: 0.35rem;
+  }
+
+  .client-portal .tenant-context {
+    max-width: 7.5rem;
+  }
+
+  .notification-header {
+    gap: 0.5rem;
+    padding: 0.75rem;
+  }
+
+  .notification-list {
+    max-height: calc(100dvh - 12rem);
+  }
+
+  .account-metadata div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .account-metadata dd {
+    text-align: left;
   }
 }

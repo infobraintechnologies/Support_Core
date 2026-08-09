@@ -14,6 +14,34 @@ test.beforeEach(async ({}, testInfo) => {
   testInfo.annotations.push({ type: 'environment', description: 'Requires CBS_SUPPORT_BROWSER_ADMIN_STORAGE_STATE for an authenticated admin session.' });
 });
 
+test('admin shell stays operable across supported viewport widths', async ({ page }) => {
+  const state = createApiState();
+  await installSignalRStub(page);
+  await installApiFixtures(page, state);
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 800 },
+    { width: 768, height: 1024 },
+    { width: 390, height: 844 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await openInterface(page, '/AdminSupport');
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      sidebarMaxHeight: getComputedStyle(document.querySelector('.admin-sidebar')).maxHeight
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    if (viewport.width <= 768) expect(layout.sidebarMaxHeight).toBe('none');
+
+    await expect(page.getByRole('navigation', { name: 'Admin navigation' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Ticket Management' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Notifications' }).first()).toBeVisible();
+  }
+});
+
 test('admin username, notification, ticket, and inquiry fields remain text-only', async ({ page }) => {
   const state = createApiState();
   await installSignalRStub(page);
