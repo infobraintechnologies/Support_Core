@@ -926,6 +926,18 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         var firstRecipient = new NotificationRecipient(true, recipients[0].UserId, null);
         var secondRecipient = new NotificationRecipient(true, recipients[1].UserId, null);
         var firstDevice = new NotificationService(database.ConnectionString);
+
+        var eventId = await database.QuerySingleAsync<Guid>("""
+            SELECT event_id
+            FROM digital.case_notifications
+            WHERE notification_id = @NotificationId;
+            """, new { NotificationId = recipients[0].NotificationId });
+        var delivery = Assert.Single(
+            await firstDevice.GetChangesForEventAsync(eventId),
+            item => item.IsAdmin && item.RecipientUserId == firstRecipient.UserId);
+        Assert.Equal(caseId, delivery.Change.Notification!.CaseId);
+        Assert.Equal("TicketCreated", delivery.Change.Notification.EventType);
+
         var initial = await firstDevice.ListAsync(firstRecipient, 20, null);
         Assert.Equal(1, initial.UnreadCount);
 
@@ -999,7 +1011,6 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             Status = true,
             InsertUser = 9,
             ClientId = 42,
-            ServiceId = 3,
             InstChannel = "chat"
         });
 
@@ -1007,6 +1018,9 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         Assert.Equal(created.Id, created.InstructionId);
         Assert.Equal(created.Id, await database.QuerySingleAsync<long>(
             "SELECT instruction_id FROM digital.instructions WHERE id = @Id;",
+            new { created.Id }));
+        Assert.Null(await database.QuerySingleAsync<long?>(
+            "SELECT service_id FROM digital.instructions WHERE id = @Id;",
             new { created.Id }));
     }
 
@@ -1041,7 +1055,6 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                 Status = true,
                 InsertUser = 9,
                 ClientId = 42,
-                ServiceId = 3,
                 InstChannel = "chat"
             }));
 
