@@ -734,6 +734,67 @@ a:hover {
   transform: none;
 }
 
+button.stat-card {
+  width: 100%;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+button.stat-card:hover {
+  background: var(--color-bg-muted);
+  border-color: var(--color-border-strong);
+}
+
+.stat-card .stat-icon {
+  color: var(--color-text-secondary) !important;
+  background: var(--color-bg-muted) !important;
+}
+
+.page-header-description {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.dashboard-worklist-header {
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.dashboard-worklist-header--danger {
+  border-left: 3px solid var(--color-danger);
+}
+
+.dashboard-worklist-header--warning {
+  border-left: 3px solid var(--color-warning);
+}
+
+.dashboard-section-title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+button.unsolved-ticket-item,
+button.unsolved-inquiry-item,
+button.recent-ticket-item {
+  width: 100%;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  font: inherit;
+  text-align: left;
+}
+
+button.unsolved-ticket-item:hover,
+button.unsolved-inquiry-item:hover,
+button.recent-ticket-item:hover {
+  color: var(--color-text);
+  background: var(--color-bg-muted);
+}
+
 .avatar-initials,
 .avatar-initials.type-group,
 .avatar-initials.type-private,
