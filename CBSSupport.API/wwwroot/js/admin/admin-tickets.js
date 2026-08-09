@@ -166,17 +166,17 @@ window.AdminTickets = (() => {
             $('#detail-ticket-id').text(`#TKT-${ticket.id}`);
             $('#detail-ticket-subject').text(ticket.subject || 'General Support');
             $('#detail-ticket-status').val(ticket.status || 'Open');
-            $('#detail-ticket-priority').val(ticket.priority || 'Normal');
-            $('#detail-ticket-created-by').val(ticket.createdBy || 'Unknown');
-            $('#detail-ticket-client').val(ticket.clientName || 'Unknown');
-            $('#detail-ticket-date').val(new Date(ticket.date).toLocaleString());
-            $('#detail-ticket-description').val(ticket.description || 'No description available.');
-            $('#detail-ticket-resolved-by').val(ticket.resolvedBy || '');
+            $('#detail-ticket-priority').html(AdminUtils.generatePriorityBadge(ticket.priority || 'Normal'));
+            $('#detail-ticket-created-by').text(ticket.createdBy || 'Unknown');
+            $('#detail-ticket-client').text(ticket.clientName || 'Unknown');
+            $('#detail-ticket-date').text(new Date(ticket.date).toLocaleString());
+            $('#detail-ticket-description').text(ticket.description || 'No description available.');
+            $('#detail-ticket-resolved-by').text(ticket.resolvedBy || 'Not resolved');
 
             if (ticket.resolvedDate) {
-                $('#detail-ticket-resolved-date').val(new Date(ticket.resolvedDate).toLocaleString());
+                $('#detail-ticket-resolved-date').text(new Date(ticket.resolvedDate).toLocaleString());
             } else {
-                $('#detail-ticket-resolved-date').val('');
+                $('#detail-ticket-resolved-date').text('Not resolved');
             }
 
             $('#ticket-detail-placeholder').hide();
@@ -205,7 +205,7 @@ window.AdminTickets = (() => {
 
         try {
             const updateBtn = $('#btn-update-ticket');
-            updateBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Updating...');
+            updateBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Saving…');
 
             const response = await fetch(`/api/v1/admin/tickets/${currentTicketData.id}/status`, {
                 method: 'PUT',
@@ -235,18 +235,18 @@ window.AdminTickets = (() => {
                 }
 
                 if (currentTicketData.resolvedDate) {
-                    $('#detail-ticket-resolved-date').val(new Date(currentTicketData.resolvedDate).toLocaleString());
-                    $('#detail-ticket-resolved-by').val(currentTicketData.resolvedBy);
+                    $('#detail-ticket-resolved-date').text(new Date(currentTicketData.resolvedDate).toLocaleString());
+                    $('#detail-ticket-resolved-by').text(currentTicketData.resolvedBy);
                 } else {
-                    $('#detail-ticket-resolved-date').val('');
-                    $('#detail-ticket-resolved-by').val('');
+                    $('#detail-ticket-resolved-date').text('Not resolved');
+                    $('#detail-ticket-resolved-by').text('Not resolved');
                 }
 
                 if (ticketsTable) {
                     ticketsTable.ajax.reload(null, false);
                 }
 
-                AdminUtils.showNotification(`Ticket status updated to ${newStatus} successfully!`, 'success');
+                AdminUtils.showNotification(`Ticket status updated to ${newStatus}.`, 'success');
             } else {
                 throw new Error(result.message || 'Update failed');
             }
@@ -257,7 +257,7 @@ window.AdminTickets = (() => {
         } finally {
             const updateBtn = $('#btn-update-ticket');
             updateBtn.prop('disabled', false);
-            updateBtn.html('<i class="fas fa-save"></i> Update Status');
+            updateBtn.html('<i class="fas fa-save" aria-hidden="true"></i> Save status');
         }
     }
 

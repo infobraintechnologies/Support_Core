@@ -617,72 +617,74 @@
                                     <div class="d-flex justify-content-between align-items-start">
                                         <div>
                                             <span id="detail-ticket-id">#TKT-12345</span>
-                                            <h5 id="detail-ticket-subject">Training Request</h5>
+                                            <h2 id="detail-ticket-subject">Training request</h2>
                                         </div>
-                                        <button type="button" id="btn-close-ticket-detail" class="btn btn-sm btn-outline-light" title="Close">
-                                            <i class="fas fa-times"></i>
+                                        <button type="button" id="btn-close-ticket-detail" class="btn btn-icon btn-outline-secondary" title="Close ticket details" aria-label="Close ticket details">
+                                            <i class="fas fa-times" aria-hidden="true"></i>
                                         </button>
                                     </div>
                                 </div>
                                 <div class="ticket-properties">
-                                    <div class="form-group">
-                                        <label>Status</label>
+                                    <div class="ticket-metadata-grid">
+                                    <div class="ticket-metadata-field">
+                                        <label for="detail-ticket-status">Status</label>
                                         <select id="detail-ticket-status" class="form-select">
                                             <option value="Open">Open</option>
                                             <option value="Resolved">Resolved</option>
                                         </select>
                                     </div>
-                                    <div class="form-group">
-                                        <label>Priority</label>
-                                        <select id="detail-ticket-priority" class="form-select" disabled>
-                                            <option value="Low">Low</option>
-                                            <option value="Normal">Normal</option>
-                                            <option value="High">High</option>
-                                            <option value="Urgent">Urgent</option>
-                                        </select>
+                                    <div class="ticket-metadata-field">
+                                        <span class="ticket-metadata-label">Priority</span>
+                                        <div id="detail-ticket-priority" class="ticket-metadata-value"></div>
                                     </div>
-                                    <div class="form-group">
-                                        <label>Created By</label>
-                                        <input type="text" id="detail-ticket-created-by" class="form-control" disabled />
+                                    <div class="ticket-metadata-field">
+                                        <span class="ticket-metadata-label">Requester</span>
+                                        <span id="detail-ticket-created-by" class="ticket-metadata-value">Not available</span>
                                     </div>
-                                    <div class="form-group">
-                                        <label>Client</label>
-                                        <input type="text" id="detail-ticket-client" class="form-control" disabled />
+                                    <div class="ticket-metadata-field">
+                                        <span class="ticket-metadata-label">Client</span>
+                                        <span id="detail-ticket-client" class="ticket-metadata-value">Not available</span>
                                     </div>
-                                    <div class="form-group">
-                                        <label>Date Created</label>
-                                        <input type="text" id="detail-ticket-date" class="form-control" disabled />
+                                    <div class="ticket-metadata-field">
+                                        <span class="ticket-metadata-label">Created</span>
+                                        <span id="detail-ticket-date" class="ticket-metadata-value">Not available</span>
                                     </div>
-                                    <div class="form-group">
-                                        <label>Description</label>
-                                        <textarea id="detail-ticket-description" class="form-control" rows="4" disabled></textarea>
+                                    <div class="ticket-metadata-field">
+                                        <span class="ticket-metadata-label">Resolved by</span>
+                                        <span id="detail-ticket-resolved-by" class="ticket-metadata-value">Not resolved</span>
                                     </div>
-                                    <div class="form-group">
-                                        <label>Resolved By</label>
-                                        <input type="text" id="detail-ticket-resolved-by" class="form-control" disabled />
+                                    <div class="ticket-metadata-field">
+                                        <span class="ticket-metadata-label">Resolved</span>
+                                        <span id="detail-ticket-resolved-date" class="ticket-metadata-value">Not resolved</span>
                                     </div>
-                                    <div class="form-group">
-                                        <label>Resolved Date</label>
-                                        <input type="text" id="detail-ticket-resolved-date" class="form-control" disabled />
                                     </div>
+                                    <section class="ticket-request" aria-labelledby="ticket-request-heading">
+                                        <h3 id="ticket-request-heading">Client request</h3>
+                                        <div class="thread-message thread-message--client">
+                                            <div id="detail-ticket-description" class="thread-message__body">No description available.</div>
+                                        </div>
+                                    </section>
                                     <div class="ticket-actions">
-                                        <button type="button" id="btn-update-ticket" class="btn btn-primary">
-                                            <i class="fas fa-save"></i> Update Status
+                                        <button type="button" id="btn-start-ticket-chat" class="btn btn-primary">
+                                            <i class="fas fa-comments" aria-hidden="true"></i> Open ticket conversation
                                         </button>
-                                        <button type="button" id="btn-start-ticket-chat" class="btn btn-success">
-                                            <i class="fas fa-comments"></i> Open Chat
+                                        <button type="button" id="btn-update-ticket" class="btn btn-secondary">
+                                            <i class="fas fa-save" aria-hidden="true"></i> Save status
                                         </button>
                                     </div>
                                     <div class="inquiry-conversation-notice">
                                         <div class="d-flex align-items-center">
-                                            <i class="fas fa-comments me-2"></i>
-                                            <span>Conversations for this ticket will open in a floating chat window.</span>
+                                            <i class="fas fa-circle-info me-2" aria-hidden="true"></i>
+                                            <span>Replies are sent through the ticket conversation, where the full message history is preserved.</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                             <div id="ticket-detail-placeholder" class="d-flex align-items-center justify-content-center h-100">
-                                <p class="text-muted">Select a ticket to view its details.</p>
+                                <div class="empty-state compact-empty-state">
+                                    <h2>Select a ticket</h2>
+                                    <p>Choose a row to review its request, status, and conversation.</p>
+                                </div>
                             </div>
                         </div>
                     </div>
