@@ -18,54 +18,66 @@ window.AdminInquiries = (() => {
                         "data": "id",
                         "title": "ID",
                         "width": "10%",
-                        "className": "text-center fw-bold",
+                        "className": "fw-medium",
                         "render": function (data) {
-                            return `<span class="badge bg-light text-dark border">#INQ-${data}</span>`;
-                        }
-                    },
-                    {
-                        "data": "topic",
-                        "title": "Topic",
-                        "width": "30%",
-                        "render": function (data, type, row) {
-                            const topic = data || 'General Inquiry';
-                            const truncated = topic.length > 40 ? topic.substring(0, 40) + '...' : topic;
-                            return `<span title="${AdminUtils.escapeHtml(topic)}" class="text-primary fw-semibold">${AdminUtils.escapeHtml(truncated)}</span>`;
-                        }
-                    },
-                    {
-                        "data": "inquiredBy",
-                        "title": "Inquired By",
-                        "width": "25%",
-                        "render": function (data) {
-                            return AdminUtils.escapeHtml(data || 'Unknown');
+                            return `<span class="ticket-id">#INQ-${data}</span>`;
                         }
                     },
                     {
                         "data": "outcome",
                         "title": "Outcome",
-                        "width": "20%",
+                        "width": "16%",
                         "className": "text-center",
                         "render": function (data) {
                             const status = data || 'Pending';
-                            const statusClass = status === 'Completed' ? 'badge-status-completed' : 'badge-status-pending';
-                            return `<span class="badge ${statusClass}"><i class="fas fa-circle me-1" style="font-size: 0.5rem"></i>${AdminUtils.escapeHtml(status)}</span>`;
+                            const statusClass = status === 'Completed' ? 'badge-status--success' : 'badge-status--pending';
+                            return `<span class="badge-status ${statusClass}">${AdminUtils.escapeHtml(status)}</span>`;
+                        }
+                    },
+                    {
+                        "data": null,
+                        "title": "Topic",
+                        "width": "29%",
+                        "render": function (data, type, row) {
+                            const topic = AdminUtils.escapeHtml(row.topic || 'General Inquiry');
+                            const client = AdminUtils.escapeHtml(row.clientName || 'Unknown client');
+                            return `<div class="ticket-subject">${topic}</div><div class="ticket-client">${client}</div>`;
+                        }
+                    },
+                    {
+                        "data": "inquiredBy",
+                        "title": "Submitted by",
+                        "width": "18%",
+                        "render": function (data) {
+                            return AdminUtils.escapeHtml(data || 'Unknown');
+                        }
+                    },
+                    {
+                        "data": "date",
+                        "title": "Submitted",
+                        "width": "17%",
+                        "render": function (data, type) {
+                            if (type !== 'display') return data || '';
+                            if (!data) return '<span class="text-muted">Not available</span>';
+                            const date = new Date(data);
+                            if (Number.isNaN(date.getTime())) return '<span class="text-muted">Not available</span>';
+                            return `<time datetime="${date.toISOString()}">${date.toLocaleString()}</time>`;
                         }
                     },
                     {
                         "data": null,
                         "title": "Actions",
                         "orderable": false,
-                        "width": "15%",
+                        "width": "10%",
                         "className": "text-center",
                         "render": function () {
                             return `
                                 <div class="action-buttons">
-                                    <button class="btn-icon-action view-inquiry-details-btn" title="View Details">
-                                        <i class="fas fa-eye"></i>
+                                    <button type="button" class="btn-icon-action view-inquiry-details-btn" title="View details" aria-label="View inquiry details">
+                                        <i class="fas fa-eye" aria-hidden="true"></i>
                                     </button>
-                                    <button class="btn-icon-action start-inquiry-chat-btn" title="Open Chat">
-                                        <i class="fas fa-comments"></i>
+                                    <button type="button" class="btn-icon-action start-inquiry-chat-btn" title="Open chat" aria-label="Open inquiry conversation">
+                                        <i class="fas fa-comments" aria-hidden="true"></i>
                                     </button>
                                 </div>`;
                         }
@@ -76,22 +88,25 @@ window.AdminInquiries = (() => {
                 "responsive": true,
                 "processing": true,
                 "language": {
-                    "emptyTable": "No inquiries found.",
-                    "search": '<i class="fas fa-search me-2"></i>',
+                    "emptyTable": "No inquiries yet. New client questions will show up here.",
+                    "zeroRecords": "No inquiries match your filters.",
+                    "processing": "Loading inquiries…",
+                    "search": "Search inquiries:",
                     "lengthMenu": 'Show _MENU_ inquiries',
                     "info": 'Showing _START_ to _END_ of _TOTAL_ inquiries',
                     "infoEmpty": 'No inquiries available',
                     "paginate": {
-                        "first": '<i class="fas fa-angle-double-left"></i>',
-                        "last": '<i class="fas fa-angle-double-right"></i>',
-                        "next": '<i class="fas fa-angle-right"></i>',
-                        "previous": '<i class="fas fa-angle-left"></i>'
+                        "first": 'First',
+                        "last": 'Last',
+                        "next": 'Next',
+                        "previous": 'Previous'
                     }
                 },
-                "createdRow": function (row, data, dataIndex) {
-                    $(row).addClass('clickable-inquiry-row');
+                "createdRow": function (row, data) {
+                    $(row).addClass('clickable-inquiry-row ticket-row');
                     $(row).attr('data-inquiry-id', data.id);
-                    $(row).attr('title', 'Click to open dedicated chat');
+                    $(row).attr('tabindex', '0');
+                    $(row).attr('aria-label', `View inquiry ${data.id}: ${data.topic || 'General Inquiry'}`);
                 }
             });
 
@@ -124,7 +139,17 @@ window.AdminInquiries = (() => {
             if ($(e.target).closest('.action-buttons').length === 0) {
                 const rowData = inquiriesTable.row(this).data();
                 if (rowData) {
-                    navigateToInquiryChat(rowData);
+                    loadInquiryDetails(rowData.id);
+                }
+            }
+        });
+
+        inquiryTable.on('keydown', 'tbody tr', function (e) {
+            if ((e.key === 'Enter' || e.key === ' ') && $(e.target).closest('.action-buttons').length === 0) {
+                e.preventDefault();
+                const rowData = inquiriesTable.row(this).data();
+                if (rowData) {
+                    loadInquiryDetails(rowData.id);
                 }
             }
         });
@@ -147,15 +172,16 @@ window.AdminInquiries = (() => {
             $('#detail-inquiry-id').text(`#INQ-${inquiry.id}`);
             $('#detail-inquiry-topic').text(inquiry.topic || 'General Inquiry');
             $('#detail-inquiry-outcome').val(inquiry.outcome || 'Pending');
-            $('#detail-inquiry-inquired-by').val(inquiry.inquiredBy || 'Unknown');
+            $('#detail-inquiry-inquired-by').text(inquiry.inquiredBy || 'Unknown');
+            $('#detail-inquiry-client').text(inquiry.clientName || 'Unknown');
 
             if (inquiry.date) {
-                $('#detail-inquiry-date').val(new Date(inquiry.date).toLocaleString());
+                $('#detail-inquiry-date').text(new Date(inquiry.date).toLocaleString());
             } else {
-                $('#detail-inquiry-date').val('N/A');
+                $('#detail-inquiry-date').text('Not available');
             }
 
-            $('#detail-inquiry-description').val(inquiry.description || inquiry.instruction || 'No description provided.');
+            $('#detail-inquiry-description').text(inquiry.description || inquiry.instruction || 'No description provided.');
 
             $('#inquiry-detail-placeholder').hide();
             $('#inquiry-detail-content').show();
@@ -184,7 +210,7 @@ window.AdminInquiries = (() => {
 
         try {
             const updateBtn = $('#btn-update-inquiry');
-            updateBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Updating...');
+            updateBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Saving…');
 
             const response = await fetch(`/api/v1/admin/inquiries/${currentInquiryData.id}/status`, {
                 method: 'PUT',
@@ -213,7 +239,7 @@ window.AdminInquiries = (() => {
                     window.AdminDashboard.loadEnhancedDashboardData(currentClientId);
                 }
 
-                AdminUtils.showNotification(`Inquiry outcome updated to ${newOutcome} successfully!`, 'success');
+                AdminUtils.showNotification(`Inquiry outcome updated to ${newOutcome}.`, 'success');
 
             } else {
                 throw new Error(result.message || 'Update failed');
@@ -225,7 +251,7 @@ window.AdminInquiries = (() => {
         } finally {
             const updateBtn = $('#btn-update-inquiry');
             updateBtn.prop('disabled', false);
-            updateBtn.html('<i class="fas fa-save"></i> Update Outcome');
+            updateBtn.html('<i class="fas fa-save" aria-hidden="true"></i> Save outcome');
         }
     }
 
@@ -307,15 +333,14 @@ window.AdminInquiries = (() => {
         if (inquiriesTable) {
             console.log(`❓ AdminInquiries: Filtering by status: ${status}`);
             const searchTerm = status ? `^${status}$` : '';
-            inquiriesTable.column(3).search(searchTerm, true, false).draw();
+            inquiriesTable.column(1).search(searchTerm, true, false).draw();
         }
     }
 
     function filterByClient(clientName) {
         if (inquiriesTable) {
             console.log(`❓ AdminInquiries: Filtering by client: ${clientName}`);
-            const searchTerm = clientName ? `^${clientName}$` : '';
-            inquiriesTable.column(2).search(searchTerm, true, false).draw();
+            inquiriesTable.column(2).search(clientName || '', false, true).draw();
         }
     }
 
@@ -477,8 +502,8 @@ window.AdminInquiries = (() => {
         if (tableHeader.length && !$('#refresh-inquiries-btn').length) {
             tableHeader.after(`
                 <div class="d-inline-block ms-3">
-                    <button id="refresh-inquiries-btn" class="btn btn-outline-secondary btn-sm" title="Refresh">
-                        <i class="fas fa-sync-alt"></i>
+                    <button type="button" id="refresh-inquiries-btn" class="btn btn-outline-secondary btn-sm" title="Refresh inquiries" aria-label="Refresh inquiries">
+                        <i class="fas fa-sync-alt" aria-hidden="true"></i>
                     </button>
                 </div>
             `);
