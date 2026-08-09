@@ -488,8 +488,7 @@ public sealed class InstructionsController : ControllerBase
             UserId = isClient ? null : checked((int)userId),
             ClientId = clientId,
             ClientAuthUserId = isClient ? checked((int)userId) : null,
-            ClientUserId = null,
-            ServiceId = 3
+            ClientUserId = null
         };
 
         var savedInstruction = await _service.CreateInstructionTicketAsync(

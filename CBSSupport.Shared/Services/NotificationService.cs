@@ -318,12 +318,12 @@ public sealed class NotificationService(string connectionString) : INotification
         string EventType,
         DateTime CreatedAt,
         DateTime? ReadAt,
-        string? Title,
-        string? Message,
         string RecipientKind,
         int? AdminUserId,
         long ClientId,
         int? ClientUserId,
+        string? Title,
+        string? Message,
         long UnreadCount
     ) : NotificationRow(Id, CaseId, EventType, CreatedAt, ReadAt, Title, Message);
 

@@ -129,12 +129,12 @@ public sealed class ConversationRepository : IConversationRepository
                 INSERT INTO digital.instructions (
                     datetime, inst_category_id, inst_type_id, instruction,
                     status, insert_user, client_auth_user_id, client_id,
-                    service_id, ip_address, inst_channel, instruction_id,
+                    ip_address, inst_channel, instruction_id,
                     remarks, expiry_date, client_message_id, conversation_sequence)
                 VALUES (
                     @OccurredAt, @InstructionCategoryId, @InstructionTypeId, @Text,
                     TRUE, @AdminUserId, @ClientUserId, @ClientId,
-                    3, @IpAddress, 'chat', NULL,
+                    @IpAddress, 'chat', NULL,
                     @PersistedRemarks, @ExpiryDate, NULL, 1)
                 RETURNING id;
                 """;
@@ -541,12 +541,12 @@ public sealed class ConversationRepository : IConversationRepository
                 INSERT INTO digital.instructions (
                     datetime, inst_category_id, inst_type_id, instruction,
                     status, insert_user, client_auth_user_id, client_id,
-                    service_id, inst_channel, instruction_id,
+                    inst_channel, instruction_id,
                     conversation_sequence)
                 VALUES (
                     @Now, 100, 100, NULL,
                     TRUE, NULL, NULL, @ClientId,
-                    3, 'chat', NULL, 0)
+                    'chat', NULL, 0)
                 RETURNING id;
                 """;
             var now = DateTime.UtcNow;
@@ -703,12 +703,12 @@ public sealed class ConversationRepository : IConversationRepository
                 INSERT INTO digital.instructions (
                     datetime, inst_category_id, inst_type_id, instruction,
                     status, insert_user, client_auth_user_id, client_id,
-                    service_id, inst_channel, instruction_id,
+                    inst_channel, instruction_id,
                     conversation_sequence)
                 VALUES (
                     @Now, 100, 101, NULL,
                     TRUE, NULL, NULL, @ClientId,
-                    3, 'chat', NULL, 0)
+                    'chat', NULL, 0)
                 RETURNING id;
                 """;
             var conversationId = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
@@ -1004,11 +1004,11 @@ public sealed class ConversationRepository : IConversationRepository
             INSERT INTO digital.instructions (
                 datetime, inst_category_id, inst_type_id, instruction,
                 status, insert_user, client_auth_user_id, client_id,
-                service_id, ip_address, inst_channel, instruction_id,
+                ip_address, inst_channel, instruction_id,
                 client_message_id, conversation_sequence)
             SELECT @SentAt, root.inst_category_id, root.inst_type_id, @Text,
                    TRUE, @AdminUserId, @ClientUserId, root.client_id,
-                   3, @IpAddress, 'chat', root.id,
+                   @IpAddress, 'chat', root.id,
                    @ClientMessageId, @Sequence
             FROM digital.instructions root
             WHERE root.id = @ConversationId
