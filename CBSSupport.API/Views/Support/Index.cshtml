@@ -35,25 +35,22 @@
                 <button class="btn btn-icon" id="fullscreen-btn" title="Toggle Fullscreen" aria-label="Toggle fullscreen"><i class="fas fa-expand" aria-hidden="true"></i></button>
 
                 <div class="client-notification-container">
-                    <button class="btn btn-icon client-notification-btn" id="client-notification-btn" title="Notifications" aria-label="Notifications">
+                    <button class="btn btn-icon client-notification-btn" id="client-notification-btn" title="Notifications" aria-label="Notifications" aria-controls="client-notification-menu" aria-expanded="false">
                         <i class="fas fa-bell" aria-hidden="true"></i>
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
                               id="client-notification-count" style="display: none;">0</span>
                     </button>
 
-                    <div class="client-notification-dropdown-menu" id="client-notification-menu">
+                    <div class="client-notification-dropdown-menu" id="client-notification-menu" role="region" aria-label="Notifications">
                         <div class="notification-header">
                             <h6>Notifications</h6>
                             <button class="btn btn-sm btn-link" id="client-mark-all-read-btn">Mark all as read</button>
                         </div>
-                        <div class="notification-list" id="client-notification-list">
+                        <div class="notification-list" id="client-notification-list" aria-live="polite">
                             <div class="notification-loading">
-                                <div class="spinner-border spinner-border-sm"></div>
-                                <span>Loading notifications...</span>
+                                <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
+                                <span>Loading notifications…</span>
                             </div>
-                        </div>
-                        <div class="notification-footer">
-                            <a href="#" class="btn btn-sm btn-primary w-100" id="client-view-all-notifications-btn">View All</a>
                         </div>
                     </div>
                 </div>
@@ -362,24 +359,6 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                     <button type="submit" form="inquiryForm" class="btn btn-primary">Send Inquiry</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="notificationsModal" tabindex="-1" aria-labelledby="notificationsModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="notificationsModalLabel">Notifications</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="list-group">
-                        <a href="#" class="list-group-item list-group-item-action">
-                            <p class="mb-1">No new notifications.</p>
-                        </a>
-                    </div>
                 </div>
             </div>
         </div>
