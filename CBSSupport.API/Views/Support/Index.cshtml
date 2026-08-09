@@ -16,7 +16,7 @@
     <link rel="stylesheet" href="~/css/chat.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
-<body data-attachments-enabled="@attachmentsEnabled.ToString().ToLowerInvariant()">
+<body class="client-portal" data-attachments-enabled="@attachmentsEnabled.ToString().ToLowerInvariant()">
 
     <div hidden aria-hidden="true">@Html.AntiForgeryToken()</div>
 
@@ -24,12 +24,12 @@
         <div class="header-left">
             <img src="~/images/infobrain-logo.jpg" alt="InfoBrain Technologies" class="header-logo" />
             <div class="header-brand-text">CBS Support</div>
-            <span class="tenant-context">Client account @ViewBag.ClientId</span>
+            <span class="tenant-context">Client account · @ViewBag.ClientId</span>
         </div>
         <div class="header-right">
-            <div class="user-info">
-                <div>Transaction Running Date: @DateTime.Now</div>
-                <div>Logged Branch: 01 (HEAD OFFICE.) | Hello, @ViewBag.UserFullName</div>
+            <div class="user-info" aria-label="Current session">
+                <span class="user-greeting">Hello, @ViewBag.UserFullName</span>
+                <time datetime="@DateTime.Now.ToString("yyyy-MM-dd")">@DateTime.Now.ToString("ddd, MMM d")</time>
             </div>
             <div class="header-actions">
                 <button class="btn btn-icon" id="fullscreen-btn" title="Toggle Fullscreen" aria-label="Toggle fullscreen"><i class="fas fa-expand" aria-hidden="true"></i></button>
@@ -64,7 +64,7 @@
         </div>
     </header>
 
-    <div class="dashboard-container">
+    <main class="dashboard-container" aria-label="Client support workspace">
         <div id="conversation-list-panel" class="dashboard-panel client-conversation-panel">
             <div class="panel-header client-conversation-heading">
                 <div>
@@ -157,7 +157,7 @@
 
         <div id="history-column">
             <div class="history-panel">
-                <div class="panel-header d-flex justify-content-between align-items-center"><span>My Support Tickets</span><button id="newSupportTicketBtn" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newSupportTicketModal">New Support Ticket</button></div>
+                <div class="panel-header d-flex justify-content-between align-items-center"><h2 class="panel-title">My support tickets</h2><button id="newSupportTicketBtn" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newSupportTicketModal">New support ticket</button></div>
                 <div class="history-table-container panel-body">
                     <table id="supportTicketsDataTable" class="table table-hover table-sm small" style="width:100%">
                         <thead>
@@ -169,8 +169,8 @@
             </div>
             <div class="history-panel">
                 <div class="panel-header d-flex justify-content-between align-items-center">
-                    <span>My Inquiries</span>
-                    <button id="newInquiryBtn" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newInquiryModal">New Inquiry</button>
+                    <h2 class="panel-title">My inquiries</h2>
+                    <button id="newInquiryBtn" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newInquiryModal">New inquiry</button>
                 </div>
                 <div class="history-table-container panel-body">
                     <table id="inquiriesDataTable" class="table table-hover table-sm small" style="width:100%">
@@ -189,7 +189,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
     <div class="modal fade" id="newPrivateChatModal" tabindex="-1"
          aria-labelledby="newPrivateChatModalLabel" aria-describedby="newPrivateChatModalDescription" aria-hidden="true">

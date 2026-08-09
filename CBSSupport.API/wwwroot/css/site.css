@@ -549,6 +549,18 @@ a:hover {
   font-size: var(--text-xs);
 }
 
+.client-portal .app-header .user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+}
+
+.client-portal .user-greeting {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
 .tenant-context {
   display: inline-flex;
   align-items: center;
@@ -586,6 +598,32 @@ a:hover {
   color: var(--color-text);
   font-size: var(--text-sm);
   font-weight: 600;
+}
+
+.panel-title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.client-portal .dashboard-panel {
+  border-right: 1px solid var(--color-border);
+}
+
+.client-portal #history-column {
+  background: var(--color-bg-subtle);
+}
+
+.client-portal .history-panel {
+  box-shadow: none;
+  transition: border-color var(--transition-fast);
+}
+
+.client-portal .history-panel:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--color-border-strong);
 }
 
 /* Admin shell */
