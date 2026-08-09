@@ -1161,6 +1161,109 @@ button.recent-ticket-item:hover {
   font-size: var(--text-sm);
 }
 
+.support-dialog .modal-header,
+.support-dialog .modal-footer {
+  background: var(--color-bg);
+}
+
+.support-dialog .modal-body {
+  background: var(--color-bg-subtle);
+}
+
+.support-dialog-description {
+  margin-bottom: 1rem;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.support-form-section {
+  margin: 0;
+  padding: 1rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.support-form-section legend {
+  float: none;
+  width: auto;
+  margin: 0 0 1rem;
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.form-label-optional {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.form-required-note {
+  margin: 0.75rem 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+}
+
+.support-form-context {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.support-form-context strong {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.support-record-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 1rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.support-record-grid div {
+  min-width: 0;
+}
+
+.support-record-grid dt,
+.support-record-section h3 {
+  margin: 0 0 0.25rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.support-record-grid dd,
+.support-record-section p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.support-record-section {
+  margin-top: 1rem;
+}
+
+.support-record-message {
+  padding: 1rem;
+  white-space: pre-wrap;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
 .account-summary {
   display: flex;
   align-items: center;
@@ -1234,5 +1337,9 @@ button.recent-ticket-item:hover {
 
   .client-directory-search {
     width: 100%;
+  }
+
+  .support-record-grid {
+    grid-template-columns: 1fr;
   }
 }
