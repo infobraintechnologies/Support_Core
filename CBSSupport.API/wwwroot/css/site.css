@@ -26,6 +26,13 @@ a:hover {
   color: var(--color-text-secondary) !important;
 }
 
+/* Keep app loading placeholders flat and motion-free. */
+.skeleton {
+  background: var(--color-bg-muted);
+  background-size: auto;
+  animation: none;
+}
+
 /* Bootstrap controls */
 .btn {
   --bs-btn-font-size: var(--text-sm);
