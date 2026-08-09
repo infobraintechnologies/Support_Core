@@ -81,6 +81,7 @@ window.AdminNotifications = (() => {
     function updateNotificationBadge(count) {
         const badges = [
             'admin-notification-count',
+            'admin-notification-count-clients',
             'admin-notification-count-chats',
             'admin-notification-count-tickets',
             'admin-notification-count-inquiries'

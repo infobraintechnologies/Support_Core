@@ -5,6 +5,7 @@ window.AdminCore = (() => {
     let currentUser = { name: "Admin", id: null };
     let currentClientId = null;
     let connection = null;
+    let clients = [];
 
     const pageInitializers = {
         dashboard: async function () {
@@ -17,6 +18,11 @@ window.AdminCore = (() => {
                 console.error("Dashboard initialization error:", error);
                 AdminUtils.showNotification('Failed to initialize dashboard', 'error');
             }
+        },
+
+        clients: function () {
+            const searchInput = document.getElementById('client-directory-search');
+            renderClientDirectory(searchInput?.value || '');
         },
 
         chats: async function () {
@@ -41,6 +47,125 @@ window.AdminCore = (() => {
             }
         }
     };
+
+    function populateClientSwitchers(items) {
+        document.querySelectorAll('.client-switcher').forEach(select => {
+            const allClientsOption = document.createElement('option');
+            allClientsOption.value = '';
+            allClientsOption.textContent = 'All clients';
+
+            const options = items.map(client => {
+                const option = document.createElement('option');
+                option.value = String(client.id);
+                option.textContent = client.name || `Client ${client.id}`;
+                return option;
+            });
+
+            select.replaceChildren(allClientsOption, ...options);
+            select.value = currentClientId || '';
+        });
+    }
+
+    function renderClientDirectory(query = '') {
+        const body = document.getElementById('client-directory-body');
+        const state = document.getElementById('client-directory-state');
+        const summary = document.getElementById('client-directory-summary');
+        if (!body || !state || !summary) return;
+
+        const normalizedQuery = query.trim().toLocaleLowerCase();
+        const filteredClients = clients.filter(client =>
+            (client.name || '').toLocaleLowerCase().includes(normalizedQuery)
+            || String(client.id).includes(normalizedQuery));
+
+        body.replaceChildren();
+        state.replaceChildren();
+        state.hidden = true;
+        summary.textContent = `${filteredClients.length} of ${clients.length} clients shown`;
+
+        if (filteredClients.length === 0) {
+            const heading = document.createElement('h3');
+            heading.textContent = clients.length === 0 ? 'No clients available' : 'No matching clients';
+            const message = document.createElement('p');
+            message.textContent = clients.length === 0
+                ? 'The client directory did not return any accounts.'
+                : 'Try a different client name or identifier.';
+            state.append(heading, message);
+            state.hidden = false;
+            return;
+        }
+
+        filteredClients.forEach(client => {
+            const row = document.createElement('tr');
+
+            const nameCell = document.createElement('th');
+            nameCell.scope = 'row';
+            const name = document.createElement('span');
+            name.className = 'client-directory-name';
+            name.textContent = client.name || `Client ${client.id}`;
+            const description = document.createElement('span');
+            description.className = 'client-directory-description';
+            description.textContent = 'Support account';
+            nameCell.append(name, description);
+
+            const idCell = document.createElement('td');
+            const id = document.createElement('code');
+            id.textContent = String(client.id);
+            idCell.append(id);
+
+            const actionCell = document.createElement('td');
+            actionCell.className = 'text-end';
+            const action = document.createElement('button');
+            action.type = 'button';
+            action.className = 'btn btn-sm btn-outline-primary client-directory-open';
+            action.dataset.clientId = String(client.id);
+            action.textContent = 'Open workspace';
+            actionCell.append(action);
+
+            row.append(nameCell, idCell, actionCell);
+            body.append(row);
+        });
+    }
+
+    function renderClientDirectoryError() {
+        const body = document.getElementById('client-directory-body');
+        const state = document.getElementById('client-directory-state');
+        const summary = document.getElementById('client-directory-summary');
+        if (!body || !state || !summary) return;
+
+        body.replaceChildren();
+        summary.textContent = 'Client directory unavailable';
+        const heading = document.createElement('h3');
+        heading.textContent = 'Could not load clients';
+        const message = document.createElement('p');
+        message.textContent = 'Check the connection and try again.';
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'btn btn-sm btn-outline-primary';
+        retry.id = 'retry-client-directory';
+        retry.textContent = 'Try again';
+        state.replaceChildren(heading, message, retry);
+        state.hidden = false;
+    }
+
+    async function loadClients() {
+        try {
+            const clientsResp = await fetch('/v1/api/clients');
+            if (!clientsResp.ok) {
+                throw new Error(`Client directory request failed with status ${clientsResp.status}.`);
+            }
+
+            const result = await clientsResp.json();
+            clients = Array.isArray(result) ? result : [];
+            if (currentClientId == null) currentClientId = '';
+            populateClientSwitchers(clients);
+            if (!currentClientId) $('#admin-tenant-context').text('Scope: All clients');
+            renderClientDirectory(document.getElementById('client-directory-search')?.value || '');
+            console.log("✅ Client directory loaded");
+        } catch (error) {
+            console.error("❌ Error loading clients:", error);
+            renderClientDirectoryError();
+        }
+    }
 
     function handleClientChange() {
         $('.client-switcher').on('change', function () {
@@ -81,6 +206,23 @@ window.AdminCore = (() => {
     }
 
     function initializeEnhancedEventHandlers() {
+        $(document).on('input', '#client-directory-search', function () {
+            renderClientDirectory(this.value);
+        });
+
+        $(document).on('click', '#retry-client-directory', function () {
+            loadClients();
+        });
+
+        $(document).on('click', '.client-directory-open', function () {
+            const clientId = this.dataset.clientId;
+            const clientSwitcher = $('.client-switcher').first();
+            clientSwitcher.val(String(clientId)).trigger('change');
+            if (window.AdminNavigation) {
+                window.AdminNavigation.navigateToDashboard();
+            }
+        });
+
         $(document).on('click', '#refresh-dashboard-btn', function () {
             $(this).html('<i class="fas fa-spinner fa-spin me-1"></i>Refreshing...');
             if (window.AdminDashboard) {
@@ -150,23 +292,7 @@ window.AdminCore = (() => {
                 console.log("✅ SignalR connection established");
             }
 
-            try {
-                const clientsResp = await fetch('/v1/api/clients');
-                if (clientsResp.ok) {
-                    const clients = await clientsResp.json();
-                    let optionsHtml = '<option value="">All Clients</option>';
-                    optionsHtml += clients.map(c => `<option value="${c.id}">${AdminUtils.escapeHtml(c.name)}</option>`).join('');
-
-                    $('.client-switcher').html(optionsHtml);
-                    currentClientId = "";
-                    $('.client-switcher').val("");
-                    $('#admin-tenant-context').text('Scope: All clients');
-
-                    console.log("✅ Client switchers populated");
-                }
-            } catch (error) {
-                console.error("❌ Error loading clients:", error);
-            }
+            await loadClients();
 
             if (window.AdminNavigation) {
                 window.AdminNavigation.initializeNavigationEvents();

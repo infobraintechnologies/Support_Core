@@ -54,7 +54,7 @@
                         </div>
                     </div>
                 </div>
-                <button class="btn btn-icon" data-bs-toggle="modal" data-bs-target="#userModal" title="User actions" aria-label="User actions">
+                <button class="btn btn-icon" data-bs-toggle="modal" data-bs-target="#userModal" title="Account" aria-label="Open account details">
                     <i class="fas fa-user" aria-hidden="true"></i>
                 </button>
             </div>
@@ -368,14 +368,31 @@
         <div class="modal-dialog modal-sm">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="userModalLabel">User Actions</h5>
+                    <h5 class="modal-title" id="userModalLabel">Your account</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="account-summary">
+                        <div class="account-avatar" aria-hidden="true"><i class="fas fa-user"></i></div>
+                        <div>
+                            <div class="account-name">@ViewBag.UserFullName</div>
+                            <div class="account-role">Client user</div>
+                        </div>
+                    </div>
+                    <dl class="account-metadata">
+                        <div>
+                            <dt>Client account</dt>
+                            <dd>@ViewBag.ClientId</dd>
+                        </div>
+                        <div>
+                            <dt>Workspace</dt>
+                            <dd>CBS Support</dd>
+                        </div>
+                    </dl>
                     <div class="d-grid">
                         <form asp-controller="Login" asp-action="Logout" method="post" class="d-grid">
-                            <button type="submit" class="btn btn-danger">
-                                <i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout
+                            <button type="submit" class="btn btn-outline-danger">
+                                <i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Log out
                             </button>
                         </form>
                     </div>
