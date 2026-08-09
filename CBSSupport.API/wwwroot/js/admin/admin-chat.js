@@ -35,6 +35,13 @@ window.AdminChat = (() => {
         return window.AdminSignalR?.getMessaging?.();
     }
 
+    function isNearMainChatBottom() {
+        if (!mainChatPanelBody) return true;
+        return mainChatPanelBody.scrollHeight
+            - mainChatPanelBody.scrollTop
+            - mainChatPanelBody.clientHeight < 80;
+    }
+
     function setText(element, value) {
         if (element) element.textContent = value == null ? "" : String(value);
     }
@@ -608,6 +615,7 @@ window.AdminChat = (() => {
 
     function displayMainChatMessage(message, isHistory = false) {
         if (!mainChatPanelBody) return;
+        const shouldAutoScroll = !isHistory && isNearMainChatBottom();
         if (message.id
             && mainChatPanelBody.querySelector(`[data-message-id="${Number(message.id)}"]`)) {
             return;
@@ -647,7 +655,7 @@ window.AdminChat = (() => {
             group.append(cluster, avatar);
             mainChatPanelBody.appendChild(group);
         }
-        if (!isHistory) AdminUtils.scrollToBottom(mainChatPanelBody);
+        if (shouldAutoScroll) AdminUtils.scrollToBottom(mainChatPanelBody);
     }
 
     function createMessageBubble(message) {
@@ -1093,12 +1101,20 @@ window.AdminChat = (() => {
         const normalized = state || getConnectionState();
         const display = {
             connected: ["Connected", "is-connected"],
-            reconnected: ["Connected", "is-connected"],
+            reconnected: ["Connection restored", "is-connected"],
             reconnecting: ["Reconnecting…", "is-warning"],
             disconnected: ["Offline", "is-error"],
             loading: ["Loading…", "is-warning"]
         }[normalized] || ["Connecting…", "is-warning"];
         setStatus("admin-chat-connection-status", display[0], display[1]);
+        if (normalized === "reconnected") {
+            window.setTimeout(() => {
+                const status = document.getElementById("admin-chat-connection-status");
+                if (status?.textContent === "Connection restored") {
+                    setStatus("admin-chat-connection-status", "Connected", "is-connected");
+                }
+            }, 3000);
+        }
     }
 
     function getConnectionState() {

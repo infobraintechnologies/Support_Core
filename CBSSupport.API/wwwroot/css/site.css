@@ -975,6 +975,61 @@ button.recent-ticket-item:hover {
   padding-top: 1rem;
 }
 
+.conversation-item,
+.admin-conversation-item {
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.conversation-item:hover,
+.admin-conversation-item:hover {
+  color: var(--color-text);
+  background: var(--color-bg-muted);
+  transform: none;
+}
+
+.admin-chat-sidebar,
+.admin-chat-main,
+.admin-chat-sidebar-header,
+.admin-chat-main-header,
+.admin-chat-footer {
+  color: var(--color-text);
+  background: var(--color-bg);
+  border-color: var(--color-border);
+  box-shadow: none;
+}
+
+.admin-chat-sidebar-header h2 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.admin-chat-status {
+  color: var(--color-text-secondary);
+}
+
+.admin-chat-status::before {
+  background: var(--color-text-muted);
+}
+
+.admin-chat-status.is-connected::before {
+  background: var(--color-success);
+}
+
+.admin-chat-status.is-warning::before {
+  background: var(--color-text-muted);
+}
+
+.admin-chat-status.is-error::before {
+  background: var(--color-danger);
+}
+
+.admin-conversation-item.active {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  border-left-color: var(--color-accent);
+}
+
 .avatar-initials,
 .avatar-initials.type-group,
 .avatar-initials.type-private,

@@ -124,6 +124,11 @@ document.addEventListener("DOMContentLoaded", () => {
         chatPanelBody.scrollTop = chatPanelBody.scrollHeight;
     };
 
+    const isNearChatBottom = () => {
+        if (!chatPanelBody) return true;
+        return chatPanelBody.scrollHeight - chatPanelBody.scrollTop - chatPanelBody.clientHeight < 80;
+    };
+
     function escapeHtml(text) {
         if (text === null || typeof text === 'undefined') return '';
         const div = document.createElement('div');
@@ -383,6 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function displayMessage(msg, isHistory = false) {
         if (!chatPanelBody || !msg?.dateTime) return;
+        const shouldAutoScroll = !isHistory && isNearChatBottom();
         const messageId = Number(msg.id);
         if (Number.isSafeInteger(messageId)
             && chatPanelBody.querySelector(`[data-message-id="${messageId}"]`)) {
@@ -407,7 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
         row.appendChild(bubble);
         chatPanelBody.appendChild(row);
 
-        if (!isHistory) scrollToBottom();
+        if (shouldAutoScroll) scrollToBottom();
     }
 
     function getConversationName(conversation) {
@@ -1363,7 +1369,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const labels = {
             connected: "Connected",
             reconnecting: "Reconnecting…",
-            reconnected: "Connected",
+            reconnected: "Connection restored",
             disconnected: "Disconnected"
         };
         if (connectionStatus) {
@@ -1374,6 +1380,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (state === "reconnected") {
             loadConversations();
             advanceActiveReadCursor();
+            window.setTimeout(() => {
+                if (connectionStatus?.dataset.state === "reconnected") {
+                    connectionStatus.textContent = "Connected";
+                    connectionStatus.dataset.state = "connected";
+                }
+            }, 3000);
         }
     });
 
