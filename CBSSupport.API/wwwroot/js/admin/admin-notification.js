@@ -41,6 +41,7 @@ window.AdminNotifications = (() => {
             return allNotifications;
         } catch (error) {
             console.error('Error loading notifications:', error);
+            renderNotificationLoadError();
             return [];
         }
     }
@@ -80,6 +81,7 @@ window.AdminNotifications = (() => {
     function updateNotificationBadge(count) {
         const badges = [
             'admin-notification-count',
+            'admin-notification-count-clients',
             'admin-notification-count-chats',
             'admin-notification-count-tickets',
             'admin-notification-count-inquiries'
@@ -91,14 +93,6 @@ window.AdminNotifications = (() => {
                 if (count > 0) {
                     badge.textContent = count > 99 ? '99+' : count.toString();
                     badge.style.display = 'block';
-
-                    if (count > unreadNotificationCount) {
-                        const btn = badge.closest('.header-notification-btn');
-                        if (btn) {
-                            btn.classList.add('notification-shake');
-                            setTimeout(() => btn.classList.remove('notification-shake'), 500);
-                        }
-                    }
                 } else {
                     badge.style.display = 'none';
                 }
@@ -131,11 +125,19 @@ window.AdminNotifications = (() => {
         }
 
         notifications.forEach(notification => {
-            const item = document.createElement('div');
+            const item = document.createElement('button');
+            item.type = 'button';
             item.className = `notification-item${notification.isRead ? '' : ' unread'}`;
             item.dataset.id = String(notification.id);
-            item.dataset.entityId = String(notification.entityId);
-            item.dataset.entityType = String(notification.entityType);
+            item.dataset.entityId = String(notification.entityId ?? '');
+            item.dataset.entityType = String(notification.entityType ?? '');
+
+            if (!notification.isRead) {
+                const unread = document.createElement('span');
+                unread.className = 'visually-hidden notification-unread-label';
+                unread.textContent = 'Unread notification. ';
+                item.appendChild(unread);
+            }
 
             const content = document.createElement('div');
             content.className = 'notification-content';
@@ -144,6 +146,7 @@ window.AdminNotifications = (() => {
             iconWrapper.className = `notification-icon ${notification.type}`;
             const icon = document.createElement('i');
             icon.className = notification.icon;
+            icon.setAttribute('aria-hidden', 'true');
             iconWrapper.appendChild(icon);
 
             const text = document.createElement('div');
@@ -157,15 +160,34 @@ window.AdminNotifications = (() => {
             message.className = 'notification-message';
             message.textContent = notification.message;
 
-            const time = document.createElement('div');
+            const time = document.createElement('time');
             time.className = 'notification-time';
             time.textContent = notification.timeAgo;
+            if (notification.createdAt) time.dateTime = notification.createdAt;
 
             text.append(title, message, time);
             content.append(iconWrapper, text);
             item.appendChild(content);
             container.appendChild(item);
         });
+    }
+
+    function renderNotificationLoadError() {
+        const container = document.getElementById('admin-notification-list') ||
+            document.getElementById('dynamic-notification-list');
+        if (!container) return;
+        const state = document.createElement('div');
+        state.className = 'notification-empty';
+        state.setAttribute('role', 'alert');
+        const message = document.createElement('p');
+        message.textContent = "Couldn't load notifications. Check your connection and try again.";
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'btn btn-sm btn-outline-primary';
+        retry.textContent = 'Retry';
+        retry.addEventListener('click', loadNotifications, { once: true });
+        state.append(message, retry);
+        container.replaceChildren(state);
     }
 
     // ============================================
@@ -184,6 +206,7 @@ window.AdminNotifications = (() => {
                 const notificationElement = document.querySelector(`[data-id="${notificationId}"]`);
                 if (notificationElement && notificationElement.classList.contains('unread')) {
                     notificationElement.classList.remove('unread');
+                    notificationElement.querySelector('.notification-unread-label')?.remove();
                 }
                 const changed = await response.json();
                 updateNotificationBadge(changed.unreadCount || 0);
@@ -204,6 +227,7 @@ window.AdminNotifications = (() => {
             if (response.ok) {
                 document.querySelectorAll('.notification-item.unread').forEach(item => {
                     item.classList.remove('unread');
+                    item.querySelector('.notification-unread-label')?.remove();
                 });
 
                 const result = await response.json();
@@ -229,20 +253,19 @@ window.AdminNotifications = (() => {
         const menu = document.createElement('div');
         menu.className = 'header-notification-dropdown-menu';
         menu.id = 'dynamic-notification-menu';
+        menu.setAttribute('role', 'region');
+        menu.setAttribute('aria-label', 'Notifications');
 
         menu.innerHTML = `
             <div class="notification-header">
                 <h6>Notifications</h6>
-                <button class="btn btn-sm btn-link mark-all-read-btn">Mark all as read</button>
+                <button type="button" class="btn btn-sm btn-link mark-all-read-btn">Mark all as read</button>
             </div>
-            <div class="notification-list" id="dynamic-notification-list">
+            <div class="notification-list" id="dynamic-notification-list" aria-live="polite">
                 <div class="notification-loading">
-                    <div class="spinner-border spinner-border-sm"></div>
-                    <span>Loading notifications...</span>
+                    <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
+                    <span>Loading notifications…</span>
                 </div>
-            </div>
-            <div class="notification-footer">
-                <a href="#" class="btn btn-sm btn-primary w-100">View All</a>
             </div>
         `;
 
@@ -294,6 +317,15 @@ window.AdminNotifications = (() => {
                 menu.remove();
             }
         });
+
+        menu.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                const trigger = document.querySelector('.header-notification-btn[aria-expanded="true"]');
+                menu.remove();
+                trigger?.setAttribute('aria-expanded', 'false');
+                trigger?.focus();
+            }
+        });
     }
 
     // ============================================
@@ -314,6 +346,9 @@ window.AdminNotifications = (() => {
             if (btn) {
                 btn.replaceWith(btn.cloneNode(true));
                 const newBtn = document.getElementById(btnId);
+                newBtn.setAttribute('aria-expanded', 'false');
+                newBtn.setAttribute('aria-haspopup', 'true');
+                newBtn.setAttribute('aria-controls', 'dynamic-notification-menu');
 
                 newBtn.addEventListener('click', async (e) => {
                     e.preventDefault();
@@ -322,6 +357,8 @@ window.AdminNotifications = (() => {
                     document.querySelectorAll('.header-notification-dropdown-menu').forEach(menu => {
                         menu.remove();
                     });
+                    document.querySelectorAll('.header-notification-btn').forEach(button =>
+                        button.setAttribute('aria-expanded', 'false'));
 
                     const notificationMenu = createNotificationMenu();
 
@@ -341,6 +378,8 @@ window.AdminNotifications = (() => {
                     try {
                         await loadNotifications();
                         notificationMenu.classList.add('show');
+                        newBtn.setAttribute('aria-expanded', 'true');
+                        notificationMenu.querySelector('.notification-item, .mark-all-read-btn')?.focus();
                     } catch (error) {
                         console.error('❌ Error loading notifications:', error);
                     }
@@ -357,6 +396,8 @@ window.AdminNotifications = (() => {
                 document.querySelectorAll('.header-notification-dropdown-menu').forEach(menu => {
                     menu.remove();
                 });
+                document.querySelectorAll('.header-notification-btn').forEach(button =>
+                    button.setAttribute('aria-expanded', 'false'));
             }
         });
 

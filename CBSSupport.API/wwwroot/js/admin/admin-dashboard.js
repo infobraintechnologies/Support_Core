@@ -114,10 +114,10 @@ window.AdminDashboard = (() => {
         $('#urgent-inquiries-count').text(unsolvedInquiries);
 
         // Update badges
-        $('#critical-tickets-badge').text(`${unsolvedTickets} Critical`);
-        $('#pending-inquiries-badge').text(`${unsolvedInquiries} Pending`);
-        $('#urgent-tickets-badge').text(unsolvedTickets > 0 ? 'URGENT' : 'CLEAR');
-        $('#urgent-inquiries-badge').text(unsolvedInquiries > 0 ? 'PENDING' : 'CLEAR');
+        $('#critical-tickets-badge').text(`${unsolvedTickets} open`);
+        $('#pending-inquiries-badge').text(`${unsolvedInquiries} pending`);
+        $('#urgent-tickets-badge').text(unsolvedTickets > 0 ? 'Needs attention' : 'Clear');
+        $('#urgent-inquiries-badge').text(unsolvedInquiries > 0 ? 'Pending' : 'Clear');
 
         // Show/hide urgent alert section
         const alertSection = $('#urgent-alert-section');
@@ -138,15 +138,15 @@ window.AdminDashboard = (() => {
         const inquiriesBadge = $('#urgent-inquiries-badge');
 
         if (unsolvedTickets === 0) {
-            ticketsBadge.removeClass('bg-danger').addClass('bg-success').text('CLEAR');
+            ticketsBadge.removeClass('badge-status--danger').addClass('badge-status--success').text('Clear');
         } else {
-            ticketsBadge.removeClass('bg-success').addClass('bg-danger').text('URGENT');
+            ticketsBadge.removeClass('badge-status--success').addClass('badge-status--danger').text('Needs attention');
         }
 
         if (unsolvedInquiries === 0) {
-            inquiriesBadge.removeClass('bg-warning').addClass('bg-success').text('CLEAR');
+            inquiriesBadge.removeClass('badge-status--warning').addClass('badge-status--success').text('Clear');
         } else {
-            inquiriesBadge.removeClass('bg-success').addClass('bg-warning').text('PENDING');
+            inquiriesBadge.removeClass('badge-status--success').addClass('badge-status--warning').text('Pending');
         }
     }
 
@@ -170,7 +170,7 @@ window.AdminDashboard = (() => {
             container.html(`
                 <div class="text-center text-success p-4">
                     <i class="fas fa-check-circle fa-3x mb-3"></i>
-                    <h6>🎉 No Critical Tickets!</h6>
+                    <h6>No critical tickets</h6>
                     <p class="text-muted mb-0">All tickets have been resolved.</p>
                 </div>
             `);
@@ -181,7 +181,7 @@ window.AdminDashboard = (() => {
             const timeAgo = AdminUtils.getTimeAgo(ticket.date);
 
             return `
-                <div class="unsolved-ticket-item" onclick="AdminDashboard.navigateToTicketDetails(${ticket.id})">
+                <button type="button" class="unsolved-ticket-item" onclick="AdminDashboard.navigateToTicketDetails(${ticket.id})">
                     <div class="unsolved-item-header">
                         <div>
                             <div class="unsolved-item-title">#${ticket.id} - ${AdminUtils.escapeHtml(ticket.subject || 'General Support')}</div>
@@ -195,10 +195,10 @@ window.AdminDashboard = (() => {
                         </div>
                     </div>
                     <div class="unsolved-item-time">
-                        <i class="fas fa-clock me-1"></i>${timeAgo}
-                        ${ticket.priority === 'Urgent' ? '<span class="badge bg-danger ms-2">🔥 CRITICAL</span>' : ''}
+                        <i class="fas fa-clock me-1" aria-hidden="true"></i>${timeAgo}
+                        ${ticket.priority === 'Urgent' ? '<span class="badge-status badge-status--danger ms-2">Urgent</span>' : ''}
                     </div>
-                </div>
+                </button>
             `;
         }).join('');
 
@@ -212,7 +212,7 @@ window.AdminDashboard = (() => {
             container.html(`
                 <div class="text-center text-success p-4">
                     <i class="fas fa-check-circle fa-3x mb-3"></i>
-                    <h6>✅ No Pending Inquiries!</h6>
+                    <h6>No pending inquiries</h6>
                     <p class="text-muted mb-0">All inquiries have been addressed.</p>
                 </div>
             `);
@@ -223,7 +223,7 @@ window.AdminDashboard = (() => {
             const timeAgo = AdminUtils.getTimeAgo(inquiry.date);
 
             return `
-                <div class="unsolved-inquiry-item" onclick="AdminDashboard.navigateToInquiryDetails(${inquiry.id})">
+                <button type="button" class="unsolved-inquiry-item" onclick="AdminDashboard.navigateToInquiryDetails(${inquiry.id})">
                     <div class="unsolved-item-header">
                         <div>
                             <div class="unsolved-item-title">#INQ-${inquiry.id} - ${AdminUtils.escapeHtml(inquiry.topic || 'General Inquiry')}</div>
@@ -233,13 +233,13 @@ window.AdminDashboard = (() => {
                             </div>
                         </div>
                         <div class="unsolved-item-priority">
-                            <span class="badge bg-warning">PENDING</span>
+                            <span class="badge-status badge-status--warning">Pending</span>
                         </div>
                     </div>
                     <div class="unsolved-item-time">
-                        <i class="fas fa-clock me-1"></i>${timeAgo}
+                        <i class="fas fa-clock me-1" aria-hidden="true"></i>${timeAgo}
                     </div>
-                </div>
+                </button>
             `;
         }).join('');
 
@@ -263,16 +263,16 @@ window.AdminDashboard = (() => {
                 const statusIcon = ticket.status === 'Resolved' ? 'fa-check-circle text-success' : 'fa-clock text-warning';
 
                 const itemHtml = `
-                    <div class="recent-ticket-item" onclick="AdminDashboard.navigateToTicketDetails(${ticket.id})" style="cursor: pointer;">
+                    <button type="button" class="recent-ticket-item" onclick="AdminDashboard.navigateToTicketDetails(${ticket.id})">
                         <div class="recent-ticket-info">
                             <div class="d-flex align-items-center mb-1">
-                                <i class="fas ${statusIcon} me-2"></i>
+                                <i class="fas ${statusIcon} me-2" aria-hidden="true"></i>
                                 <strong>#${ticket.id} - ${AdminUtils.escapeHtml(ticket.clientName)}</strong>
                             </div>
                             <small>Subject: ${AdminUtils.escapeHtml(ticket.subject)} | Last Update: ${lastUpdate}</small>
                         </div>
                         ${AdminUtils.generatePriorityBadge(ticket.priority)}
-                    </div>`;
+                    </button>`;
                 recentTicketsList.append(itemHtml);
             });
         } else {
@@ -326,9 +326,9 @@ window.AdminDashboard = (() => {
                     labels: ['Low', 'Normal', 'High', 'Urgent'],
                     datasets: [{
                         data: [priorityCounts.Low, priorityCounts.Normal, priorityCounts.High, priorityCounts.Urgent],
-                        backgroundColor: ['#28a745', '#17a2b8', '#ffc107', '#dc3545'],
+                        backgroundColor: ['#8B8B96', '#1D4ED8', '#B45309', '#B91C1C'],
                         borderWidth: 0,
-                        hoverOffset: 10
+                        hoverOffset: 2
                     }]
                 },
                 options: {
@@ -361,8 +361,8 @@ window.AdminDashboard = (() => {
                         }
                     },
                     animation: {
-                        animateScale: true,
-                        duration: 1000
+                        animateScale: false,
+                        duration: 180
                     }
                 },
                 plugins: [centerTextPlugin]

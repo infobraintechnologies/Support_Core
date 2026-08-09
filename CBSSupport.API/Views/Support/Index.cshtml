@@ -10,59 +10,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Client Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="~/css/tokens.css" asp-append-version="true" />
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link rel="stylesheet" href="~/css/chat.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
-<body data-attachments-enabled="@attachmentsEnabled.ToString().ToLowerInvariant()">
+<body class="client-portal" data-attachments-enabled="@attachmentsEnabled.ToString().ToLowerInvariant()">
 
     <div hidden aria-hidden="true">@Html.AntiForgeryToken()</div>
 
     <header class="app-header">
         <div class="header-left">
-            <img src="~/images/infobrain-logo.jpg" alt="Balance Logo" class="header-logo" />
-            <button class="btn btn-icon"><i class="fas fa-bars"></i></button>
-            <div class="header-brand-text">INFOBRAIN TECHNOLOGIES PVT LTD (HEAD OFFICE.)</div>
+            <img src="~/images/infobrain-logo.jpg" alt="InfoBrain Technologies" class="header-logo" />
+            <div class="header-brand-text">CBS Support</div>
+            <span class="tenant-context">Client account · @ViewBag.ClientId</span>
         </div>
         <div class="header-right">
-            <div class="user-info">
-                <div>Transaction Running Date: @DateTime.Now</div>
-                <div>Logged Branch: 01 (HEAD OFFICE.) | Hello, @ViewBag.UserFullName</div>
+            <div class="user-info" aria-label="Current session">
+                <span class="user-greeting">Hello, @ViewBag.UserFullName</span>
+                <time datetime="@DateTime.Now.ToString("yyyy-MM-dd")">@DateTime.Now.ToString("ddd, MMM d")</time>
             </div>
             <div class="header-actions">
                 <button class="btn btn-icon" id="fullscreen-btn" title="Toggle Fullscreen" aria-label="Toggle fullscreen"><i class="fas fa-expand" aria-hidden="true"></i></button>
 
                 <div class="client-notification-container">
-                    <button class="btn btn-icon client-notification-btn" id="client-notification-btn" title="Notifications" aria-label="Notifications">
+                    <button class="btn btn-icon client-notification-btn" id="client-notification-btn" title="Notifications" aria-label="Notifications" aria-controls="client-notification-menu" aria-expanded="false">
                         <i class="fas fa-bell" aria-hidden="true"></i>
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
                               id="client-notification-count" style="display: none;">0</span>
                     </button>
 
-                    <div class="client-notification-dropdown-menu" id="client-notification-menu">
+                    <div class="client-notification-dropdown-menu" id="client-notification-menu" role="region" aria-label="Notifications">
                         <div class="notification-header">
                             <h6>Notifications</h6>
                             <button class="btn btn-sm btn-link" id="client-mark-all-read-btn">Mark all as read</button>
                         </div>
-                        <div class="notification-list" id="client-notification-list">
+                        <div class="notification-list" id="client-notification-list" aria-live="polite">
                             <div class="notification-loading">
-                                <div class="spinner-border spinner-border-sm"></div>
-                                <span>Loading notifications...</span>
+                                <div class="spinner-border spinner-border-sm" aria-hidden="true"></div>
+                                <span>Loading notifications…</span>
                             </div>
-                        </div>
-                        <div class="notification-footer">
-                            <a href="#" class="btn btn-sm btn-primary w-100" id="client-view-all-notifications-btn">View All</a>
                         </div>
                     </div>
                 </div>
-                <button class="btn btn-icon" data-bs-toggle="modal" data-bs-target="#userModal" title="User Actions">
-                    <i class="fas fa-users"></i>
+                <button class="btn btn-icon" data-bs-toggle="modal" data-bs-target="#userModal" title="Account" aria-label="Open account details">
+                    <i class="fas fa-user" aria-hidden="true"></i>
                 </button>
             </div>
         </div>
     </header>
 
-    <div class="dashboard-container">
+    <main class="dashboard-container" aria-label="Client support workspace">
         <div id="conversation-list-panel" class="dashboard-panel client-conversation-panel">
             <div class="panel-header client-conversation-heading">
                 <div>
@@ -155,7 +154,7 @@
 
         <div id="history-column">
             <div class="history-panel">
-                <div class="panel-header d-flex justify-content-between align-items-center"><span>My Support Tickets</span><button id="newSupportTicketBtn" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newSupportTicketModal">New Support Ticket</button></div>
+                <div class="panel-header d-flex justify-content-between align-items-center"><h2 class="panel-title">My support tickets</h2><button id="newSupportTicketBtn" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newSupportTicketModal">New support ticket</button></div>
                 <div class="history-table-container panel-body">
                     <table id="supportTicketsDataTable" class="table table-hover table-sm small" style="width:100%">
                         <thead>
@@ -167,8 +166,8 @@
             </div>
             <div class="history-panel">
                 <div class="panel-header d-flex justify-content-between align-items-center">
-                    <span>My Inquiries</span>
-                    <button id="newInquiryBtn" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newInquiryModal">New Inquiry</button>
+                    <h2 class="panel-title">My inquiries</h2>
+                    <button id="newInquiryBtn" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newInquiryModal">New inquiry</button>
                 </div>
                 <div class="history-table-container panel-body">
                     <table id="inquiriesDataTable" class="table table-hover table-sm small" style="width:100%">
@@ -187,7 +186,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
     <div class="modal fade" id="newPrivateChatModal" tabindex="-1"
          aria-labelledby="newPrivateChatModalLabel" aria-describedby="newPrivateChatModalDescription" aria-hidden="true">
@@ -216,56 +215,59 @@
     </div>
 
     <div class="modal fade" id="newSupportTicketModal" tabindex="-1" aria-labelledby="newSupportTicketModalLabel" aria-describedby="newSupportTicketModalDescription" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content support-dialog">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="newSupportTicketModalLabel">New Support Request</h5>
+                    <h2 class="modal-title fs-5" id="newSupportTicketModalLabel">New support ticket</h2>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted" id="newSupportTicketModalDescription">Create a support request for your organization.</p>
+                    <p class="support-dialog-description" id="newSupportTicketModalDescription">Describe the issue, its urgency, and when you need a response.</p>
                     <form id="supportTicketForm" novalidate>
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
+                        <fieldset class="support-form-section">
+                            <legend>Request details</legend>
+                            <div class="mb-3">
                                 <label for="fullName" class="form-label">Full Name *</label>
-                                <input type="text" class="form-control" id="fullName" placeholder="Enter your full name" required>
+                                <input type="text" class="form-control" id="fullName" autocomplete="name" placeholder="Enter your full name" required>
                             </div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="ticketSubject" class="form-label">Subject *</label>
-                            <select id="ticketSubject" class="form-select" required>
-                                <option value="" disabled selected>Select a subject...</option>
-                                <option value="ticket/training">Training</option>
-                                <option value="ticket/migration">Migration</option>
-                                <option value="ticket/setup">Setup</option>
-                                <option value="ticket/correction">Correction</option>
-                                <option value="ticket/bug-fix">Bug Fix</option>
-                                <option value="ticket/new-feature">New Feature Request</option>
-                                <option value="ticket/feature-enhancement">Feature Enhancement</option>
-                                <option value="ticket/backend-workaround">Backend Workaround</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="ticketPriority" class="form-label">Priority *</label>
-                            <select id="ticketPriority" class="form-select" required>
-                                <option value="Low" selected>Low</option>
-                                <option value="Normal">Medium</option>
-                                <option value="Urgent">High</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="ticketExpiryDate" class="form-label">Expected Resolution Time *</label>
-                            <input type="datetime-local" class="form-control" id="ticketExpiryDate" required />
-                        </div>
-                        <div class="mb-3">
-                            <label for="ticketDescription" class="form-label">Description *</label>
-                            <textarea class="form-control" id="ticketDescription" rows="5" placeholder="Please describe the issue in detail." required></textarea>
-                        </div>
-                        <div class="mb-3">
-                            <label for="ticketRemarks" class="form-label">Remarks</label>
-                            <textarea class="form-control" id="ticketRemarks" rows="3" placeholder="Add any optional comments here..."></textarea>
-                        </div>
-                        <p class="text-danger small">* Required fields.</p>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-7">
+                                    <label for="ticketSubject" class="form-label">Subject *</label>
+                                    <select id="ticketSubject" class="form-select" required>
+                                        <option value="" disabled selected>Select a subject…</option>
+                                        <option value="ticket/training">Training</option>
+                                        <option value="ticket/migration">Migration</option>
+                                        <option value="ticket/setup">Setup</option>
+                                        <option value="ticket/correction">Correction</option>
+                                        <option value="ticket/bug-fix">Bug fix</option>
+                                        <option value="ticket/new-feature">New feature request</option>
+                                        <option value="ticket/feature-enhancement">Feature enhancement</option>
+                                        <option value="ticket/backend-workaround">Backend workaround</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-5">
+                                    <label for="ticketPriority" class="form-label">Priority *</label>
+                                    <select id="ticketPriority" class="form-select" required>
+                                        <option value="Low" selected>Low</option>
+                                        <option value="Normal">Medium</option>
+                                        <option value="Urgent">High</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="ticketExpiryDate" class="form-label">Expected Resolution Time *</label>
+                                <input type="datetime-local" class="form-control" id="ticketExpiryDate" required />
+                            </div>
+                            <div class="mb-3">
+                                <label for="ticketDescription" class="form-label">Description *</label>
+                                <textarea class="form-control" id="ticketDescription" rows="5" placeholder="Describe what happened, what you expected, and any impact." required></textarea>
+                            </div>
+                            <div>
+                                <label for="ticketRemarks" class="form-label">Remarks <span class="form-label-optional">Optional</span></label>
+                                <textarea class="form-control" id="ticketRemarks" rows="3" placeholder="Add context that may help the support team."></textarea>
+                            </div>
+                        </fieldset>
+                        <p class="form-required-note">* Required fields</p>
                     </form>
                 </div>
                 <div class="modal-footer">
@@ -278,41 +280,27 @@
 
     <div class="modal fade" id="viewInquiryDetailsModal" tabindex="-1" aria-labelledby="viewInquiryDetailsModalLabel" aria-describedby="inquiry-details-view" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content">
+            <div class="modal-content support-dialog">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="viewInquiryDetailsModalLabel">Inquiry Details</h5>
+                    <h2 class="modal-title fs-5" id="viewInquiryDetailsModalLabel">Inquiry details</h2>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div id="inquiry-details-view">
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Inquiry ID</label>
-                                <p class="fw-bold" id="inquiry-details-id">#INQ-...</p>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Date Submitted</label>
-                                <p id="inquiry-details-date">...</p>
-                            </div>
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Outcome</label>
-                                <div id="inquiry-details-outcome"></div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Inquired By</label>
-                                <p id="inquiry-details-inquiredBy">...</p>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-sm">Topic</label>
-                            <p id="inquiry-details-topic">...</p>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-sm">Description</label>
-                            <p id="inquiry-details-description" class="bg-light p-3 rounded" style="white-space: pre-wrap;">...</p>
-                        </div>
+                    <div id="inquiry-details-view" class="support-record">
+                        <dl class="support-record-grid">
+                            <div><dt>Inquiry ID</dt><dd id="inquiry-details-id">#INQ-…</dd></div>
+                            <div><dt>Submitted</dt><dd id="inquiry-details-date">Not available</dd></div>
+                            <div><dt>Outcome</dt><dd id="inquiry-details-outcome">Not available</dd></div>
+                            <div><dt>Submitted by</dt><dd id="inquiry-details-inquiredBy">Not available</dd></div>
+                        </dl>
+                        <section class="support-record-section" aria-labelledby="inquiry-topic-label">
+                            <h3 id="inquiry-topic-label">Topic</h3>
+                            <p id="inquiry-details-topic">Not available</p>
+                        </section>
+                        <section class="support-record-section" aria-labelledby="inquiry-description-label">
+                            <h3 id="inquiry-description-label">Inquiry</h3>
+                            <p id="inquiry-details-description" class="support-record-message">No description provided.</p>
+                        </section>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -323,61 +311,40 @@
     </div>
 
     <div class="modal fade" id="newInquiryModal" tabindex="-1" aria-labelledby="newInquiryModalLabel" aria-describedby="newInquiryModalDescription" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content support-dialog">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="newInquiryModalLabel">Compose Inquiry</h5>
+                    <h2 class="modal-title fs-5" id="newInquiryModalLabel">New inquiry</h2>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-muted" id="newInquiryModalDescription">Send a question to the support team.</p>
+                    <p class="support-dialog-description" id="newInquiryModalDescription">Ask the support team about accounts, sales, or management.</p>
                     <form id="inquiryForm">
-                        <div class="mb-3">
-                            <label for="inquiryTo" class="form-label">To: </label>
-                            <input type="email" class="form-control" id="inquiryTo" value="support@fintech.com" disabled readonly>
+                        <div class="support-form-context" aria-label="Inquiry recipient">
+                            <span>Send to</span>
+                            <strong>CBS Support team</strong>
                         </div>
-                        <div class="mb-3">
-                            <label for="inquirySubject" class="form-label">Subject: *</label>
+                        <fieldset class="support-form-section">
+                            <legend>Inquiry details</legend>
+                            <div class="mb-3">
+                            <label for="inquirySubject" class="form-label">Subject *</label>
                             <select class="form-select" id="inquirySubject" required>
-                                <option value="" disabled selected>Select an inquiry type...</option>
-                                <option value="Account Inquiry">Account Inquiry</option>
-                                <option value="Sales and Management">Sales and Management</option>
+                                <option value="" disabled selected>Select an inquiry type…</option>
+                                <option value="Account Inquiry">Account inquiry</option>
+                                <option value="Sales and Management">Sales and management</option>
                             </select>
                         </div>
-                        <div class="mb-3">
-                            <label for="inquiryMessage" class="form-label">Inquiry Details: *</label>
-                            <div class="text-editor-toolbar border border-bottom-0 rounded-top bg-light p-2">
-                                <span class="me-2">Normal</span>
-                                <button type="button" class="btn btn-light btn-sm"><b>B</b></button>
-                                <button type="button" class="btn btn-light btn-sm"><i>I</i></button>
-                                <button type="button" class="btn btn-light btn-sm"><u>U</u></button>
+                            <div>
+                                <label for="inquiryMessage" class="form-label">Inquiry Details *</label>
+                                <textarea class="form-control" id="inquiryMessage" rows="8" placeholder="Describe your question and include any relevant context." required></textarea>
                             </div>
-                            <textarea class="form-control" id="inquiryMessage" rows="8" placeholder="Please describe your inquiry in detail." required></textarea>
-                        </div>
-                        <p class="text-danger small"> All fields are required.</p>
+                        </fieldset>
+                        <p class="form-required-note">* Required fields</p>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" form="inquiryForm" class="btn btn-primary">Send Inquiry</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="notificationsModal" tabindex="-1" aria-labelledby="notificationsModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="notificationsModalLabel">Notifications</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="list-group">
-                        <a href="#" class="list-group-item list-group-item-action">
-                            <p class="mb-1">No new notifications.</p>
-                        </a>
-                    </div>
                 </div>
             </div>
         </div>
@@ -387,14 +354,31 @@
         <div class="modal-dialog modal-sm">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="userModalLabel">User Actions</h5>
+                    <h5 class="modal-title" id="userModalLabel">Your account</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="account-summary">
+                        <div class="account-avatar" aria-hidden="true"><i class="fas fa-user"></i></div>
+                        <div>
+                            <div class="account-name">@ViewBag.UserFullName</div>
+                            <div class="account-role">Client user</div>
+                        </div>
+                    </div>
+                    <dl class="account-metadata">
+                        <div>
+                            <dt>Client account</dt>
+                            <dd>@ViewBag.ClientId</dd>
+                        </div>
+                        <div>
+                            <dt>Workspace</dt>
+                            <dd>CBS Support</dd>
+                        </div>
+                    </dl>
                     <div class="d-grid">
                         <form asp-controller="Login" asp-action="Logout" method="post" class="d-grid">
-                            <button type="submit" class="btn btn-danger">
-                                <i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Logout
+                            <button type="submit" class="btn btn-outline-danger">
+                                <i class="fas fa-sign-out-alt me-2" aria-hidden="true"></i>Log out
                             </button>
                         </form>
                     </div>
@@ -405,67 +389,37 @@
 
     <div class="modal fade" id="viewTicketDetailsModal" tabindex="-1" aria-labelledby="viewTicketDetailsModalLabel" aria-describedby="ticket-details-view" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content">
+            <div class="modal-content support-dialog">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="viewTicketDetailsModalLabel">Ticket Details</h5>
+                    <h2 class="modal-title fs-5" id="viewTicketDetailsModalLabel">Ticket details</h2>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- This div shows the ticket details in read-only mode -->
-                    <div id="ticket-details-view">
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Ticket ID</label>
-                                <p class="fw-bold" id="details-id">#...</p>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Date Submitted</label>
-                                <p id="details-date">...</p>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Expected Resolution</label>
-                                <p id="details-expiryDate">...</p>
-                            </div>
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Status</label>
-                                <div id="details-status"></div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Priority</label>
-                                <div id="details-priority"></div>
-                            </div>
-                        </div>
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Created By</label>
-                                <p id="details-createdBy">...</p>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label-sm">Resolved By</label>
-                                <p id="details-resolvedBy">...</p>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-sm">Subject</label>
-                            <p id="details-subject">...</p>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-sm">Description</label>
-                            <p id="details-description" class="bg-light p-3 rounded" style="white-space: pre-wrap;">...</p>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-sm">Your Remarks</label>
-                            <p id="details-remarks" class="bg-light p-3 rounded" style="white-space: pre-wrap;">...</p>
-                        </div>
+                    <div id="ticket-details-view" class="support-record">
+                        <dl class="support-record-grid">
+                            <div><dt>Ticket ID</dt><dd id="details-id">#…</dd></div>
+                            <div><dt>Submitted</dt><dd id="details-date">Not available</dd></div>
+                            <div><dt>Expected resolution</dt><dd id="details-expiryDate">Not available</dd></div>
+                            <div><dt>Status</dt><dd id="details-status">Not available</dd></div>
+                            <div><dt>Priority</dt><dd id="details-priority">Not available</dd></div>
+                            <div><dt>Created by</dt><dd id="details-createdBy">Not available</dd></div>
+                            <div><dt>Resolved by</dt><dd id="details-resolvedBy">Not available</dd></div>
+                        </dl>
+                        <section class="support-record-section" aria-labelledby="ticket-subject-label">
+                            <h3 id="ticket-subject-label">Subject</h3>
+                            <p id="details-subject">Not available</p>
+                        </section>
+                        <section class="support-record-section" aria-labelledby="ticket-description-label">
+                            <h3 id="ticket-description-label">Request</h3>
+                            <p id="details-description" class="support-record-message">No description provided.</p>
+                        </section>
+                        <section class="support-record-section" aria-labelledby="ticket-remarks-label">
+                            <h3 id="ticket-remarks-label">Your remarks</h3>
+                            <p id="details-remarks" class="support-record-message">No remarks provided.</p>
+                        </section>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <!-- The "Edit" button will be shown/hidden by JavaScript -->
-                    <button type="button" class="btn btn-outline-primary me-auto" id="editTicketBtn" style="display: none;">
-                        <i class="fas fa-pencil-alt me-2"></i>Edit Ticket
-                    </button>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>

@@ -124,6 +124,11 @@ document.addEventListener("DOMContentLoaded", () => {
         chatPanelBody.scrollTop = chatPanelBody.scrollHeight;
     };
 
+    const isNearChatBottom = () => {
+        if (!chatPanelBody) return true;
+        return chatPanelBody.scrollHeight - chatPanelBody.scrollTop - chatPanelBody.clientHeight < 80;
+    };
+
     function escapeHtml(text) {
         if (text === null || typeof text === 'undefined') return '';
         const div = document.createElement('div');
@@ -383,6 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function displayMessage(msg, isHistory = false) {
         if (!chatPanelBody || !msg?.dateTime) return;
+        const shouldAutoScroll = !isHistory && isNearChatBottom();
         const messageId = Number(msg.id);
         if (Number.isSafeInteger(messageId)
             && chatPanelBody.querySelector(`[data-message-id="${messageId}"]`)) {
@@ -407,7 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
         row.appendChild(bubble);
         chatPanelBody.appendChild(row);
 
-        if (!isHistory) scrollToBottom();
+        if (shouldAutoScroll) scrollToBottom();
     }
 
     function getConversationName(conversation) {
@@ -881,6 +887,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return allNotifications;
         } catch (error) {
             console.error('Error loading client notifications:', error);
+            renderClientNotificationLoadError();
             return [];
         }
     }
@@ -924,14 +931,6 @@ document.addEventListener("DOMContentLoaded", () => {
             if (count > 0) {
                 badge.textContent = count > 99 ? '99+' : count.toString();
                 badge.style.display = 'block';
-
-                if (count > clientUnreadNotificationCount) {
-                    const btn = badge.closest('.client-notification-btn');
-                    if (btn) {
-                        btn.classList.add('client-notification-shake');
-                        setTimeout(() => btn.classList.remove('client-notification-shake'), 500);
-                    }
-                }
             } else {
                 badge.style.display = 'none';
             }
@@ -960,11 +959,19 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         notifications.forEach(notification => {
-            const item = document.createElement('div');
+            const item = document.createElement('button');
+            item.type = 'button';
             item.className = `notification-item${notification.isRead ? '' : ' unread'}`;
             item.dataset.id = String(notification.id);
-            item.dataset.entityId = String(notification.entityId);
-            item.dataset.entityType = String(notification.entityType);
+            item.dataset.entityId = String(notification.entityId ?? '');
+            item.dataset.entityType = String(notification.entityType ?? '');
+
+            if (!notification.isRead) {
+                const unread = document.createElement('span');
+                unread.className = 'visually-hidden notification-unread-label';
+                unread.textContent = 'Unread notification. ';
+                item.appendChild(unread);
+            }
 
             const content = document.createElement('div');
             content.className = 'notification-content';
@@ -973,6 +980,7 @@ document.addEventListener("DOMContentLoaded", () => {
             iconWrapper.className = `notification-icon ${notification.type}`;
             const icon = document.createElement('i');
             icon.className = notification.icon;
+            icon.setAttribute('aria-hidden', 'true');
             iconWrapper.appendChild(icon);
 
             const text = document.createElement('div');
@@ -986,15 +994,33 @@ document.addEventListener("DOMContentLoaded", () => {
             message.className = 'notification-message';
             message.textContent = notification.message;
 
-            const time = document.createElement('div');
+            const time = document.createElement('time');
             time.className = 'notification-time';
             time.textContent = notification.timeAgo;
+            if (notification.createdAt) time.dateTime = notification.createdAt;
 
             text.append(title, message, time);
             content.append(iconWrapper, text);
             item.appendChild(content);
             container.appendChild(item);
         });
+    }
+
+    function renderClientNotificationLoadError() {
+        const container = document.getElementById('client-notification-list');
+        if (!container) return;
+        const state = document.createElement('div');
+        state.className = 'notification-empty';
+        state.setAttribute('role', 'alert');
+        const message = document.createElement('p');
+        message.textContent = "Couldn't load notifications. Check your connection and try again.";
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'btn btn-sm btn-outline-primary';
+        retry.textContent = 'Retry';
+        retry.addEventListener('click', loadClientNotifications, { once: true });
+        state.append(message, retry);
+        container.replaceChildren(state);
     }
 
     async function markClientNotificationAsRead(notificationId) {
@@ -1009,6 +1035,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const notificationElement = document.querySelector(`[data-id="${notificationId}"]`);
                 if (notificationElement && notificationElement.classList.contains('unread')) {
                     notificationElement.classList.remove('unread');
+                    notificationElement.querySelector('.notification-unread-label')?.remove();
                 }
                 const changed = await response.json();
                 updateClientNotificationBadge(changed.unreadCount || 0);
@@ -1029,15 +1056,16 @@ document.addEventListener("DOMContentLoaded", () => {
             if (response.ok) {
                 document.querySelectorAll('.notification-item.unread').forEach(item => {
                     item.classList.remove('unread');
+                    item.querySelector('.notification-unread-label')?.remove();
                 });
 
                 const result = await response.json();
                 updateClientNotificationBadge(result.unreadCount || 0);
-                alert('All notifications marked as read');
+                showNotificationToast('All notifications marked as read.', 'success');
             }
         } catch (error) {
             console.error('Error marking all notifications as read:', error);
-            alert('Failed to mark notifications as read');
+            showNotificationToast('Notifications could not be marked as read.', 'error');
         }
     }
 
@@ -1060,12 +1088,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 if (isVisible) {
                     notificationMenu.classList.remove('show');
+                    notificationBtn.setAttribute('aria-expanded', 'false');
                     return;
                 }
 
                 try {
                     await loadClientNotifications();
                     notificationMenu.classList.add('show');
+                    notificationBtn.setAttribute('aria-expanded', 'true');
+                    notificationMenu.querySelector('.notification-item, #client-mark-all-read-btn')?.focus();
                 } catch (error) {
                     console.error('❌ Error loading notifications:', error);
                 }
@@ -1074,6 +1105,15 @@ document.addEventListener("DOMContentLoaded", () => {
             document.addEventListener('click', (e) => {
                 if (!e.target.closest('.client-notification-container')) {
                     notificationMenu.classList.remove('show');
+                    notificationBtn.setAttribute('aria-expanded', 'false');
+                }
+            });
+
+            notificationMenu.addEventListener('keydown', e => {
+                if (e.key === 'Escape') {
+                    notificationMenu.classList.remove('show');
+                    notificationBtn.setAttribute('aria-expanded', 'false');
+                    notificationBtn.focus();
                 }
             });
 
@@ -1363,7 +1403,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const labels = {
             connected: "Connected",
             reconnecting: "Reconnecting…",
-            reconnected: "Connected",
+            reconnected: "Connection restored",
             disconnected: "Disconnected"
         };
         if (connectionStatus) {
@@ -1374,6 +1414,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (state === "reconnected") {
             loadConversations();
             advanceActiveReadCursor();
+            window.setTimeout(() => {
+                if (connectionStatus?.dataset.state === "reconnected") {
+                    connectionStatus.textContent = "Connected";
+                    connectionStatus.dataset.state = "connected";
+                }
+            }, 3000);
         }
     });
 

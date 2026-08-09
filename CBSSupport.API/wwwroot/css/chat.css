@@ -1,31 +1,26 @@
 ﻿/* === MODERN DESIGN SYSTEM === */
 :root {
-    /* Colors */
-    --primary-color: #2563eb;
-    --primary-hover: #1d4ed8;
-    --primary-light: #dbeafe;
-    --secondary-color: #64748b;
-    --success-color: #059669;
-    --warning-color: #d97706;
-    --danger-color: #dc2626;
-    --info-color: #0891b2;
-    /* Backgrounds */
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8fafc;
-    --bg-tertiary: #f1f5f9;
-    --bg-hover: #f3f4f6;
-    /* Text Colors */
-    --text-primary: #0f172a;
-    --text-secondary: #475569;
-    --text-muted: #64748b;
-    --text-light: #94a3b8;
-    /* Border & Shadows */
-    --border-color: #e2e8f0;
-    --border-light: #f1f5f9;
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+    /* Compatibility aliases for the shared CBS Support design tokens. */
+    --primary-color: var(--color-accent);
+    --primary-hover: var(--color-accent-hover);
+    --primary-light: var(--color-accent-subtle);
+    --secondary-color: var(--color-text-secondary);
+    --success-color: var(--color-success);
+    --warning-color: var(--color-warning);
+    --danger-color: var(--color-danger);
+    --info-color: var(--color-info);
+    --bg-primary: var(--color-bg);
+    --bg-secondary: var(--color-bg-subtle);
+    --bg-tertiary: var(--color-bg-muted);
+    --bg-hover: var(--color-bg-muted);
+    --text-primary: var(--color-text);
+    --text-secondary: var(--color-text-secondary);
+    --text-muted: var(--color-text-secondary);
+    --text-light: var(--color-text-muted);
+    --border-color: var(--color-border);
+    --border-light: var(--color-border);
+    --shadow-lg: var(--shadow-md);
+    --shadow-xl: var(--shadow-md);
     /* Spacing */
     --space-1: 0.25rem;
     --space-2: 0.5rem;
@@ -36,20 +31,8 @@
     --space-8: 2rem;
     --space-10: 2.5rem;
     --space-12: 3rem;
-    /* Border Radius */
-    --radius-sm: 0.375rem;
-    --radius-md: 0.5rem;
-    --radius-lg: 0.75rem;
-    --radius-xl: 1rem;
-    --radius-2xl: 1.5rem;
-    /* Typography */
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --text-xs: 0.75rem;
-    --text-sm: 0.875rem;
-    --text-base: 1rem;
-    --text-lg: 1.125rem;
-    --text-xl: 1.25rem;
-    --text-2xl: 1.5rem;
+    --radius-xl: var(--radius-lg);
+    --radius-2xl: var(--radius-lg);
 }
 
 /* === GLOBAL RESET & BASE === */
@@ -77,7 +60,7 @@ body {
     left: 0;
     right: 0;
     height: 64px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--color-bg);
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
@@ -135,7 +118,7 @@ body {
     font-size: var(--text-base);
     cursor: pointer;
     transition: all 0.2s ease;
-    backdrop-filter: blur(10px);
+    backdrop-filter: none;
 }
 
     .btn-icon:hover {
@@ -256,27 +239,27 @@ body {
 }
 
 .avatar-bg-success {
-    background: linear-gradient(135deg, #059669, #047857);
+    background: var(--color-bg-muted);
 }
 
 .avatar-bg-blue {
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: var(--color-bg-muted);
 }
 
 .avatar-bg-purple {
-    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    background: var(--color-bg-muted);
 }
 
 .avatar-bg-orange {
-    background: linear-gradient(135deg, #ea580c, #dc2626);
+    background: var(--color-bg-muted);
 }
 
 .avatar-bg-cyan {
-    background: linear-gradient(135deg, #0891b2, #0e7490);
+    background: var(--color-bg-muted);
 }
 
 .avatar-bg-secondary {
-    background: linear-gradient(135deg, #64748b, #475569);
+    background: var(--color-bg-muted);
 }
 
 .conversation-item .fw-bold {
@@ -338,7 +321,7 @@ body {
     flex: 1;
     overflow-y: auto;
     padding: var(--space-4);
-    background: linear-gradient(to bottom, #f8fafc, #f1f5f9);
+    background: var(--color-bg-subtle);
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -348,20 +331,8 @@ body {
     display: flex;
     margin-bottom: var(--space-4);
     max-width: 80%;
-    animation: fadeInUp 0.3s ease;
+    animation: chat-message-in var(--transition-base) forwards;
     width: fit-content;
-}
-
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 .message-row.sent {
@@ -385,8 +356,8 @@ body {
 }
 
 .message-row.sent .message-bubble {
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
-    color: white;
+    background: var(--color-accent-subtle);
+    color: var(--color-text);
     border-bottom-right-radius: var(--radius-sm);
 }
 
@@ -515,8 +486,8 @@ body {
     }
 
 #send-button {
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
-    border: none;
+    background: var(--color-accent);
+    border: 1px solid var(--color-accent);
     color: white;
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-lg);
@@ -530,9 +501,9 @@ body {
 }
 
     #send-button:hover {
-        background: linear-gradient(135deg, var(--primary-hover), #1e40af);
-        transform: translateY(-1px);
-        box-shadow: var(--shadow-md);
+        background: var(--color-accent-hover);
+        transform: none;
+        box-shadow: none;
     }
 
     #send-button:disabled {
@@ -572,7 +543,7 @@ body {
     }
 
     .history-panel .panel-header {
-        background: linear-gradient(135deg, var(--bg-tertiary), var(--bg-secondary));
+        background: var(--color-bg-subtle);
         border-bottom: 1px solid var(--border-color);
         padding: var(--space-3) var(--space-4);
         border-radius: 0;
@@ -721,57 +692,57 @@ body {
 }
 
 .badge-status-completed {
-    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    background: var(--color-success-bg);
     color: #065f46;
     border: 1px solid #86efac;
 }
 
 .badge-status-resolved {
-    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    background: var(--color-success-bg);
     color: #065f46;
     border: 1px solid #86efac;
 }
 
 .badge-outcome-completed {
-    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    background: var(--color-success-bg);
     color: #065f46;
     border: 1px solid #86efac;
 }
 
 .badge-outcome-pending {
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    background: var(--color-pending-bg);
     color: #92400e;
     border: 1px solid #fcd34d;
 }
 
 .badge-status-pending,
 .badge-status-open {
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    background: var(--color-info-bg);
     color: #92400e;
     border: 1px solid #fcd34d;
 }
 
 .badge-priority-low {
-    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+    background: var(--color-neutral-bg);
     color: #1e40af;
     border: 1px solid #93c5fd;
 }
 
 .badge-priority-normal,
 .badge-priority-medium {
-    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    background: var(--color-warning-bg);
     color: #065f46;
     border: 1px solid #86efac;
 }
 
 .badge-priority-high {
-    background: linear-gradient(135deg, #fef3c7, #fde68a);
+    background: var(--color-danger-bg);
     color: #b45309;
     border: 1px solid #fcd34d;
 }
 
 .badge-priority-urgent {
-    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    background: var(--color-danger-bg);
     color: #991b1b;
     border: 1px solid #fca5a5;
 }
@@ -868,14 +839,14 @@ body {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+    background: var(--color-accent);
     color: white;
 }
 
     .btn-primary:hover {
-        background: linear-gradient(135deg, var(--primary-hover), #1e40af);
-        transform: translateY(-1px);
-        box-shadow: var(--shadow-md);
+        background: var(--color-accent-hover);
+        transform: none;
+        box-shadow: none;
         color: white;
         text-decoration: none;
     }
@@ -893,14 +864,14 @@ body {
     }
 
 .btn-success {
-    background: linear-gradient(135deg, var(--success-color), #047857);
-    color: white;
+    background: var(--color-bg);
+    color: var(--color-success);
 }
 
     .btn-success:hover {
-        background: linear-gradient(135deg, #047857, #065f46);
-        transform: translateY(-1px);
-        box-shadow: var(--shadow-md);
+        background: var(--color-success-bg);
+        transform: none;
+        box-shadow: none;
         color: white;
         text-decoration: none;
     }
@@ -1205,7 +1176,7 @@ a:focus-visible {
     font-size: var(--text-base);
     cursor: pointer;
     transition: all 0.2s ease;
-    backdrop-filter: blur(10px);
+    backdrop-filter: none;
 }
 
 .client-notification-btn:hover {
@@ -1390,12 +1361,12 @@ a:focus-visible {
 
 /* Badge animations for client notifications */
 .client-notification-btn .badge {
-    animation: pulse 2s infinite;
+    animation: none;
 }
 
 /* Notification bell shake animation for client */
 .client-notification-shake {
-    animation: shake 0.5s ease-in-out;
+    animation: none;
 }
 
 @keyframes shake {
