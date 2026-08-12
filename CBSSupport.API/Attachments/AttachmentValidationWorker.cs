@@ -72,56 +72,59 @@ public sealed class AttachmentValidationWorker(
                 await RejectAsync(attachment, AttachmentRejectionCodes.InvalidContent, cancellationToken);
                 return;
             }
-            await using var stored = await storage.OpenReadAsync(
+            AttachmentContentValidation validation;
+            await using (var stored = await storage.OpenReadAsync(
                 attachment.QuarantineKey,
-                cancellationToken);
-            if (stored is null || !ETagEquals(stored.Info.ETag, attachment.SourceETag))
+                cancellationToken))
             {
-                await RejectAsync(
-                    attachment,
-                    AttachmentRejectionCodes.ObjectChangedAfterComplete,
-                    cancellationToken);
-                return;
-            }
-            if (stored.Info.Size != attachment.DeclaredSize
-                || stored.Info.Size is < 1
-                || stored.Info.Size > options.MaximumFileBytes)
-            {
-                await RejectAsync(attachment, AttachmentRejectionCodes.SizeMismatch, cancellationToken);
-                return;
-            }
-            if (!string.Equals(
-                NormalizeMediaType(stored.Info.ContentType),
-                NormalizeMediaType(attachment.DeclaredMediaType),
-                StringComparison.OrdinalIgnoreCase))
-            {
-                await RejectAsync(
-                    attachment,
-                    AttachmentRejectionCodes.ContentTypeMismatch,
-                    cancellationToken);
-                return;
-            }
+                if (stored is null || !ETagEquals(stored.Info.ETag, attachment.SourceETag))
+                {
+                    await RejectAsync(
+                        attachment,
+                        AttachmentRejectionCodes.ObjectChangedAfterComplete,
+                        cancellationToken);
+                    return;
+                }
+                if (stored.Info.Size != attachment.DeclaredSize
+                    || stored.Info.Size is < 1
+                    || stored.Info.Size > options.MaximumFileBytes)
+                {
+                    await RejectAsync(attachment, AttachmentRejectionCodes.SizeMismatch, cancellationToken);
+                    return;
+                }
+                if (!string.Equals(
+                    NormalizeMediaType(stored.Info.ContentType),
+                    NormalizeMediaType(attachment.DeclaredMediaType),
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    await RejectAsync(
+                        attachment,
+                        AttachmentRejectionCodes.ContentTypeMismatch,
+                        cancellationToken);
+                    return;
+                }
 
-            var validation = await AttachmentContentValidator.ValidateAsync(
-                stored.Content,
-                attachment.DisplayName,
-                attachment.DeclaredMediaType,
-                options.MaximumFileBytes,
-                cancellationToken,
-                options.StructuralValidation);
-            if (!validation.Valid
-                || validation.DetectedMediaType is null
-                || validation.CanonicalContent is null)
-            {
-                await RejectAsync(
-                    attachment,
-                    validation.RejectionCode ?? AttachmentRejectionCodes.InvalidContent,
-                    cancellationToken);
-                return;
+                validation = await AttachmentContentValidator.ValidateAsync(
+                    stored.Content,
+                    attachment.DisplayName,
+                    attachment.DeclaredMediaType,
+                    options.MaximumFileBytes,
+                    cancellationToken,
+                    options.StructuralValidation);
+                if (!validation.Valid
+                    || validation.DetectedMediaType is null
+                    || validation.CanonicalContent is null)
+                {
+                    await RejectAsync(
+                        attachment,
+                        validation.RejectionCode ?? AttachmentRejectionCodes.InvalidContent,
+                        cancellationToken);
+                    return;
+                }
             }
 
             var readyKey = attachment.ReadyKey
-                ?? $"ready/{attachment.ClientId}/{attachment.Id:D}";
+                ?? $"{attachment.Id:D}{AttachmentContentValidator.GetExtensionForMediaType(validation.DetectedMediaType)}";
             if (attachment.State == AttachmentStates.StructuralValidation)
             {
                 attachment = await repository.MarkStructurallyValidatedAsync(

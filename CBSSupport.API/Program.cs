@@ -34,9 +34,9 @@ builder.Services.AddSingleton(signalRDeploymentOptions);
 builder.Services.AddSingleton<IHubConnectionRevocationNotifier, LocalHubConnectionRevocationNotifier>();
 
 builder.WebHost.ConfigureKestrel(options =>
-    options.Limits.MaxRequestBodySize = RequestSizeLimits.MaximumBodySizeBytes);
+    options.Limits.MaxRequestBodySize = RequestSizeLimits.MaximumAttachmentBodySizeBytes);
 builder.Services.Configure<IISServerOptions>(options =>
-    options.MaxRequestBodySize = RequestSizeLimits.MaximumBodySizeBytes);
+    options.MaxRequestBodySize = RequestSizeLimits.MaximumAttachmentBodySizeBytes);
 builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = RequestSizeLimits.MaximumBodySizeBytes);
 
@@ -200,9 +200,11 @@ builder.Services.AddSingleton(provider => new AttachmentUiCapability(
     attachmentOptions,
     provider.GetService<IFileScanner>(),
     provider.GetRequiredService<TimeProvider>()));
-builder.Services.AddSingleton<IFileStorage>(_ =>
+builder.Services.AddSingleton<IFileStorage>(provider =>
     attachmentOptions.Enabled
-        ? new R2FileStorage(attachmentOptions.R2)
+        ? new LocalAttachmentStorage(
+            provider.GetRequiredService<IWebHostEnvironment>(),
+            attachmentOptions)
         : new DisabledFileStorage());
 builder.Services.AddSingleton<IAttachmentService>(provider => new AttachmentService(
     provider.GetRequiredService<IAttachmentRepository>(),

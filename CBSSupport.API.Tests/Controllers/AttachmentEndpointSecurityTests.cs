@@ -38,6 +38,7 @@ public sealed partial class AttachmentEndpointSecurityTests
 
     [Theory]
     [InlineData("POST", "/api/v1/conversations/25/attachment-uploads")]
+    [InlineData("PUT", "/api/v1/attachments/8d887a42-bd86-45d3-a32e-fc67a3ea1550/upload")]
     [InlineData("DELETE", "/api/v1/attachments/8d887a42-bd86-45d3-a32e-fc67a3ea1550")]
     public async Task CookieAuthenticatedUnsafeAttachmentRequest_WithoutAntiforgery_Returns400(
         string method,
@@ -54,6 +55,11 @@ public sealed partial class AttachmentEndpointSecurityTests
                     "application/pdf",
                     100));
         }
+        else if (method == "PUT")
+        {
+            request.Content = new ByteArrayContent(new byte[100]);
+            request.Content.Headers.ContentType = new("application/pdf");
+        }
         var before = _factory.Service.TotalMutationCalls;
 
         using var response = await _client.SendAsync(request);
@@ -63,13 +69,14 @@ public sealed partial class AttachmentEndpointSecurityTests
     }
 
     [Fact]
-    public async Task CookieAuthenticatedPostAndDelete_WithAntiforgery_ReachAttachmentService()
+    public async Task CookieAuthenticatedPostPutAndDelete_WithAntiforgery_ReachAttachmentService()
     {
         var browser = await CreateBrowserSessionAsync(
             _factory,
             _client,
             AllowedClientId);
         var createCallsBefore = _factory.Service.CreateCalls;
+        var uploadCallsBefore = _factory.Service.UploadCalls;
         var cancelCallsBefore = _factory.Service.CancelCalls;
         using var post = CreateUnsafeRequest(
             HttpMethod.Post,
@@ -82,6 +89,15 @@ public sealed partial class AttachmentEndpointSecurityTests
                     100)));
         using var postResponse = await _client.SendAsync(post);
 
+        using var uploadContent = new ByteArrayContent(new byte[100]);
+        uploadContent.Headers.ContentType = new("application/pdf");
+        using var put = CreateUnsafeRequest(
+            HttpMethod.Put,
+            $"/api/v1/attachments/{FakeAttachmentService.ReadyId:D}/upload",
+            browser,
+            uploadContent);
+        using var putResponse = await _client.SendAsync(put);
+
         using var delete = CreateUnsafeRequest(
             HttpMethod.Delete,
             $"/api/v1/attachments/{FakeAttachmentService.ReadyId:D}",
@@ -89,8 +105,11 @@ public sealed partial class AttachmentEndpointSecurityTests
         using var deleteResponse = await _client.SendAsync(delete);
 
         Assert.Equal(HttpStatusCode.Accepted, postResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, putResponse.StatusCode);
+        Assert.NotNull(putResponse.Headers.ETag);
         Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
         Assert.Equal(createCallsBefore + 1, _factory.Service.CreateCalls);
+        Assert.Equal(uploadCallsBefore + 1, _factory.Service.UploadCalls);
         Assert.Equal(cancelCallsBefore + 1, _factory.Service.CancelCalls);
     }
 
@@ -192,7 +211,27 @@ public sealed partial class AttachmentEndpointSecurityTests
     }
 
     [Fact]
-    public async Task ContentRedirectRequiresReadyAuthorizedAttachment()
+    public async Task OtherTenantCannotUploadBytesForAttachmentId()
+    {
+        var browser = await CreateBrowserSessionAsync(
+            _factory,
+            _client,
+            OtherClientId);
+        using var content = new ByteArrayContent(new byte[100]);
+        content.Headers.ContentType = new("application/pdf");
+        using var request = CreateUnsafeRequest(
+            HttpMethod.Put,
+            $"/api/v1/attachments/{FakeAttachmentService.ReadyId:D}/upload",
+            browser,
+            content);
+
+        using var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ContentStreamRequiresReadyAuthorizedAttachment()
     {
         var allowedCookie = _factory.CreateAuthenticationCookie(AllowedClientId);
         using var readyRequest = CreateAuthenticatedRequest(
@@ -214,11 +253,10 @@ public sealed partial class AttachmentEndpointSecurityTests
             otherCookie);
         using var otherTenantResponse = await _client.SendAsync(otherTenantRequest);
 
-        Assert.Equal(HttpStatusCode.Redirect, readyResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, readyResponse.StatusCode);
         Assert.Equal("nosniff", readyResponse.Headers.GetValues("X-Content-Type-Options").Single());
-        Assert.Equal(
-            "https://r2.example.test/ready/object?signature=short-lived",
-            readyResponse.Headers.Location?.ToString());
+        Assert.Equal("application/pdf", readyResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("attachment", readyResponse.Content.Headers.ContentDisposition?.DispositionType);
         Assert.Equal(HttpStatusCode.NotFound, rejectedResponse.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, otherTenantResponse.StatusCode);
     }
@@ -397,11 +435,13 @@ public sealed partial class AttachmentEndpointSecurityTests
         public static readonly Guid RejectedId = Guid.Parse(
             "2cbfc79f-9d3b-4300-9e65-d56f032ea44c");
         private int _createCalls;
+        private int _uploadCalls;
         private int _cancelCalls;
 
         public int CreateCalls => _createCalls;
+        public int UploadCalls => _uploadCalls;
         public int CancelCalls => _cancelCalls;
-        public int TotalMutationCalls => CreateCalls + CancelCalls;
+        public int TotalMutationCalls => CreateCalls + UploadCalls + CancelCalls;
 
         public Task<AttachmentCommandResult<AttachmentUploadIntent>> CreateUploadIntentAsync(
             long conversationId,
@@ -437,7 +477,7 @@ public sealed partial class AttachmentEndpointSecurityTests
                     AttachmentCommandStatus.Accepted,
                     new AttachmentUploadIntent(
                         ReadyId,
-                        "https://r2.example.test/quarantine/object?signature=short-lived",
+                        $"/api/v1/attachments/{ReadyId:D}/upload",
                         DateTimeOffset.UtcNow.AddMinutes(5),
                         new Dictionary<string, string>
                         {
@@ -464,6 +504,30 @@ public sealed partial class AttachmentEndpointSecurityTests
                     : new AttachmentCommandResult<AttachmentStatusResponse>(
                         AttachmentCommandStatus.Unavailable,
                         ErrorCode: "attachment_not_found"));
+
+        public Task<AttachmentCommandResult<StoredObjectInfo>> UploadAsync(
+            Guid attachmentId,
+            AttachmentActor actor,
+            Stream content,
+            string? mediaType,
+            long? contentLength,
+            CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _uploadCalls);
+            return Task.FromResult(
+                actor.ClientId == AllowedClientId && attachmentId == ReadyId
+                    ? new AttachmentCommandResult<StoredObjectInfo>(
+                        AttachmentCommandStatus.Success,
+                        new StoredObjectInfo(
+                            $"{attachmentId:D}.pending.pdf",
+                            contentLength ?? 0,
+                            "test-etag",
+                            mediaType,
+                            new Dictionary<string, string>()))
+                    : new AttachmentCommandResult<StoredObjectInfo>(
+                        AttachmentCommandStatus.Unavailable,
+                        ErrorCode: "attachment_not_found"));
+        }
 
         public Task<AttachmentStatusResponse?> GetStatusAsync(
             Guid attachmentId,
@@ -501,17 +565,21 @@ public sealed partial class AttachmentEndpointSecurityTests
                         ErrorCode: "attachment_not_found"));
         }
 
-        public Task<AttachmentCommandResult<string>> CreateContentUrlAsync(
+        public Task<AttachmentCommandResult<AttachmentContentRead>> OpenContentAsync(
             Guid attachmentId,
             AttachmentActor actor,
             string disposition,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(
                 actor.ClientId == AllowedClientId && attachmentId == ReadyId
-                    ? new AttachmentCommandResult<string>(
+                    ? new AttachmentCommandResult<AttachmentContentRead>(
                         AttachmentCommandStatus.Success,
-                        "https://r2.example.test/ready/object?signature=short-lived")
-                    : new AttachmentCommandResult<string>(
+                        new AttachmentContentRead(
+                            new MemoryStream("%PDF-test"u8.ToArray()),
+                            "report.pdf",
+                            "application/pdf",
+                            "attachment"))
+                    : new AttachmentCommandResult<AttachmentContentRead>(
                         AttachmentCommandStatus.Unavailable,
                         ErrorCode: "attachment_not_found"));
 

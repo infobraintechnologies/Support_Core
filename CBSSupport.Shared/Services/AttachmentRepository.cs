@@ -1153,6 +1153,35 @@ public sealed class AttachmentRepository(
             await transaction.RollbackAsync(CancellationToken.None);
             return;
         }
+        if (row.MessageId is not null)
+        {
+            const string deactivateCompanyFileSql = """
+                UPDATE admin.files company_file
+                SET status = FALSE,
+                    edit_date = @Now
+                WHERE company_file.id = @AttachmentId::text
+                  AND company_file.table_name = 'digital.instructions'
+                  AND company_file.table_id = @MessageId::text
+                  AND company_file.file_name = @ReadyKey;
+                """;
+            var deactivated = await connection.ExecuteAsync(new CommandDefinition(
+                deactivateCompanyFileSql,
+                new
+                {
+                    AttachmentId = attachmentId,
+                    MessageId = row.MessageId.Value,
+                    row.ReadyKey,
+                    Now = now
+                },
+                transaction,
+                cancellationToken: cancellationToken));
+            if (deactivated != 1)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw new InvalidOperationException(
+                    "Bound attachment company file metadata is missing or conflicting.");
+            }
+        }
         await InsertAuditAsync(
             connection,
             transaction,
@@ -1191,7 +1220,18 @@ public sealed class AttachmentRepository(
         CancellationToken cancellationToken)
     {
         var condition = requireBoundReady
-            ? "AND state = 'Ready' AND message_id IS NOT NULL"
+            ? """
+              AND state = 'Ready'
+              AND message_id IS NOT NULL
+              AND EXISTS (
+                    SELECT 1
+                    FROM admin.files company_file
+                    WHERE company_file.id = digital.attachments.id::text
+                      AND company_file.table_name = 'digital.instructions'
+                      AND company_file.table_id = digital.attachments.message_id::text
+                      AND company_file.file_name = digital.attachments.ready_key
+                      AND company_file.status IS TRUE)
+              """
             : string.Empty;
         var sql = Columns + "\n" + $$"""
             WHERE id = @AttachmentId

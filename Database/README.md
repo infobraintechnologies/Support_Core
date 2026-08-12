@@ -85,10 +85,19 @@ tests to shared, staging, or production databases from a developer workstation.
    claim that the operational wait has occurred.
 12. Apply the ordered attachment schema and forward-fix migrations while the
    feature remains disabled, including
-   `202608031000_structural_attachment_validation_mode.sql`. Configure private R2
-   and explicitly select `Attachments:SecurityMode=StructuralValidationOnly`.
+   `202608031000_structural_attachment_validation_mode.sql`. Provision durable
+   write access to `CBSSupport.API/wwwroot/Uploads` and explicitly select
+   `Attachments:SecurityMode=StructuralValidationOnly`.
    Validate the structural worker and record team approval of residual malware
    risk and compensating controls before any separately approved activation.
+   Before the application build that requires company file metadata, run
+   `Preflight/202608111000_verify_admin_files_attachment_integration.sql`, resolve
+   every incompatible identity/conflict result, and apply
+   `202608111010_integrate_admin_files_attachments.sql` while attachments remain
+   disabled. Rerun the preflight: missing, conflicting, invalid binding/identity,
+   filename, inactive-status, and staged-projection counts must be zero. The
+   runtime role requires only the reviewed `SELECT`, `INSERT`, and `UPDATE`
+   privileges on the externally owned `admin.files`; it must not own that table.
 13. Apply `202608061000_add_persisted_security_stamps.sql` after confirming that
     `pgcrypto.gen_random_bytes(integer)` is installed and that the owners of both
     externally managed identity tables approve the additive columns. Verify every
@@ -151,6 +160,7 @@ new empty local database, then execute the ordered SQL manually through the
 reviewed deployment process. Never run this bootstrap against the shared IP
 database.
 
-Attachment activation, R2 CORS, worker topology, health degradation, and the
+Attachment activation, local-filesystem permissions/durability, worker topology,
+health degradation, and the
 24-hour gate are detailed in
 [`Operations/ATTACHMENTS.md`](Operations/ATTACHMENTS.md).

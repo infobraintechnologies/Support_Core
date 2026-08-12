@@ -83,8 +83,8 @@ public sealed class AttachmentService(
 
         var now = timeProvider.GetUtcNow();
         var attachmentId = Guid.NewGuid();
-        var quarantineKey =
-            $"quarantine/{access.ClientId.Value}/{attachmentId:D}";
+        var extension = Path.GetExtension(safeDisplayName).ToLowerInvariant();
+        var quarantineKey = $"{attachmentId:D}.pending{extension}";
         var result = await repository.CreateIntentAsync(
             new AttachmentIntentRecord(
                 attachmentId,
@@ -107,24 +107,84 @@ public sealed class AttachmentService(
         }
 
         var lifetime = TimeSpan.FromSeconds(options.UploadUrlLifetimeSeconds);
-        var uploadUrl = await storage.CreatePresignedPutUrlAsync(
-            quarantineKey,
-            result.Value.DeclaredMediaType,
-            result.Value.DeclaredSize,
-            lifetime,
-            cancellationToken);
         var summary = ToSummary(result.Value);
         return new(
             AttachmentCommandStatus.Accepted,
             new AttachmentUploadIntent(
                 attachmentId,
-                uploadUrl,
+                $"/api/v1/attachments/{attachmentId:D}/upload",
                 now.Add(lifetime),
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Content-Type"] = result.Value.DeclaredMediaType
                 },
                 summary));
+    }
+
+    public async Task<AttachmentCommandResult<StoredObjectInfo>> UploadAsync(
+        Guid attachmentId,
+        AttachmentActor actor,
+        Stream content,
+        string? mediaType,
+        long? contentLength,
+        CancellationToken cancellationToken = default)
+    {
+        if (!options.Enabled)
+        {
+            return new(AttachmentCommandStatus.Unavailable, ErrorCode: "attachments_disabled");
+        }
+
+        var attachment = await repository.GetAuthorizedAsync(
+            attachmentId,
+            actor,
+            cancellationToken);
+        if (attachment?.QuarantineKey is null)
+        {
+            return new(AttachmentCommandStatus.Unavailable, ErrorCode: "attachment_not_found");
+        }
+        if (attachment.State != AttachmentStates.PendingUpload)
+        {
+            return new(AttachmentCommandStatus.Conflict, ErrorCode: "attachment_state_conflict");
+        }
+        if (timeProvider.GetUtcNow() > attachment.CreatedAt.AddSeconds(options.UploadUrlLifetimeSeconds))
+        {
+            return new(AttachmentCommandStatus.Conflict, ErrorCode: "attachment_upload_expired");
+        }
+
+        var normalizedMediaType = (mediaType ?? string.Empty)
+            .Split(';', 2)[0]
+            .Trim()
+            .ToLowerInvariant();
+        if (contentLength is null
+            || contentLength != attachment.DeclaredSize
+            || contentLength is < 1
+            || contentLength > options.MaximumFileBytes
+            || !string.Equals(
+                normalizedMediaType,
+                attachment.DeclaredMediaType,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new(AttachmentCommandStatus.Invalid, ErrorCode: "attachment_upload_invalid");
+        }
+
+        try
+        {
+            var stored = await storage.WriteAsync(
+                attachment.QuarantineKey,
+                content,
+                attachment.DeclaredMediaType,
+                attachment.DeclaredSize,
+                cancellationToken);
+            return new(AttachmentCommandStatus.Success, stored);
+        }
+        catch (AttachmentStorageConflictException)
+        {
+            return new(AttachmentCommandStatus.Conflict, ErrorCode: "attachment_storage_conflict");
+        }
+        catch (InvalidDataException)
+        {
+            return new(AttachmentCommandStatus.Invalid, ErrorCode: "attachment_upload_invalid");
+        }
     }
 
     public async Task<AttachmentCommandResult<AttachmentStatusResponse>> CompleteAsync(
@@ -225,7 +285,7 @@ public sealed class AttachmentService(
             result.RetryAfterSeconds);
     }
 
-    public async Task<AttachmentCommandResult<string>> CreateContentUrlAsync(
+    public async Task<AttachmentCommandResult<AttachmentContentRead>> OpenContentAsync(
         Guid attachmentId,
         AttachmentActor actor,
         string disposition,
@@ -254,14 +314,20 @@ public sealed class AttachmentService(
             attachment.DetectedMediaType)
             ? "attachment"
             : disposition;
-        var url = await storage.CreatePresignedGetUrlAsync(
+        var stored = await storage.OpenReadAsync(
             attachment.ReadyKey,
-            effectiveDisposition,
-            attachment.DisplayName,
-            attachment.DetectedMediaType,
-            TimeSpan.FromSeconds(options.DownloadUrlLifetimeSeconds),
             cancellationToken);
-        return new(AttachmentCommandStatus.Success, url);
+        if (stored is null)
+        {
+            return new(AttachmentCommandStatus.Unavailable, ErrorCode: "attachment_not_found");
+        }
+        return new(
+            AttachmentCommandStatus.Success,
+            new AttachmentContentRead(
+                stored.Content,
+                attachment.DisplayName,
+                attachment.DetectedMediaType,
+                effectiveDisposition));
     }
 
     private static AttachmentSummary ToSummary(AttachmentRecord value) =>

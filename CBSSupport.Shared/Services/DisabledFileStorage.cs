@@ -5,22 +5,13 @@ public sealed class DisabledFileStorage : IFileStorage
     private static InvalidOperationException Disabled() =>
         new("Attachment storage is disabled.");
 
-    public Task<string> CreatePresignedPutUrlAsync(
+    public Task<StoredObjectInfo> WriteAsync(
         string key,
+        Stream content,
         string mediaType,
         long size,
-        TimeSpan lifetime,
         CancellationToken cancellationToken = default) =>
-        Task.FromException<string>(Disabled());
-
-    public Task<string> CreatePresignedGetUrlAsync(
-        string key,
-        string disposition,
-        string displayName,
-        string mediaType,
-        TimeSpan lifetime,
-        CancellationToken cancellationToken = default) =>
-        Task.FromException<string>(Disabled());
+        Task.FromException<StoredObjectInfo>(Disabled());
 
     public Task<StoredObjectInfo?> HeadAsync(
         string key,

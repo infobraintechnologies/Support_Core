@@ -93,90 +93,93 @@ public sealed class AttachmentScanWorker(
                 return;
             }
 
-            await using var stored = await storage.OpenReadAsync(
+            AttachmentContentValidation validation;
+            await using (var stored = await storage.OpenReadAsync(
                 attachment.QuarantineKey,
-                cancellationToken);
-            if (stored is null
-                || !ETagEquals(stored.Info.ETag, attachment.SourceETag))
+                cancellationToken))
             {
-                await RejectAsync(
-                    attachment,
-                    AttachmentRejectionCodes.ObjectChangedAfterComplete,
-                    AttachmentStates.Rejected,
+                if (stored is null
+                    || !ETagEquals(stored.Info.ETag, attachment.SourceETag))
+                {
+                    await RejectAsync(
+                        attachment,
+                        AttachmentRejectionCodes.ObjectChangedAfterComplete,
+                        AttachmentStates.Rejected,
+                        cancellationToken);
+                    return;
+                }
+                if (stored.Info.Size != attachment.DeclaredSize
+                    || stored.Info.Size != attachment.ActualSize
+                    || stored.Info.Size is < 1
+                    || stored.Info.Size > options.MaximumFileBytes)
+                {
+                    await RejectAsync(
+                        attachment,
+                        AttachmentRejectionCodes.SizeMismatch,
+                        AttachmentStates.Rejected,
+                        cancellationToken);
+                    return;
+                }
+
+                using var memory = new MemoryStream();
+                await CopyBoundedAsync(
+                    stored.Content,
+                    memory,
+                    options.MaximumFileBytes,
                     cancellationToken);
-                return;
-            }
-            if (stored.Info.Size != attachment.DeclaredSize
-                || stored.Info.Size != attachment.ActualSize
-                || stored.Info.Size is < 1
-                || stored.Info.Size > options.MaximumFileBytes)
-            {
-                await RejectAsync(
-                    attachment,
-                    AttachmentRejectionCodes.SizeMismatch,
-                    AttachmentStates.Rejected,
+                if (memory.Length != attachment.DeclaredSize
+                    || memory.Length != attachment.ActualSize)
+                {
+                    await RejectAsync(
+                        attachment,
+                        AttachmentRejectionCodes.SizeMismatch,
+                        AttachmentStates.Rejected,
+                        cancellationToken);
+                    return;
+                }
+
+                memory.Position = 0;
+                validation = await AttachmentContentValidator.ValidateAsync(
+                    memory,
+                    attachment.DisplayName,
+                    attachment.DeclaredMediaType,
+                    options.MaximumFileBytes,
                     cancellationToken);
-                return;
+                if (!validation.Valid || validation.DetectedMediaType is null)
+                {
+                    await RejectAsync(
+                        attachment,
+                        validation.RejectionCode
+                            ?? AttachmentRejectionCodes.InvalidContent,
+                        AttachmentStates.Rejected,
+                        cancellationToken);
+                    return;
+                }
+
+                memory.Position = 0;
+                var scan = await scanner.ScanAsync(memory, cancellationToken);
+                if (scan.Status == FileScanStatus.Infected)
+                {
+                    await RejectAsync(
+                        attachment,
+                        AttachmentRejectionCodes.MalwareDetected,
+                        AttachmentStates.Rejected,
+                        cancellationToken);
+                    return;
+                }
+                if (scan.Status == FileScanStatus.Unavailable)
+                {
+                    var health = await scanner.CheckHealthAsync(cancellationToken);
+                    await RetryOrFailAsync(
+                        attachment,
+                        scan.ErrorCode ?? "clamav_unavailable",
+                        consumeAttempt: health.Healthy,
+                        cancellationToken);
+                    return;
+                }
             }
 
-            using var memory = new MemoryStream();
-            await CopyBoundedAsync(
-                stored.Content,
-                memory,
-                options.MaximumFileBytes,
-                cancellationToken);
-            if (memory.Length != attachment.DeclaredSize
-                || memory.Length != attachment.ActualSize)
-            {
-                await RejectAsync(
-                    attachment,
-                    AttachmentRejectionCodes.SizeMismatch,
-                    AttachmentStates.Rejected,
-                    cancellationToken);
-                return;
-            }
-
-            memory.Position = 0;
-            var validation = await AttachmentContentValidator.ValidateAsync(
-                memory,
-                attachment.DisplayName,
-                attachment.DeclaredMediaType,
-                options.MaximumFileBytes,
-                cancellationToken);
-            if (!validation.Valid || validation.DetectedMediaType is null)
-            {
-                await RejectAsync(
-                    attachment,
-                    validation.RejectionCode
-                        ?? AttachmentRejectionCodes.InvalidContent,
-                    AttachmentStates.Rejected,
-                    cancellationToken);
-                return;
-            }
-
-            memory.Position = 0;
-            var scan = await scanner.ScanAsync(memory, cancellationToken);
-            if (scan.Status == FileScanStatus.Infected)
-            {
-                await RejectAsync(
-                    attachment,
-                    AttachmentRejectionCodes.MalwareDetected,
-                    AttachmentStates.Rejected,
-                    cancellationToken);
-                return;
-            }
-            if (scan.Status == FileScanStatus.Unavailable)
-            {
-                var health = await scanner.CheckHealthAsync(cancellationToken);
-                await RetryOrFailAsync(
-                    attachment,
-                    scan.ErrorCode ?? "clamav_unavailable",
-                    consumeAttempt: health.Healthy,
-                    cancellationToken);
-                return;
-            }
-
-            var readyKey = $"ready/{attachment.ClientId}/{attachment.Id:D}";
+            var readyKey = $"{attachment.Id:D}{AttachmentContentValidator.GetExtensionForMediaType(validation.DetectedMediaType)}";
             var promoting = await repository.MarkPromotingAsync(
                 attachment.Id,
                 _leaseOwner,

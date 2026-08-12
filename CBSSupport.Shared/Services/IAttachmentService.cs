@@ -15,6 +15,14 @@ public interface IAttachmentService
         AttachmentActor actor,
         CancellationToken cancellationToken = default);
 
+    Task<AttachmentCommandResult<StoredObjectInfo>> UploadAsync(
+        Guid attachmentId,
+        AttachmentActor actor,
+        Stream content,
+        string? mediaType,
+        long? contentLength,
+        CancellationToken cancellationToken = default);
+
     Task<AttachmentStatusResponse?> GetStatusAsync(
         Guid attachmentId,
         AttachmentActor actor,
@@ -25,7 +33,7 @@ public interface IAttachmentService
         AttachmentActor actor,
         CancellationToken cancellationToken = default);
 
-    Task<AttachmentCommandResult<string>> CreateContentUrlAsync(
+    Task<AttachmentCommandResult<AttachmentContentRead>> OpenContentAsync(
         Guid attachmentId,
         AttachmentActor actor,
         string disposition,

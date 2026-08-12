@@ -123,6 +123,13 @@
                 const xhr = new XMLHttpRequest();
                 item.xhr = xhr;
                 xhr.open("PUT", intent.uploadUrl, true);
+                const antiforgeryToken = document
+                    .querySelector('input[name="__RequestVerificationToken"]')?.value;
+                if (!antiforgeryToken) {
+                    reject(new Error("The page security token is unavailable."));
+                    return;
+                }
+                xhr.setRequestHeader("RequestVerificationToken", antiforgeryToken);
                 for (const [name, value] of Object.entries(intent.requiredHeaders || {})) {
                     xhr.setRequestHeader(name, value);
                 }

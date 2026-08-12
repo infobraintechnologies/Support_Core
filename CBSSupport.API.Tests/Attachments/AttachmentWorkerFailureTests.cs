@@ -2,6 +2,7 @@ using CBSSupport.API.Attachments;
 using CBSSupport.Shared.Contracts;
 using CBSSupport.Shared.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using SkiaSharp;
 
 namespace CBSSupport.API.Tests.Attachments;
 
@@ -138,6 +139,73 @@ public sealed class AttachmentWorkerFailureTests
             code => Assert.Equal(AttachmentRejectionCodes.MalwareDetected, code));
     }
 
+    [Fact]
+    public async Task StructuralValidation_DisposesSourceBeforeReadyWriteAndQuarantineDelete()
+    {
+        var bytes = CreatePng();
+        var validation = await AttachmentContentValidator.ValidateAsync(
+            new MemoryStream(bytes),
+            "image.png",
+            AttachmentContentValidator.PngMediaType,
+            10 * 1024 * 1024);
+        Assert.True(validation.Valid);
+        var source = new TrackingStream(bytes);
+        var attachment = Record(AttachmentStates.StructurallyValidated) with
+        {
+            QuarantineKey = $"{Guid.NewGuid():D}.pending.png",
+            ReadyKey = $"{Guid.NewGuid():D}.png",
+            DisplayName = "image.png",
+            DeclaredMediaType = AttachmentContentValidator.PngMediaType,
+            DetectedMediaType = validation.DetectedMediaType,
+            DeclaredSize = bytes.Length,
+            ActualSize = validation.Size,
+            ReservationBytes = bytes.Length,
+            Sha256 = validation.Sha256
+        };
+        var promoting = attachment with { State = AttachmentStates.Promoting };
+        var repository = new RecordingRepository { MarkPromotingResult = promoting };
+        var storage = new RecordingStorage
+        {
+            TrackingSource = source,
+            OpenReadResult = new StoredObjectRead(
+                new StoredObjectInfo(
+                    attachment.QuarantineKey,
+                    bytes.Length,
+                    attachment.SourceETag!,
+                    AttachmentContentValidator.PngMediaType,
+                    new Dictionary<string, string>()),
+                source),
+            ValidatedWriteResult = ValidatedWriteResult.Written,
+            HeadResult = new StoredObjectInfo(
+                attachment.ReadyKey!,
+                validation.Size,
+                "ready-etag",
+                AttachmentContentValidator.PngMediaType,
+                new Dictionary<string, string>())
+        };
+        var worker = new AttachmentValidationWorker(
+            repository,
+            storage,
+            new AttachmentOptions(),
+            new FixedTimeProvider(Now),
+            NullLogger<AttachmentValidationWorker>.Instance);
+
+        await worker.ProcessOnceAsync(attachment);
+
+        Assert.True(storage.ValidatedWriteSawDisposedSource);
+        Assert.True(storage.DeleteSawDisposedSource);
+        Assert.Equal(1, repository.QuarantineCleanupCalls);
+    }
+
+    private static byte[] CreatePng()
+    {
+        using var bitmap = new SKBitmap(1, 1);
+        bitmap.Erase(SKColors.Red);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
     private static AttachmentScanWorker CreateScanWorker(
         RecordingRepository repository,
         RecordingStorage storage,
@@ -193,6 +261,7 @@ public sealed class AttachmentWorkerFailureTests
     {
         public Queue<Task<bool>> MarkReadyResults { get; init; } = [];
         public Queue<Task> FinalizeResults { get; init; } = [];
+        public AttachmentRecord? MarkPromotingResult { get; init; }
         public int MarkReadyCalls { get; private set; }
         public int ScanRetryCalls { get; private set; }
         public int QuarantineCleanupCalls { get; private set; }
@@ -201,6 +270,18 @@ public sealed class AttachmentWorkerFailureTests
         public string? RejectionCode { get; private set; }
         public string? RejectionTargetState { get; private set; }
         public List<string?> FinalizedRejectionCodes { get; } = [];
+
+        public override Task<AttachmentRecord?> MarkPromotingAsync(
+            Guid attachmentId,
+            string leaseOwner,
+            string detectedMediaType,
+            long actualSize,
+            string sourceETag,
+            byte[] sha256,
+            string readyKey,
+            DateTimeOffset now,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(MarkPromotingResult);
 
         public override Task<bool> MarkReadyAsync(
             Guid attachmentId,
@@ -282,8 +363,13 @@ public sealed class AttachmentWorkerFailureTests
     {
         public Queue<PromotionResult> PromotionResults { get; init; } = [];
         public StoredObjectRead? OpenReadResult { get; init; }
+        public TrackingStream? TrackingSource { get; init; }
+        public StoredObjectInfo? HeadResult { get; init; }
+        public ValidatedWriteResult ValidatedWriteResult { get; init; }
         public int PromoteCalls { get; private set; }
         public int DeleteCalls { get; private set; }
+        public bool ValidatedWriteSawDisposedSource { get; private set; }
+        public bool DeleteSawDisposedSource { get; private set; }
 
         public Task<PromotionResult> PromoteAsync(
             string quarantineKey,
@@ -303,7 +389,7 @@ public sealed class AttachmentWorkerFailureTests
             string key,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<StoredObjectInfo?>(
-                new(
+                HeadResult ?? new(
                     key,
                     1234,
                     "ready-etag",
@@ -320,23 +406,27 @@ public sealed class AttachmentWorkerFailureTests
             CancellationToken cancellationToken = default)
         {
             DeleteCalls++;
+            DeleteSawDisposedSource = TrackingSource?.IsDisposed ?? false;
             return Task.CompletedTask;
         }
 
-        public Task<string> CreatePresignedPutUrlAsync(
+        public Task<ValidatedWriteResult> StoreValidatedAsync(
+            string quarantineKey,
+            string readyKey,
+            string expectedSourceETag,
+            ReadyObjectMetadata metadata,
+            Stream validatedContent,
+            CancellationToken cancellationToken = default)
+        {
+            ValidatedWriteSawDisposedSource = TrackingSource?.IsDisposed ?? false;
+            return Task.FromResult(ValidatedWriteResult);
+        }
+
+        public Task<StoredObjectInfo> WriteAsync(
             string key,
+            Stream content,
             string mediaType,
             long size,
-            TimeSpan lifetime,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<string> CreatePresignedGetUrlAsync(
-            string key,
-            string disposition,
-            string displayName,
-            string mediaType,
-            TimeSpan lifetime,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
@@ -357,6 +447,23 @@ public sealed class AttachmentWorkerFailureTests
         {
             ScanCalls++;
             return Task.FromResult(new FileScanResult(FileScanStatus.Clean));
+        }
+    }
+
+    private sealed class TrackingStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public bool IsDisposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            IsDisposed = true;
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            IsDisposed = true;
+            await base.DisposeAsync();
         }
     }
 

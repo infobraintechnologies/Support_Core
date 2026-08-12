@@ -8,6 +8,7 @@ public sealed class AttachmentContainmentMiddlewareTests
     [Theory]
     [InlineData("/api/FileUpload/UploadFile")]
     [InlineData("/uploads/legacy-file.pdf")]
+    [InlineData("/Uploads/53684801-bcd9-4841-96ad-7bae78c22084.pdf")]
     public async Task InvokeAsync_LegacyAttachmentPath_Returns404WithoutCallingNext(string path)
     {
         var nextCalled = false;
