@@ -1,11 +1,7 @@
--- CBS Support database migration
--- Version: 202607261040_enforce_attachment_relational_invariants
--- Purpose: make attachment tenant/uploader/message binding relationally authoritative
---          and keep physical DeletePending bytes in quota accounting.
+-- Enforce attachment tenant, uploader, message-binding, and quota invariants.
 -- Preconditions: review 202607261035_verify_attachment_relational_integrity.sql.
 -- migration-transaction: true
--- Rollback/forward-fix: constraints protect live private objects and must be corrected
--- with a later ordered forward migration after upload intents are issued.
+-- Forward-fix only after upload intents are issued.
 
 ALTER TABLE digital.conversation_access
     ADD CONSTRAINT uq_conversation_access_id_client

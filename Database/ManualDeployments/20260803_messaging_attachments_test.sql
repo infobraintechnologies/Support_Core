@@ -1,33 +1,9 @@
--- CBS Support manual deployment for the shared test database.
--- Target database: test
--- Application role: shovan
---
--- This script consolidates the final repository state represented by:
---   202607221000, 202607221110, 202607221120, 202607221130,
---   202607261005, 202607261010, 202607261020, 202607261030,
---   202607261040, and 202608031000.
--- It intentionally does not use the migration ledger. It is rerunnable when the
--- complete Messaging V2 object set is compatible; the Client identity conversion
--- and canonical FK are reconciled independently. Any other partial deployment fails.
---
--- PostgreSQL owner/DBA prerequisites (all are external to this script):
---   * Verify digital.instructions.insert_user is nullable. It already is nullable
---     in shared test and this script deliberately emits no nullability ALTER.
---   * Verify digital.instructions.client_auth_user_id still contains zero values.
---   * Verify internal.clients.id is the confirmed NOT NULL integer primary/unique
---     key. This script reads that external table but never alters its schema.
---   * Discover and drop every foreign key on the bigint client_auth_user_id column
---     before the type correction; the script reports the actual blocking names.
---   * Run as the owner of digital.instructions (or an authorized member/superuser)
---     because ALTER COLUMN TYPE, ADD COLUMN/CONSTRAINT, and COMMENT require ownership.
---   * Schedule the bigint-to-integer ALTER COLUMN TYPE for an approved maintenance
---     window because PostgreSQL takes an ACCESS EXCLUSIVE table lock.
---   * Grant the executor CREATE/USAGE on digital and USAGE on admin/internal, plus
---     REFERENCES on admin.users and internal.support_users.
---   * Grant application role shovan USAGE on digital/admin/internal and SELECT on
---     admin.users, internal.support_users, and internal.clients. Owners of newly
---     created digital tables/sequences/functions must grant the DML/USAGE/EXECUTE
---     privileges checked later in this script if the executor does not own them.
+-- Manual deployment for shared test; target: test; application role: shovan.
+-- Consolidates the listed Messaging V2/attachment migrations without the ledger.
+-- Rerunnable only when the complete object set is compatible; partial deployments fail.
+-- Preconditions: insert_user nullable; client_auth_user_id empty bigint; confirmed
+-- integer internal.clients.id; blocking FKs identified; approved lock window; and
+-- executor/application privileges for digital, admin, and internal are present.
 
 BEGIN;
 

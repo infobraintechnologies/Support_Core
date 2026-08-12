@@ -1,19 +1,11 @@
--- CBS Support database migration
--- Version: 202608051200_complete_legacy_private_mapping_gate
--- Purpose: Record a rerunnable, content-free review item for every legacy
---          Private root and enforce the tenant/participant data gate required
---          before Private messaging may be enabled.
+-- Record content-free review state for legacy Private roots and enforce the gate.
 -- Preconditions: Messaging V2 schema and history backfill are applied.
 -- migration-transaction: true
--- Rollback/forward-fix: Do not drop this review/audit evidence after use. If a
---          mapping defect is found, add a reviewed forward-fix migration. To
---          roll back an unapproved deployment, leave PrivateEnabled=false and
---          restore the database from the pre-deployment backup; do not delete
---          review rows or resequence instruction history.
+-- Retain review/audit evidence. Use a reviewed forward-fix; never resequence history.
 
 DO $legacy_private_mapping_guard$
 BEGIN
-    -- A type-101 record must belong to one canonical root in the same tenant.
+    -- Type-101 records must have same-tenant canonical roots.
     IF EXISTS (
         SELECT 1
         FROM digital.instructions AS message
@@ -28,10 +20,7 @@ BEGIN
         RAISE EXCEPTION 'Legacy Private mapping found a noncanonical, tenantless, or cross-tenant type-101 record';
     END IF;
 
-    -- Existing access metadata may have been approved by the repository before
-    -- this compatibility gate was deployed. Accept only the exact durable
-    -- approval evidence produced by ApproveLegacyPrivateAsync; never infer
-    -- approval from Active/Archived state alone.
+    -- Accept only exact durable approval evidence, not lifecycle state alone.
     DECLARE
         conflict_conversation_id bigint;
         conflict_client_id bigint;
@@ -249,8 +238,7 @@ BEGIN
         END IF;
     END;
 
-    -- Prove the prospective tenant foreign key and the private participant
-    -- invariants before adding their enforcement.
+-- Validate tenant and private-participant invariants before enforcing them.
     IF EXISTS (
         SELECT 1
         FROM digital.conversation_access AS access
@@ -344,10 +332,7 @@ BEGIN
 END
 $legacy_private_mapping_guard$;
 
--- These composite keys are added only after the guard proves every existing
--- row satisfies them. They make a root/access tenant mismatch unrepresentable.
--- The catalog checks keep a safe direct rerun a no-op as well as preserving the
--- migration runner's applied-migration ledger behavior.
+-- Add composite keys only after the guard proves existing rows satisfy them.
 DO $legacy_private_mapping_constraints$
 BEGIN
     IF NOT EXISTS (
@@ -428,10 +413,7 @@ COMMENT ON TABLE digital.private_conversation_review IS
 COMMENT ON COLUMN digital.private_conversation_review.remediation_code IS
     'NeedsReview requires an Admin to confirm the exact tenant-valid Client and active Admin participants; no message text is stored.';
 
--- Idempotent mapping: only canonical roots are inserted. NeedsReview roots keep
--- participants NULL; previously approved rows retain their existing participants
--- and lifecycle state. ON CONFLICT makes a rerun a no-op rather than a
--- reinterpretation.
+-- Insert canonical roots only; preserve NeedsReview and approved mappings on rerun.
 INSERT INTO digital.conversation_access (
     conversation_id, client_id, conversation_kind, state, version, created_at)
 SELECT root.id,
@@ -445,8 +427,7 @@ WHERE root.instruction_id = root.id
   AND root.inst_type_id = 101
 ON CONFLICT (conversation_id) DO NOTHING;
 
--- Reconstruct the readiness row only from the exact approval evidence emitted by
--- the repository review transaction. This does not infer approval from state.
+-- Reconstruct readiness only from exact repository approval evidence.
 WITH resolved_reviews AS (
     INSERT INTO digital.private_conversation_review (
         conversation_id,
@@ -579,8 +560,7 @@ BEGIN
 END
 $legacy_private_mapping_participant_trigger$;
 
--- A deferred trigger allows the authorized review operation to change access and
--- review state in either statement order, while rejecting a committed mismatch.
+-- A deferred trigger permits either statement order and rejects committed mismatch.
 CREATE OR REPLACE FUNCTION digital.enforce_private_conversation_review_state()
 RETURNS trigger
 LANGUAGE plpgsql

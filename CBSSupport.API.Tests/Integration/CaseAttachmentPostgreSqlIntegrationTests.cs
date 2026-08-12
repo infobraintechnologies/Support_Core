@@ -1226,7 +1226,6 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         Assert.NotNull(read);
         Assert.Equal(0, read!.UnreadCount);
 
-        // A second device and a new service instance after logout/login see the same server state.
         var secondDeviceAfterLogin = new NotificationService(database.ConnectionString);
         var reloaded = await secondDeviceAfterLogin.ListAsync(firstRecipient, 20, null);
         Assert.Equal(0, reloaded.UnreadCount);
@@ -1237,7 +1236,6 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         Assert.NotNull(await secondDeviceAfterLogin.MarkReadAsync(secondRecipient, recipients[1].NotificationId));
         Assert.Equal(0, (await secondDeviceAfterLogin.ListAsync(secondRecipient, 20, null)).UnreadCount);
 
-        // A spoofed tenant cannot see or mutate the tenant-42 recipient row.
         var crossTenant = new NotificationRecipient(false, 7, 43);
         Assert.Empty((await secondDeviceAfterLogin.ListAsync(crossTenant, 20, null)).Items);
         Assert.Null(await secondDeviceAfterLogin.MarkReadAsync(crossTenant, recipients[0].NotificationId));

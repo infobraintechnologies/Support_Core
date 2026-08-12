@@ -1,8 +1,6 @@
--- CBS Support read-only database preflight
--- Purpose: block case sequencing/outbox rollout on orphan, tenant, type, or
--- category corruption. This script performs no writes.
+-- Read-only case conversation readiness checks; no writes.
 
--- Expected: zero rows. Every ticket/inquiry reply references a canonical root.
+-- Replies without a canonical root. Expected: zero rows.
 SELECT message.id AS message_id,
        message.instruction_id,
        root.instruction_id AS root_instruction_id
@@ -17,7 +15,7 @@ WHERE message.inst_type_id IN (110,111,112,113,114,115,116,117,121,122)
 ORDER BY message.id
 LIMIT 200;
 
--- Expected: zero rows. Root and reply tenant/type/category must agree.
+-- Root/reply tenant, type, or category mismatches. Expected: zero rows.
 SELECT message.id AS message_id,
        message.client_id AS message_client_id,
        root.id AS root_id,
@@ -44,7 +42,7 @@ WHERE message.id <> root.id
 ORDER BY message.id
 LIMIT 200;
 
--- Expected: zero rows. Canonical case roots require a tenant and exact mapping.
+-- Invalid canonical case roots. Expected: zero rows.
 SELECT id, client_id, inst_type_id, inst_category_id
 FROM digital.instructions
 WHERE instruction_id = id
@@ -57,9 +55,7 @@ WHERE instruction_id = id
 ORDER BY id
 LIMIT 200;
 
--- Expected: zero rows. A pre-existing access row for a case root must already
--- match the authoritative tenant/kind/participant shape; the migration will not
--- silently repair ambiguous access metadata.
+-- Access rows must match the authoritative case shape. Expected: zero rows.
 SELECT access.conversation_id,
        access.client_id AS access_client_id,
        root.client_id AS root_client_id,
@@ -85,7 +81,7 @@ WHERE root.instruction_id = root.id
 ORDER BY access.conversation_id
 LIMIT 200;
 
--- Operational inventory used to confirm the 24-hour post-Phase-1 gate.
+-- Inventory for the 24-hour post-Phase-1 observation gate.
 SELECT count(*) FILTER (WHERE inst_type_id BETWEEN 110 AND 117) AS ticket_roots,
        count(*) FILTER (WHERE inst_type_id IN (121,122)) AS inquiry_roots,
        max(COALESCE(datetime, insert_date)) AS latest_case_timestamp

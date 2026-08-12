@@ -1,14 +1,6 @@
-﻿/**
- * Admin Panel Navigation System
- * Handles page routing and navigation between different admin sections
- */
 "use strict";
 
 window.AdminNavigation = (() => {
-
-    // ============================================
-    // 🧭 PAGE NAVIGATION
-    // ============================================
 
     function setActivePageLink(pageName) {
         const links = $('.admin-sidebar .nav-link');
@@ -78,10 +70,6 @@ window.AdminNavigation = (() => {
         }
     }
 
-    // ============================================
-    // 🎯 ACTION HANDLERS
-    // ============================================
-
     function handleCardAction(action) {
         switch (action) {
             case 'view-all-tickets':
@@ -107,12 +95,7 @@ window.AdminNavigation = (() => {
         }
     }
 
-    // ============================================
-    // 🔗 EVENT HANDLERS
-    // ============================================
-
     function initializeNavigationEvents() {
-        // Sidebar navigation
         $('.admin-sidebar .nav-link').on('click', function (e) {
             e.preventDefault();
             const pageName = $(this).data('page');
@@ -121,7 +104,6 @@ window.AdminNavigation = (() => {
             $('.admin-page.active').removeClass('active');
             $('#' + pageName + '-page').addClass('active');
 
-            // Clear notification badge when navigating to chats
             if (pageName === 'chats') {
                 const chatsNavLink = document.querySelector('[data-page="chats"]');
                 if (chatsNavLink) {
@@ -131,7 +113,6 @@ window.AdminNavigation = (() => {
                 }
             }
 
-            // Initialize page if initializer exists
             if (window.AdminCore && window.AdminCore.getPageInitializers) {
                 const pageInitializers = window.AdminCore.getPageInitializers();
                 if (pageInitializers[pageName]) {
@@ -140,7 +121,6 @@ window.AdminNavigation = (() => {
             }
         });
 
-        // Clickable card actions
         $(document).on('click', '.clickable-card', function () {
             const action = $(this).data('action');
             if (action) {
@@ -148,7 +128,6 @@ window.AdminNavigation = (() => {
             }
         });
 
-        // Quick navigation links
         $('#view-all-tickets-link').on('click', function (e) {
             e.preventDefault();
             navigateToTicketManagement();
@@ -174,10 +153,6 @@ window.AdminNavigation = (() => {
 
         console.log("AdminNavigation: Event handlers initialized");
     }
-
-    // ============================================
-    // 🔗 PUBLIC API
-    // ============================================
 
     return {
         navigateToTicketManagement,

@@ -1,13 +1,8 @@
--- CBS Support database migration
--- Version: 202607261005_normalize_legacy_case_reply_shape
--- Purpose: normalize historical ticket/inquiry replies that used the legacy
---          type/category sentinel 100 to their canonical root classification.
+-- Normalize legacy case reply classification.
 -- migration-transaction: true
--- Preconditions: archive 202607261000_verify_case_conversation_readiness.sql
--- output and review every reported mismatch. This migration repairs only
--- sentinel-shaped replies; ambiguous or cross-tenant data fails closed.
--- Rollback/forward-fix: classification is made consistent with the authoritative
--- canonical root. Correct unexpected results with an ordered forward migration.
+-- Preconditions: archive and review the case readiness output.
+-- Repairs only sentinel-shaped replies; ambiguous or cross-tenant data fails closed.
+-- Forward-fix unexpected results; do not reverse classification in place.
 
 LOCK TABLE digital.instructions IN SHARE ROW EXCLUSIVE MODE;
 

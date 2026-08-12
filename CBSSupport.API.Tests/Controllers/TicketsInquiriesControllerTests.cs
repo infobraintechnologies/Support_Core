@@ -17,8 +17,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
     private const long ClientId = 42;
     private const long AdminUserId = 106;
 
-    // ---- Authorization attributes ----
-
     [Theory]
     [InlineData(nameof(TicketsController.Create), Policies.ClientOnly)]
     [InlineData(nameof(TicketsController.List), Policies.ClientOnly)]
@@ -50,8 +48,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
     {
         Assert.Equal(Policies.AdminOnly, AuthorizePolicy(typeof(AdminInquiriesController)));
     }
-
-    // ---- Ticket creation ----
 
     [Fact]
     public async Task CreateTicket_Valid_ReturnsCreatedWithClaimDerivedTenant()
@@ -142,8 +138,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         Assert.IsType<NotFoundResult>(result.Result);
     }
 
-    // ---- Ticket detail tenant isolation ----
-
     [Fact]
     public async Task GetTicketDetail_ClientRequest_PassesClaimTenantAndScopesResult()
     {
@@ -156,11 +150,9 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         };
         var controller = CreateTicketsController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
 
-        // Record belongs to the caller's tenant, so it is returned.
         var owned = await controller.GetDetail(10, CancellationToken.None);
         Assert.IsType<OkObjectResult>(owned.Result);
 
-        // A different resource ID resolves to null under the claim tenant, so it must disappear as 404.
         var missing = await controller.GetDetail(99, CancellationToken.None);
         Assert.IsType<NotFoundResult>(missing.Result);
 
@@ -197,8 +189,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
 
         Assert.IsType<NotFoundResult>(result.Result);
     }
-
-    // ---- Ticket list ----
 
     [Fact]
     public async Task ListTickets_Client_ScopesToClaimTenant()
@@ -352,8 +342,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => controller.List(new CaseListQuery(), source.Token));
     }
 
-    // ---- Admin status updates ----
-
     [Fact]
     public async Task UpdateTicketStatus_ValidTransition_ReturnsUpdatedTicket()
     {
@@ -475,8 +463,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         Assert.Equal(3, command.ExpectedVersion);
     }
 
-    // ---- Inquiry creation ----
-
     [Fact]
     public async Task CreateInquiry_Valid_ReturnsCreatedWithClaimDerivedTenant()
     {
@@ -591,8 +577,6 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         var call = Assert.Single(chat.Calls, c => c.Method == "GetInquiryDetailsByIdAsync");
         Assert.Equal(ClientId, call.GetArg<long?>(1));
     }
-
-    // ---- Helpers ----
 
     private static TicketsController CreateTicketsController(
         IConversationService conversation,

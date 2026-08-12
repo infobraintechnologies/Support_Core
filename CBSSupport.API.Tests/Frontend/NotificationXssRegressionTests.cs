@@ -84,7 +84,6 @@ public sealed class NotificationXssRegressionTests
             source,
             StringComparison.Ordinal);
 
-        // Error rendering must not interpolate error.message into HTML.
         Assert.DoesNotContain(
             "Error loading messages: ${error.message}</div>",
             source,
@@ -171,7 +170,6 @@ public sealed class NotificationXssRegressionTests
             }
             catch (System.ComponentModel.Win32Exception)
             {
-                // Candidate not on PATH.
             }
         }
 

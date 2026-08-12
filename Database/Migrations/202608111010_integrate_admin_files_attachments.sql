@@ -1,19 +1,9 @@
--- CBS Support database migration
--- Version: 202608111010_integrate_admin_files_attachments
--- Purpose: project successfully bound/available CBS Support attachments into the
---          externally owned company-standard admin.files metadata table.
+-- Project bound/available CBS Support attachments into admin.files.
 -- migration-transaction: true
--- Preconditions:
---   * Run Preflight/202608111000_verify_admin_files_attachment_integration.sql.
---   * The reviewed admin.files shape and insert_user -> admin.users(id) FK must match.
---   * Client support identities must have a same-ID, same-username admin.users mirror.
---   * Attachments must remain disabled during migration/application cutover.
--- Post-deployment:
---   * Rerun the preflight. missing/conflicting/invalid/mismatch counts must be zero.
---   * Deploy the application build that writes admin.files in the binding transaction.
--- Rollback/forward-fix:
---   * Do not delete company file history. Disable attachments and correct metadata
---     with a later reviewed forward-fix. The authoritative digital tables are preserved.
+-- Preconditions: preflight clean; reviewed admin.files shape/FK matches; identity
+-- mirrors exist; attachments remain disabled during migration and cutover.
+-- Post-deployment: rerun the preflight with zero mismatch counts, then deploy the
+-- binding-aware application. Preserve company history; use a forward-fix for defects.
 
 DO $compatibility$
 DECLARE

@@ -23,55 +23,11 @@ namespace CBSSupport.Shared.Services
             DefaultTypeMap.MatchNamesWithUnderscores = true;
         }
 
-        // In your ChatService class
-
-        //public async Task<ChatMessage> CreateInstructionTicketAsync(ChatMessage newTicket)
-        //{
-        //    // --- Step 1: SQL to insert the new record and get back its new ID. ---
-        //    var sqlInsert = @"
-        //INSERT INTO digital.instructions (
-        //    datetime, inst_category_id, inst_type_id, instruction,
-        //    status, insert_user, client_auth_user_id, client_id,
-        //    service_id, ip_address, geo_location, inst_channel,
-        //    attachment_id, instruction_id, remarks, expiry_date
-        //)
-        //VALUES (
-        //    @DateTime, @InstCategoryId, @InstTypeId, @Instruction,
-        //    @Status, @InsertUser, @ClientAuthUserId, @ClientId,
-        //    @ServiceId, @IpAddress, @GeoLocation, @InstChannel,
-        //    @AttachmentId, @InstructionId, @Remarks, @ExpiryDate
-        //)
-        //RETURNING id;"; // We only need the ID from this query.
-
-        //    // --- Step 2: SQL to handle creating a new conversation group. ---
-        //    var sqlUpdate = @"UPDATE digital.instructions SET instruction_id = @Id WHERE id = @Id;";
-
-        //    // --- Step 3: SQL to fetch the full, final record. ---
-        //    var sql = @"
-        //SELECT 
-        //    i.*,
-        //    COALESCE(u.full_name, u.user_name, 'Unknown User') AS SenderName
-        //FROM digital.instructions i
-        //LEFT JOIN internal.support_users u ON i.insert_user = u.id
-        //WHERE i.instruction_id = @ConversationId
-        //ORDER BY i.datetime ASC;";
-
-        //    using (var connection = new NpgsqlConnection(_connectionString))
-        //    {
-        //        // This single Dapper call now executes the entire transaction.
-        //        var savedMessage = await connection.QueryFirstOrDefaultAsync<ChatMessage>(sql, newTicket);
-        //        return savedMessage;
-        //    }
-
-        //}
-
         public async Task<ChatMessage?> CreateInstructionTicketAsync(
             ChatMessage newTicket,
             CancellationToken cancellationToken = default)
         {
-            // Ticket and Inquiry roots/replies are Messaging V2 commands. Keeping this
-            // legacy compatibility insert limited to non-case conversations prevents an
-            // unsequenced, non-outboxed case write from bypassing IConversationService.
+            // Case writes must go through the sequence-aware conversation service.
             if (ConversationTypes.IsCase(newTicket.InstTypeId)
                 || newTicket.InstCategoryId is InstructionCategories.Ticket or InstructionCategories.Inquiry)
             {

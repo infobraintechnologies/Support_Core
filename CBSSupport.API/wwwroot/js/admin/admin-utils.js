@@ -1,14 +1,6 @@
-﻿/**
- * Admin Panel Utility Functions
- * Shared helper functions used across all admin modules
- */
 "use strict";
 
 window.AdminUtils = (() => {
-
-    // ============================================
-    // 🔧 UTILITY FUNCTIONS
-    // ============================================
 
     const formatTimestamp = (d) => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -101,10 +93,6 @@ window.AdminUtils = (() => {
         });
     }
 
-    // ============================================
-    // 🎯 API HELPERS
-    // ============================================
-
     async function apiRequest(url, options = {}) {
         try {
             const response = await fetch(url, {
@@ -127,10 +115,6 @@ window.AdminUtils = (() => {
         }
     }
 
-    // ============================================
-    // 🎨 DOM HELPERS
-    // ============================================
-
     function createElement(tag, className = '', innerHTML = '') {
         const element = document.createElement(tag);
         if (className) element.className = className;
@@ -146,10 +130,6 @@ window.AdminUtils = (() => {
         return document.querySelectorAll(selector);
     }
 
-    // ============================================
-    // 📝 VALIDATION HELPERS
-    // ============================================
-
     function validateEmail(email) {
         const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return re.test(email);
@@ -158,10 +138,6 @@ window.AdminUtils = (() => {
     function validateRequired(value) {
         return value && value.trim().length > 0;
     }
-
-    // ============================================
-    // 🔄 DEBOUNCE & THROTTLE
-    // ============================================
 
     function debounce(func, wait) {
         let timeout;
@@ -188,12 +164,7 @@ window.AdminUtils = (() => {
         };
     }
 
-    // ============================================
-    // 🔗 PUBLIC API
-    // ============================================
-
     return {
-        // Formatting functions
         formatTimestamp,
         escapeHtml,
         scrollToBottom,
@@ -202,22 +173,17 @@ window.AdminUtils = (() => {
         generateStatusBadge,
         getTimeAgo,
 
-        // UI functions
         showNotification,
 
-        // API functions
         apiRequest,
 
-        // DOM functions
         createElement,
         getElement,
         getAllElements,
 
-        // Validation functions
         validateEmail,
         validateRequired,
 
-        // Utility functions
         debounce,
         throttle
     };

@@ -1,14 +1,6 @@
-﻿/**
- * Admin Panel SignalR Module
- * Handles all SignalR connection and real-time communication
- */
 "use strict";
 
 window.AdminSignalR = (() => {
-
-    // ============================================
-    // 🔐 CONNECTION MANAGEMENT
-    // ============================================
 
     let connection = null;
     let messaging = null;
@@ -37,7 +29,6 @@ window.AdminSignalR = (() => {
     function setupConnectionEvents() {
         if (!connection) return;
 
-        // Connection state events
         messaging.on("state", ({ state }) => {
             window.AdminChat?.handleConnectionState(state);
             if (state === "reconnecting") {
@@ -71,25 +62,18 @@ window.AdminSignalR = (() => {
             }
         });
 
-        // Setup message handlers
         setupMessageHandlers();
     }
-
-    // ============================================
-    // 📨 MESSAGE HANDLERS
-    // ============================================
 
     function setupMessageHandlers() {
         if (!connection) return;
 
-        // Receive private messages
         messaging.on("message", ({ message: createdMessage, source }) => {
             const message = toLegacyMessage(createdMessage);
 
             const currentUser = window.AdminCore?.getCurrentUser();
             if (!currentUser) return;
 
-            // Ignore own messages
             if (source === "realtime"
                 && (message.insertUser === currentUser.id || message.clientAuthUserId === currentUser.id)) {
                 return;
@@ -101,21 +85,16 @@ window.AdminSignalR = (() => {
                 return;
             }
 
-            // Handle floating chat updates
             handleFloatingChatMessage(conversationId, message);
 
-            // Handle main chat updates
             if (window.AdminChat) {
                 window.AdminChat.handleIncomingMessage(message);
             }
 
-            // Update conversation list
             updateConversationItem(conversationId, message);
 
-            // Show notification if not on chats page
             if (source !== "reconcile") handleChatPageNotification(message);
 
-            // Load new notifications
             if (window.AdminNotifications) {
                 window.AdminNotifications.loadNotifications();
             }
@@ -125,18 +104,15 @@ window.AdminSignalR = (() => {
             window.AdminChat?.handleTypingChanged(typing);
         });
 
-        // New ticket notifications
         connection.on("NewTicket", (ticket) => {
             console.log("🎫 AdminSignalR: New ticket received:", ticket);
 
             const currentClientId = window.AdminCore?.getCurrentClientId();
             if (String(ticket.clientId) === String(currentClientId)) {
-                // Refresh dashboard if active
                 if ($('#dashboard-page').hasClass('active') && window.AdminDashboard) {
                     window.AdminDashboard.loadEnhancedDashboardData(currentClientId);
                 }
 
-                // Refresh tickets table
                 if (window.AdminTickets) {
                     const ticketsTable = window.AdminTickets.getTicketsTable();
                     if (ticketsTable) {
@@ -145,7 +121,6 @@ window.AdminSignalR = (() => {
                 }
             }
 
-            // Load notifications
             if (window.AdminNotifications) {
                 window.AdminNotifications.loadNotifications();
             }
@@ -161,11 +136,9 @@ window.AdminSignalR = (() => {
             window.AdminNotifications?.loadNotifications();
         });
 
-        // General notifications
         connection.on("ReceiveNotification", (notification) => {
             console.log("🔔 AdminSignalR: Notification received:", notification);
 
-            // Show browser notification if permission granted
             if (Notification.permission === "granted") {
                 new Notification(notification.title, {
                     body: notification.message,
@@ -173,18 +146,15 @@ window.AdminSignalR = (() => {
                 });
             }
 
-            // Load notifications
             if (window.AdminNotifications) {
                 window.AdminNotifications.loadNotifications();
             }
 
-            // Show toast notification
             if (window.AdminUtils) {
                 window.AdminUtils.showNotification(notification.message, 'info');
             }
         });
 
-        // Ticket status updates
         connection.on("TicketStatusUpdated", (data) => {
             console.log("🎫 AdminSignalR: Ticket status updated:", data);
 
@@ -200,7 +170,6 @@ window.AdminSignalR = (() => {
             }
         });
 
-        // Inquiry status updates
         connection.on("InquiryStatusUpdated", (data) => {
             console.log("❓ AdminSignalR: Inquiry status updated:", data);
 
@@ -238,10 +207,6 @@ window.AdminSignalR = (() => {
                 : (Array.isArray(message.safeAttachments) ? message.safeAttachments : [])
         };
     }
-
-    // ============================================
-    // 🎯 MESSAGE HANDLING HELPERS
-    // ============================================
 
     function handleFloatingChatMessage(conversationId, message) {
         const floatingChat = document.getElementById(`chatbox-tkt-${conversationId}`) ||
@@ -305,7 +270,6 @@ window.AdminSignalR = (() => {
                 chatsNavLink.appendChild(badge);
             }
 
-            // Show browser notification
             if (window.Notification && Notification.permission === "granted") {
                 new Notification("New Message", {
                     body: `${message.senderName}: ${message.instruction}`,
@@ -314,10 +278,6 @@ window.AdminSignalR = (() => {
             }
         }
     }
-
-    // ============================================
-    // 📤 SEND FUNCTIONS
-    // ============================================
 
     async function sendMessage(
         conversationId,
@@ -373,10 +333,6 @@ window.AdminSignalR = (() => {
             throw error;
         }
     }
-
-    // ============================================
-    // 🔗 PUBLIC API
-    // ============================================
 
     return {
         initialize,

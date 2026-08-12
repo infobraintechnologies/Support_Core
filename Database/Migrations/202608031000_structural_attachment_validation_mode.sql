@@ -1,11 +1,6 @@
--- CBS Support database migration
--- Version: 202608031000_structural_attachment_validation_mode
--- Purpose: replace the mandatory scanning queue with an explicit quarantine-first
---          structural-validation lifecycle while retaining legacy scanning states
---          for the future MalwareScanning extensibility mode.
+-- Use quarantine-first structural attachment validation; retain scanning states.
 -- migration-transaction: true
--- Rollback/forward-fix: disable attachments and use a later ordered migration.
--- Do not relabel StructurallyValidated rows as malware-scanned.
+-- Forward-fix only; never relabel StructurallyValidated as malware-scanned.
 
 ALTER TABLE digital.attachments
     DROP CONSTRAINT ck_attachments_state,

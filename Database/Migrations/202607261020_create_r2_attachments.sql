@@ -1,10 +1,6 @@
--- CBS Support database migration
--- Version: 202607261020_create_r2_attachments
--- Purpose: authoritative attachment lifecycle, quota reservations, audit, leases,
---          message binding, retry, and retention metadata for private R2 objects.
+-- Create private attachment lifecycle, quota, audit, lease, binding, and retention state.
 -- migration-transaction: true
--- Rollback/forward-fix: do not drop after upload intents are issued. Disable the
--- Attachments feature and apply an ordered forward-fix.
+-- Forward-fix only after upload intents are issued; disable attachments if needed.
 
 CREATE TABLE digital.attachment_tenant_quotas (
     client_id bigint PRIMARY KEY,

@@ -1,11 +1,7 @@
--- CBS Support database migration
--- Version: 202607261010_modernize_case_conversations
--- Purpose: move ticket/inquiry roots and replies onto sequence-aware conversation
---          access, idempotent sends, audit, and transactional outbox.
+-- Modernize case conversations with sequence, access, audit, and outbox state.
 -- Preconditions: review 202607261000_verify_case_conversation_readiness.sql.
 -- migration-transaction: true
--- Rollback/forward-fix: sequence/access values become durable when the application
--- starts writing. Correct problems with an ordered forward-fix; do not resequence.
+-- Forward-fix only after application writes begin; do not resequence.
 
 DO $guard$
 BEGIN

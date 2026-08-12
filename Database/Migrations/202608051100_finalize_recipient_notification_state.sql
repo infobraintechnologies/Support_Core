@@ -1,11 +1,7 @@
--- CBS Support database migration
--- Version: 202608051100_finalize_recipient_notification_state
--- Purpose: make digital.case_notifications the authoritative recipient-specific
---          read model and record legacy flag rows that cannot be safely backfilled.
+-- Finalize recipient-specific notification state and record unsafe legacy rows.
 -- Preconditions: 202608051000_add_case_notification_delivery.sql is applied.
 -- migration-transaction: true
--- Rollback/forward-fix: do not recreate legacy read state. Correct recipient or
--- payload defects with a forward migration; retain review records for audit.
+-- Forward-fix only; retain review records and do not recreate legacy read state.
 
 CREATE INDEX ix_case_notifications_client_recipient_unread_created
 ON digital.case_notifications (client_id, client_user_id, created_at DESC, notification_id DESC)
@@ -44,9 +40,7 @@ CREATE TABLE digital.notification_backfill_review (
         FOREIGN KEY (resolved_by_admin_user_id) REFERENCES admin.users(id)
 );
 
--- Legacy flags are tenant/global. They do not identify a single support-user or
--- administrator recipient, so no durable recipient row is inferred from them.
--- This report is intentionally the backfill output for every unresolved row.
+-- Legacy flags do not identify a recipient; unresolved rows are recorded for review.
 INSERT INTO digital.notification_backfill_review (
     instruction_id, client_id, legacy_created_at, legacy_admin_seen,
     legacy_client_seen, reason)

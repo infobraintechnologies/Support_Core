@@ -1,16 +1,8 @@
--- CBS Support database migration
--- Version: 202607221110_create_messaging_v2_schema
--- Purpose: Add Messaging V2 sequence/idempotency columns and owned access,
---          cursor, transactional outbox, and audit tables.
--- Owned objects: the listed digital tables, their constraints, and two columns on
---                digital.instructions. Referenced identity tables are not modified.
--- Preconditions:
---   1. 202607221000_canonical_instruction_client_principal has been applied.
---   2. 202607221100_verify_messaging_v2_readiness.sql has been reviewed.
+-- Messaging V2 schema migration.
+-- Adds sequence/idempotency columns and owned access, cursor, outbox, and audit tables.
+-- Preconditions: canonical Client principal migration applied; readiness preflight clean.
 -- migration-transaction: true
--- Transactional: Yes.
--- Rollback/forward-fix: These durable tables must not be dropped after application
--- writes begin. Correct defects with a new ordered forward-fix migration.
+-- Forward-fix only after application writes begin; do not drop durable tables.
 
 ALTER TABLE digital.instructions
     ADD COLUMN client_message_id uuid,
