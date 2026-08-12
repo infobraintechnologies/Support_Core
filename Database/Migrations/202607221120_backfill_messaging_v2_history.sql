@@ -1,16 +1,7 @@
--- CBS Support database migration
--- Version: 202607221120_backfill_messaging_v2_history
--- Purpose: Deterministically sequence legacy history, initialize allocators/access,
---          and validate root-sentinel integrity without rewriting message content.
--- Owned objects: Messaging V2 values and constraints in the digital schema only.
--- Preconditions:
---   1. 202607221110_create_messaging_v2_schema has been applied.
---   2. Readiness preflight reports no missing/noncanonical roots, tenant mismatches,
---      or tenantless type-100/type-101 roots.
+-- Messaging V2 history backfill.
+-- Preconditions: schema migration applied and readiness preflight is clean.
 -- migration-transaction: true
--- Transactional: Yes.
--- Rollback/forward-fix: Sequence assignments and access/audit backfill are durable.
--- Correct unexpected mappings with a reviewed forward-fix; never resequence live history.
+-- Forward-fix only after deployment; never resequence live history.
 
 DO $migration_guard$
 BEGIN
@@ -60,10 +51,8 @@ BEGIN
 END
 $migration_guard$;
 
--- Materialize one immutable assignment map, then update in bounded ID batches.
--- The migrator still owns one atomic transaction, so readers never observe a
--- partially sequenced history. An empty/null root is the server-owned sequence-0
--- sentinel. A nonempty legacy root is itself sequence 1 with its ID/content intact.
+-- Materialize assignments, update in bounded ID batches, and keep the transaction atomic.
+-- Empty roots become sequence 0; nonempty roots remain unchanged at sequence 1.
 CREATE TEMPORARY TABLE messaging_v2_sequence_backfill (
     instruction_record_id bigint NOT NULL,
     assigned_sequence bigint NOT NULL,
@@ -127,9 +116,7 @@ $sequence_backfill$;
 ALTER TABLE digital.instructions
     ADD CONSTRAINT ck_instructions_conversation_sequence_shape
     CHECK (
-        -- Ticket/inquiry/internal writers migrate in later feature slices. Their
-        -- existing rows may be backfilled with a sequence, but new legacy writes
-        -- remain valid without one until those commands move to Messaging V2.
+        -- Non-Messaging-V2 writers may still create unsequenced legacy rows.
         (COALESCE(inst_type_id, -1) NOT IN (100, 101)
             AND client_message_id IS NULL)
         OR
@@ -137,8 +124,7 @@ ALTER TABLE digital.instructions
             AND conversation_sequence IS NULL
             AND client_message_id IS NULL)
         OR
-        -- Root creation is a two-statement operation inside one transaction: the
-        -- identity is known after INSERT, then instruction_id is self-linked.
+        -- Root creation self-links instruction_id before commit.
         (instruction_id IS NULL
             AND conversation_sequence = 0
             AND client_message_id IS NULL
@@ -168,7 +154,7 @@ LEFT JOIN digital.instructions AS message
 WHERE root.instruction_id = root.id
 GROUP BY root.id;
 
--- Group conversations remain Active for their lifetime and are unique per tenant.
+-- Group conversations are Active and unique per tenant.
 INSERT INTO digital.conversation_access (
     conversation_id, client_id, conversation_kind, state, version, created_at)
 SELECT root.id,
@@ -181,8 +167,7 @@ FROM digital.instructions AS root
 WHERE root.instruction_id = root.id
   AND root.inst_type_id = 100;
 
--- Authorship on a message does not prove intended private-conversation membership.
--- Quarantine every legacy private root until an administrator supplies both principals.
+-- Quarantine legacy Private roots until both principals are reviewed.
 INSERT INTO digital.conversation_access (
     conversation_id, client_id, conversation_kind, state, version, created_at, archived_at)
 SELECT root.id,

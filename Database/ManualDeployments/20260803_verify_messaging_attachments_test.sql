@@ -1,11 +1,6 @@
--- CBS Support read-only verification for the shared test database.
--- Target database: test
--- Application role: shovan
---
--- This script verifies the final schema produced by
--- 20260803_messaging_attachments_test.sql.  It performs catalog reads and data
--- invariant reads only.  It intentionally does not create temporary objects or
--- read/write digital.schema_migrations.
+-- Read-only verification for the shared test deployment; target: test.
+-- Verifies the consolidated schema with catalog and invariant reads only.
+-- Creates no temporary objects and does not read or write digital.schema_migrations.
 
 BEGIN;
 
@@ -286,7 +281,7 @@ BEGIN
         RAISE EXCEPTION 'Column verification failed: %', failure;
     END IF;
 
-    -- Identity/default behavior used by the repositories must also be present.
+    -- Repository identity/default behavior must be present.
     IF pg_get_serial_sequence('digital.conversation_read_cursors', 'read_cursor_id') IS NULL
        OR pg_get_serial_sequence('digital.conversation_audit', 'audit_id') IS NULL
        OR pg_get_serial_sequence('digital.attachment_audit', 'audit_id') IS NULL THEN
@@ -476,8 +471,7 @@ BEGIN
         RAISE EXCEPTION 'Key constraint verification failed: %', failure;
     END IF;
 
-    -- The legacy table must still expose a single-column primary key for all new
-    -- foreign keys, regardless of the historical primary-key constraint name.
+    -- The legacy table must expose a single-column primary key for new foreign keys.
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint constraint_row
@@ -571,9 +565,7 @@ BEGIN
         RAISE EXCEPTION 'Missing, invalid, or inherited check constraint: %', failure;
     END IF;
 
-    -- Verify the three definitions changed by StructuralValidationOnly against
-    -- the final state set and shape.  This rejects an otherwise compatible-looking
-    -- deployment left at the earlier mandatory-scanning definitions.
+    -- Verify the StructuralValidationOnly state set and shape.
     SELECT lower(pg_get_constraintdef(oid, true))
     INTO definition
     FROM pg_constraint
@@ -631,8 +623,7 @@ BEGIN
         RAISE EXCEPTION 'ck_attachments_sizes is not the final StructuralValidationOnly definition';
     END IF;
 
-    -- Guard the final Messaging V2 expansion and attachment relational/retention
-    -- forward fixes by inspecting their defining expressions, not names alone.
+    -- Guard Messaging V2 and attachment forward fixes by definition, not names alone.
     SELECT lower(pg_get_constraintdef(oid, true)) INTO definition
     FROM pg_constraint
     WHERE conrelid = 'digital.conversation_access'::regclass

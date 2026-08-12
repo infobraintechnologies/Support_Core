@@ -1,10 +1,7 @@
--- CBS Support database migration
--- Version: 202608061100_create_distributed_login_throttling
--- Purpose: shared atomic login throttling state for all API instances.
+-- Create shared atomic login-throttling state.
 -- Preconditions: the digital schema exists and the application role can use it.
 -- migration-transaction: true
--- Rollback/forward-fix: retain throttle rows while the feature is deployed;
--- correct future behavior with an ordered forward migration.
+-- Forward-fix only while deployed; retain throttle rows.
 
 CREATE TABLE digital.login_throttle_buckets (
     bucket_kind varchar(16) NOT NULL,
@@ -33,9 +30,7 @@ ON digital.login_throttle_buckets (last_touched_at);
 
 REVOKE ALL ON TABLE digital.login_throttle_buckets FROM PUBLIC;
 
--- The established application role receives only the DML needed by the
--- throttling repository. Environments using another role must grant the same
--- minimal privileges during controlled deployment.
+-- Grant only the DML required by the throttling repository.
 DO $application_role$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'shovan') THEN

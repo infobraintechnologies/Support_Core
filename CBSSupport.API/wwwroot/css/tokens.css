@@ -1,33 +1,19 @@
-/* ==========================================================================
-   CBS Support — Design Tokens
-   Load AFTER bootstrap.min.css and BEFORE site.css in _Layout.cshtml:
-
-   <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
-   <link rel="stylesheet" href="~/css/tokens.css" />
-   <link rel="stylesheet" href="~/css/site.css" />
-   ========================================================================== */
 
 :root {
-  /* ---- Typography ----
-     "OpenAI Sans" is listed first but only takes effect if the project has
-     legitimately licensed font files loaded — do not embed it from an
-     unofficial source. If it isn't loaded, the browser silently falls
-     through to the native system-UI stack below, which is the actual
-     rendering path for most users either way. */
+  /* Use the licensed font when available; retain the system fallback. */
   --font-sans: "OpenAI Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji";
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono",
     Consolas, "Liberation Mono", monospace;
 
-  --text-xs: 0.75rem;    /* 12px */
-  --text-sm: 0.8125rem;  /* 13px */
-  --text-base: 0.9375rem;/* 15px */
-  --text-lg: 1.0625rem;  /* 17px */
-  --text-xl: 1.25rem;    /* 20px */
-  --text-2xl: 1.625rem;  /* 26px */
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.625rem;
 
-  /* ---- Color: neutrals ---- */
   --color-bg: #FFFFFF;
   --color-bg-subtle: #F7F7F8;
   --color-bg-muted: #ECECEE;
@@ -37,35 +23,27 @@
   --color-text-secondary: #5B5B66;
   --color-text-muted: #8B8B96;
 
-  /* ---- Color: accent (functional only, never decorative) ---- */
   --color-accent: #1D4ED8;
   --color-accent-hover: #1E40AF;
   --color-accent-subtle: #EFF6FF;
 
-  /* ---- Color: status (always pair with text, never color alone) ---- */
-  --color-info:    #1D4ED8;    --color-info-bg:    #EFF6FF;  /* Open / New */
-  --color-warning: #B45309;    --color-warning-bg: #FFFBEB;  /* In Progress */
-  --color-pending: #6D28D9;    --color-pending-bg: #F5F3FF;  /* Waiting for client */
-  --color-success: #15803D;    --color-success-bg: #F0FDF4;  /* Resolved */
-  --color-neutral: #52525B;    --color-neutral-bg: #F4F4F5;  /* Closed */
-  --color-danger:  #B91C1C;    --color-danger-bg:  #FEF2F2;  /* Urgent / Overdue */
+  --color-info:    #1D4ED8;    --color-info-bg:    #EFF6FF;
+  --color-warning: #B45309;    --color-warning-bg: #FFFBEB;
+  --color-pending: #6D28D9;    --color-pending-bg: #F5F3FF;
+  --color-success: #15803D;    --color-success-bg: #F0FDF4;
+  --color-neutral: #52525B;    --color-neutral-bg: #F4F4F5;
+  --color-danger:  #B91C1C;    --color-danger-bg:  #FEF2F2;
 
-  /* ---- Elevation (flat design — this is the only shadow allowed) ---- */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.10);
 
-  /* ---- Motion ---- */
   --transition-fast: 120ms ease-out;
   --transition-base: 180ms ease-out;
 
-  /* ---- Radius ---- */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
 
-  /* ---- Bootstrap 5.3+ variable overrides ----
-     This retheme's existing .btn / .card / .badge / .table / .form-control
-     markup with no changes to Razor views. */
   --bs-font-sans-serif: var(--font-sans);
   --bs-body-font-family: var(--font-sans);
   --bs-body-font-size: var(--text-base);
@@ -86,9 +64,6 @@
   --bs-box-shadow-sm: var(--shadow-sm);
 }
 
-/* ==========================================================================
-   Base
-   ========================================================================== */
 
 body {
   font-family: var(--font-sans);
@@ -133,11 +108,6 @@ textarea:focus-visible,
   }
 }
 
-/* ==========================================================================
-   Status badges — pill shape is the one intentional exception to --radius-md,
-   it's a genuine helpdesk convention for tags, not decoration.
-   Usage: <span class="badge-status badge-status--info">Open</span>
-   ========================================================================== */
 
 .badge-status {
   display: inline-flex;
@@ -167,9 +137,6 @@ textarea:focus-visible,
 .priority-dot--medium { background: var(--color-warning); }
 .priority-dot--low    { background: var(--color-text-muted); }
 
-/* ==========================================================================
-   Avatars — initials in a flat neutral circle, never a gradient
-   ========================================================================== */
 
 .avatar {
   display: inline-flex;
@@ -184,9 +151,6 @@ textarea:focus-visible,
   font-weight: 600;
 }
 
-/* ==========================================================================
-   Dashboard stat cards
-   ========================================================================== */
 
 .stat-card {
   background: var(--color-bg);
@@ -200,18 +164,12 @@ textarea:focus-visible,
 .stat-card__delta--up   { color: var(--color-success); }
 .stat-card__delta--down { color: var(--color-danger); }
 
-/* ==========================================================================
-   Ticket table rows
-   ========================================================================== */
 
 .ticket-row { transition: background var(--transition-fast); }
 .ticket-row:hover { background: var(--color-bg-muted); }
 .ticket-subject { font-weight: 500; color: var(--color-text); }
 .ticket-client  { font-size: var(--text-xs); color: var(--color-text-muted); }
 
-/* ==========================================================================
-   Conversation thread
-   ========================================================================== */
 
 .thread-message {
   padding: 14px 16px;
@@ -233,9 +191,6 @@ textarea:focus-visible,
 .thread-message__author { font-weight: 500; color: var(--color-text-secondary); }
 .thread-message__body { font-size: var(--text-base); color: var(--color-text); white-space: pre-wrap; }
 
-/* ==========================================================================
-   Live chat bubbles (SignalR)
-   ========================================================================== */
 
 .chat-message {
   max-width: 70%;
@@ -264,9 +219,6 @@ textarea:focus-visible,
 .chat-status-dot--connecting   { background: var(--color-text-muted); }
 .chat-status-dot--disconnected { background: var(--color-danger); }
 
-/* ==========================================================================
-   Skeleton loading — subtle, gray, functional (not decorative shimmer)
-   ========================================================================== */
 
 .skeleton {
   background: var(--color-bg-muted);
@@ -277,9 +229,6 @@ textarea:focus-visible,
   .skeleton { animation: none; background: var(--color-bg-muted); }
 }
 
-/* ==========================================================================
-   Toasts
-   ========================================================================== */
 
 .toast-cbs {
   background: var(--color-bg);

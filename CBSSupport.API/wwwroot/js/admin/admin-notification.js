@@ -1,21 +1,9 @@
-/**
- * Admin Panel Notifications System
- * Handles all notification functionality including loading, rendering, and user interactions
- */
 "use strict";
 
 window.AdminNotifications = (() => {
 
-    // ============================================
-    // 🔔 STATE MANAGEMENT
-    // ============================================
-
     let unreadNotificationCount = 0;
     let notificationPollingInterval = null;
-
-    // ============================================
-    // 🔔 NOTIFICATION PROCESSING
-    // ============================================
 
     function getNotificationIcon(type) {
         const icons = {
@@ -190,10 +178,6 @@ window.AdminNotifications = (() => {
         container.replaceChildren(state);
     }
 
-    // ============================================
-    // 🔔 NOTIFICATION ACTIONS
-    // ============================================
-
     async function markNotificationAsRead(notificationId) {
         try {
             const response = await fetch(`/api/v1/notifications/${notificationId}/read`, {
@@ -245,10 +229,6 @@ window.AdminNotifications = (() => {
         return token ? { 'RequestVerificationToken': token } : {};
     }
 
-    // ============================================
-    // 🔔 NOTIFICATION MENU MANAGEMENT
-    // ============================================
-
     function createNotificationMenu() {
         const menu = document.createElement('div');
         menu.className = 'header-notification-dropdown-menu';
@@ -290,7 +270,6 @@ window.AdminNotifications = (() => {
                     await markNotificationAsRead(notificationId);
                 }
 
-                // Navigate to relevant page
                 if (entityType === 'message') {
                     AdminNavigation.navigateToChatsPage();
                     setTimeout(async () => {
@@ -327,10 +306,6 @@ window.AdminNotifications = (() => {
             }
         });
     }
-
-    // ============================================
-    // 🔔 INITIALIZATION
-    // ============================================
 
     function initialize() {
         const buttonIds = [
@@ -388,7 +363,6 @@ window.AdminNotifications = (() => {
             }
         });
 
-        // Close dropdown when clicking outside
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.header-notification-container') &&
                 !e.target.closest('.header-notification-btn') &&
@@ -402,7 +376,6 @@ window.AdminNotifications = (() => {
             }
         });
 
-        // Load initial notifications and start polling
         loadNotifications();
 
         if (notificationPollingInterval) {
@@ -410,10 +383,6 @@ window.AdminNotifications = (() => {
         }
         notificationPollingInterval = setInterval(loadNotifications, 30000);
     }
-
-    // ============================================
-    // 🔗 PUBLIC API
-    // ============================================
 
     return {
         initialize,

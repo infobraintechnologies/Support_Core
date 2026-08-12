@@ -152,7 +152,6 @@ builder.Services.AddRateLimiter(options =>
     };
 });
 
-// --- 2. Get Connection String ---
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 if (string.IsNullOrEmpty(connectionString))
 {
@@ -163,7 +162,6 @@ builder.Services.AddSingleton<ISecurityAuditWriter>(securityAuditWriter);
 builder.Services.AddSingleton<ISecurityAuditReader>(securityAuditWriter);
 builder.Services.AddHttpContextAccessor();
 
-// --- 3. Register your custom services---
 var attachmentOptions = builder.Configuration
     .GetSection(AttachmentOptions.SectionName)
     .Get<AttachmentOptions>() ?? new AttachmentOptions();
@@ -263,7 +261,6 @@ builder.Services.AddSingleton<HubPrincipalValidationFilter>();
 builder.Services.AddHostedService<HubConnectionRevocationMonitor>();
 builder.Services.AddSingleton<IAuthorizationHandler, TenantAccessHandler>();
 
-// --- 4. CONFIGURE AUTHENTICATION ---
 var authenticationBuilder = builder.Services.AddAuthentication(options =>
 {
     options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;

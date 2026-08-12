@@ -157,7 +157,10 @@ public sealed class DatabaseMigrationContractTests
         Assert.Contains("ix_case_notifications_admin_recipient_unread_created", sql, StringComparison.Ordinal);
         Assert.Contains("digital.notification_backfill_review", sql, StringComparison.Ordinal);
         Assert.Contains("legacy_flags_do_not_identify_recipient", sql, StringComparison.Ordinal);
-        Assert.Contains("no durable recipient row is inferred", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "No recipient rows are created from ambiguous historic tenant/global flags.",
+            sql,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

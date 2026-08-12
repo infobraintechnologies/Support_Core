@@ -1,8 +1,6 @@
--- Read-only principal/type readiness checks. This script performs no DDL/DML.
+-- Read-only principal/type readiness checks; no DDL or DML.
 
--- 1. Record the complete live column shape supplied by the owners of the two
--- external identity/tenant tables. internal.support_users.user_id is not an
--- expected authentication key; id is canonical unless this result proves otherwise.
+-- External identity/tenant column shapes. support_users.id is the expected Client key.
 SELECT
     columns.table_schema,
     columns.table_name,
@@ -17,8 +15,7 @@ WHERE columns.table_schema = 'internal'
   AND columns.table_name IN ('support_users', 'clients')
 ORDER BY columns.table_name, columns.ordinal_position;
 
--- 2. Verify the confirmed external tenant key shape. This is a catalog-only
--- assertion: CBS Support must not alter the externally owned internal.clients table.
+-- Confirm the externally owned tenant key shape; CBS Support does not alter it.
 DO $clients_contract$
 BEGIN
     IF NOT EXISTS (
@@ -68,7 +65,7 @@ BEGIN
 END
 $clients_contract$;
 
--- 3. Record the keys and foreign keys on the external tables for the review archive.
+-- Record external keys and foreign keys for the deployment archive.
 SELECT
     constrained_table.relname AS table_name,
     constraint_row.conname AS constraint_name,
@@ -82,7 +79,7 @@ WHERE constraint_row.conrelid IN (
         'internal.clients'::regclass)
 ORDER BY constrained_table.relname, constraint_row.conname;
 
--- 4. Record the actual existing client_auth_user_id foreign key and target table.
+-- Record the existing client_auth_user_id foreign key and target.
 SELECT
     constraint_info.conname AS constraint_name,
     pg_get_constraintdef(constraint_info.oid) AS constraint_definition
@@ -99,8 +96,7 @@ WHERE schema_info.nspname = 'digital'
   AND constraint_info.contype = 'f'
   AND column_info.attname = 'client_auth_user_id';
 
--- 5. Confirm client_auth_user_id has the inspected bigint source type, is nullable,
--- and contains zero values before the owner/DBA narrows it to integer.
+-- Confirm client_auth_user_id is nullable bigint with zero populated values.
 SELECT
     format_type(column_row.atttypid, column_row.atttypmod) AS formatted_type,
     NOT column_row.attnotnull AS is_nullable,
@@ -113,7 +109,7 @@ WHERE column_row.attrelid = 'digital.instructions'::regclass
   AND column_row.attnum > 0
   AND NOT column_row.attisdropped;
 
--- 6. Verify insert_user is already nullable. No migration may alter its nullability.
+-- Verify insert_user is nullable; migrations must not change it.
 SELECT
     NOT column_row.attnotnull AS is_nullable
 FROM pg_attribute AS column_row
@@ -122,7 +118,7 @@ WHERE column_row.attrelid = 'digital.instructions'::regclass
   AND column_row.attnum > 0
   AND NOT column_row.attisdropped;
 
--- 7. Every client_auth_user_id must resolve to a support-login identity.
+-- Every client_auth_user_id must resolve to a support-login identity.
 SELECT
     instruction.id,
     instruction.client_id AS instruction_client_id,
@@ -138,7 +134,7 @@ WHERE instruction.client_auth_user_id IS NOT NULL
 ORDER BY instruction.id
 LIMIT 200;
 
--- 8. A client-authored instruction must belong to the same tenant as its support user.
+-- Client-authored instructions must match the support user's tenant.
 SELECT
     instruction.id,
     instruction.client_id AS instruction_client_id,
@@ -154,8 +150,7 @@ WHERE instruction.client_auth_user_id IS NOT NULL
 ORDER BY instruction.id
 LIMIT 200;
 
--- 9. Client-authored rows must not also use the admin-only insert_user column.
--- insert_user is already nullable in shared test and must remain so.
+-- Client-authored rows must not populate the admin-only insert_user column.
 SELECT
     instruction.id,
     instruction.client_id,

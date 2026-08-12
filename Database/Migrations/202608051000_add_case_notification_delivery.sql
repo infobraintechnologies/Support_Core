@@ -1,13 +1,7 @@
--- CBS Support database migration
--- Version: 202608051000_add_case_notification_delivery
--- Purpose: persist recipient-specific Ticket/Inquiry notifications and stable
---          idempotency keys alongside the existing transactional outbox.
--- Preconditions: Messaging V2, case conversation modernization, and case audit
---                migrations are applied.
+-- Add recipient-specific case notifications and outbox idempotency keys.
+-- Preconditions: Messaging V2, case modernization, and case audit migrations applied.
 -- migration-transaction: true
--- Rollback/forward-fix: notification history and outbox keys become durable once
--- application writes begin. Correct defects with a forward migration; do not
--- delete committed notification records.
+-- Forward-fix only after application writes begin; retain committed notifications.
 
 ALTER TABLE digital.conversation_outbox
     ADD COLUMN idempotency_key varchar(200);

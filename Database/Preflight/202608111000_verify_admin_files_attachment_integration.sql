@@ -1,7 +1,5 @@
--- CBS Support read-only database preflight
--- Purpose: verify admin.files compatibility and CBS Support attachment projection
---          readiness before/after 202608111010_integrate_admin_files_attachments.
--- This script performs no writes. Archive its single summary row as deployment evidence.
+-- Read-only admin.files compatibility and attachment projection check.
+-- Run before/after 202608111010; archive the summary row.
 
 WITH eligible AS MATERIALIZED (
     SELECT attachment.id,

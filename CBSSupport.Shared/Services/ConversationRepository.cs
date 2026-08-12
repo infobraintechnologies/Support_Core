@@ -914,9 +914,7 @@ public sealed class ConversationRepository : IConversationRepository
                 ErrorCode: "attachments_disabled");
         }
 
-        // Serialize retries for the same caller-generated UUID across conversations.
-        // This closes the check/insert race while the global unique index remains the
-        // final database invariant.
+        // Serialize retries for the caller-generated UUID before the unique-index check.
         await connection.ExecuteAsync(new CommandDefinition(
             "SELECT pg_advisory_xact_lock(hashtextextended(@IdempotencyKey, 0));",
             new { IdempotencyKey = clientMessageId.ToString("D") },

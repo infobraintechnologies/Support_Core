@@ -1,8 +1,5 @@
-﻿/* ============================================
-   🎨 ADMIN PANEL SUBTLE COLORS
-   ============================================ */
+﻿
 
-/* 🌐 GLOBAL RESET & BASE */
 * {
     box-sizing: border-box;
 }
@@ -15,7 +12,6 @@ body {
     overflow: hidden;
 }
 
-/* 📱 ADMIN CONTAINER */
 .admin-container {
     display: flex;
     height: 100vh;
@@ -23,7 +19,6 @@ body {
     background: #fafbfc;
 }
 
-/* 📋 ADMIN SIDEBAR */
 .admin-sidebar {
     width: 250px;
     background: var(--color-bg);
@@ -124,7 +119,6 @@ body {
         border-radius: 0.25rem;
     }
 
-/* 📊 ADMIN CONTENT */
 .admin-content {
     flex: 1;
     display: flex;
@@ -132,7 +126,6 @@ body {
     overflow: hidden;
 }
 
-/* 📝 ADMIN PAGES */
 .admin-page {
     display: none;
     height: 100%;
@@ -144,7 +137,6 @@ body {
         flex-direction: column;
     }
 
-/* 📄 PAGE HEADER */
 .page-header {
     background: #ffffff;
     padding: 1.5rem 2rem;
@@ -160,7 +152,6 @@ body {
         color: #2d3748;
     }
 
-/* 📊 PAGE CONTENT */
 .page-content {
     flex: 1;
     padding: 2rem;
@@ -168,7 +159,6 @@ body {
     background: #fafbfc;
 }
 
-/* 🎯 SUBTLE DASHBOARD CARDS */
 .dashboard-card {
     background: #ffffff;
     border-radius: 6px;
@@ -182,7 +172,6 @@ body {
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
 
-/* 🎨 SUBTLE STAT CARDS */
 .stat-card {
     padding: 1.5rem;
     border: 1px solid #e2e8f0;
@@ -239,7 +228,6 @@ body {
     font-weight: 500;
 }
 
-/* 🚨 SUBTLE URGENT ALERT */
 .urgent-alert {
     border-left: 3px solid #fed7d7;
     background: #ffffff;
@@ -247,7 +235,6 @@ body {
     border: 1px solid #fed7d7;
 }
 
-/* 🎯 SUBTLE CRITICAL ITEMS LIST */
 .critical-items-list {
     max-height: 400px;
     overflow-y: auto;
@@ -273,7 +260,6 @@ body {
     border-radius: 0 0 6px 6px;
 }
 
-/* 🔥 SUBTLE UNSOLVED ITEMS */
 .unsolved-ticket-item,
 .unsolved-inquiry-item {
     padding: 1rem;
@@ -326,14 +312,12 @@ body {
     align-items: center;
 }
 
-/* 📊 SUBTLE CHART CONTAINER */
 .chart-container {
     position: relative;
     height: 300px;
     padding: 1rem;
 }
 
-/* 🎯 LOADING STATES */
 .loading-state {
     color: #718096;
     display: flex;
@@ -350,14 +334,12 @@ body {
     color: #718096;
 }
 
-/* ⚡ QUICK ACTIONS */
 .quick-actions {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
 }
 
-/* 🎨 SUBTLE SHADOWS */
 .shadow-hover {
     transition: box-shadow 0.2s ease;
 }
@@ -366,12 +348,10 @@ body {
         box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
     }
 
-/* 🎯 CLICKABLE ELEMENTS */
 .clickable-card {
     cursor: pointer;
 }
 
-/* 📋 SUBTLE LIST CARDS */
 .list-card {
     display: flex;
     flex-direction: column;
@@ -410,7 +390,6 @@ body {
     flex: 1;
 }
 
-/* 🎯 SUBTLE RECENT TICKET ITEMS */
 .recent-ticket-item {
     display: flex;
     justify-content: space-between;
@@ -450,7 +429,6 @@ body {
         font-size: 0.75rem;
     }
 
-/* 🎨 SUBTLE PRIORITY BADGES */
 .badge-priority-low {
     background-color: #9ae6b4;
     color: #22543d;
@@ -471,7 +449,6 @@ body {
     color: #742a2a;
 }
 
-/* 🎨 SUBTLE STATUS BADGES */
 .badge-status-open {
     background-color: #fbd38d;
     color: #744210;
@@ -492,7 +469,6 @@ body {
     color: #22543d;
 }
 
-/* 💫 SUBTLE BADGES */
 .badge {
     font-weight: 400;
     padding: 0.25em 0.5em;
@@ -500,7 +476,6 @@ body {
     border-radius: 3px;
 }
 
-/* 🎯 MANAGEMENT LAYOUTS */
 .ticket-management-layout,
 .inquiry-management-layout {
     display: flex;
@@ -534,7 +509,6 @@ body {
     overflow-y: auto;
 }
 
-/* 🎯 DETAIL PANELS */
 .ticket-detail-header,
 .inquiry-detail-header {
     background: #4a5568;
@@ -570,7 +544,6 @@ body {
     gap: 0.5rem;
 }
 
-/* 🎯 ACTION BUTTONS */
 .btn-icon-action {
     padding: 0.5rem;
     border: none;
@@ -597,7 +570,6 @@ body {
     justify-content: center;
 }
 
-/* 🎯 CLICKABLE ROWS */
 .clickable-ticket-row,
 .clickable-inquiry-row {
     cursor: pointer;
@@ -609,7 +581,6 @@ body {
         background-color: rgba(66, 153, 225, 0.03) !important;
     }
 
-/* 📱 CHAT DASHBOARD */
 .chat-dashboard-container {
     display: flex;
     height: calc(100vh - 120px);
@@ -763,7 +734,6 @@ body {
     gap: 0.25rem;
 }
 
-/* 🎯 CHAT SECTIONS */
 .admin-chat-section {
     border-bottom: 1px solid #e2e8f0;
 }
@@ -889,7 +859,6 @@ body {
     font-weight: 700;
 }
 
-/* 🎯 SUBTLE AVATARS */
 .admin-avatar-initials {
     width: 36px;
     height: 36px;
@@ -926,7 +895,6 @@ body {
     background-color: #a0aec0;
 }
 
-/* 🎯 CHAT PLACEHOLDER */
 .admin-chat-placeholder {
     display: flex;
     align-items: center;
@@ -950,7 +918,6 @@ body {
     margin-top: 1rem;
 }
 
-/* 🎯 FLOATING CHAT */
 .floating-chat-box {
     position: fixed;
     bottom: 20px;
@@ -1030,7 +997,6 @@ body {
     display: none;
 }
 
-/* 🎯 MESSAGE STYLING */
 .message-row {
     margin-bottom: 1rem;
 }
@@ -1073,7 +1039,6 @@ body {
     padding: 0 0.5rem;
 }
 
-/* 🎯 NOTIFICATION STYLES */
 .header-notification-container {
     position: relative;
 }
@@ -1207,7 +1172,6 @@ body {
     color: #718096;
 }
 
-/* 🎯 TOAST CONTAINER */
 .toast-container {
     position: fixed;
     top: 20px;
@@ -1215,7 +1179,6 @@ body {
     z-index: 9999;
 }
 
-/* 🎯 SUBTLE SCROLL BARS */
 ::-webkit-scrollbar {
     width: 5px;
     height: 5px;
@@ -1235,7 +1198,6 @@ body {
         background: #a0aec0;
     }
 
-/* 🎯 UTILITY CLASSES */
 .text-truncate-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -1243,7 +1205,6 @@ body {
     overflow: hidden;
 }
 
-/* 📱 RESPONSIVE DESIGN */
 @media (max-width: 1200px) {
     .stat-card .stat-content {
         padding-right: 68px;
@@ -1399,7 +1360,6 @@ body {
     }
 }
 
-/* 🎯 PRINT STYLES */
 @media print {
     .admin-sidebar,
     .floating-chat-box,

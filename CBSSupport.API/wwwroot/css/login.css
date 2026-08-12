@@ -9,7 +9,6 @@ body {
     padding: 1.5rem;
 }
 
-/* --- LOGIN CONTAINER --- */
 .login-container {
     display: flex;
     max-width: 920px;
@@ -22,7 +21,6 @@ body {
     overflow: hidden;
 }
 
-/* --- LEFT BRANDING PANEL --- */
 .login-branding {
     flex: 0 0 40%;
     background: var(--color-bg-muted);
@@ -65,7 +63,6 @@ body {
     max-width: 300px;
 }
 
-/* --- RIGHT FORM PANEL --- */
 .login-form-panel {
     flex: 1;
     padding: 2rem;
@@ -167,7 +164,6 @@ body {
     }
 
 
-/* Form Fields & Disabled State */
 .form-control {
     background-color: var(--color-bg);
     border: 1px solid var(--color-border-strong);
@@ -192,7 +188,6 @@ body {
     pointer-events: none;
 }
 
-/* Login Button */
 .btn-login {
     background: var(--color-accent);
     border: 1px solid var(--color-accent);
@@ -208,7 +203,6 @@ body {
     border-color: var(--color-accent-hover);
 }
 
-/* Validation Error Message */
 .alert-danger[role="alert"] {
     padding: 0.75rem 1rem;
     margin-bottom: 1rem;

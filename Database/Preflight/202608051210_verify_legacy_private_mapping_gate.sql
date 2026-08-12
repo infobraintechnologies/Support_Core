@@ -1,9 +1,7 @@
--- CBS Support read-only deployment preflight
--- Reports only IDs, tenant/participant IDs, states, review status, and remediation
--- codes. It never reads or returns instruction/message content.
+-- Read-only legacy Private mapping gate; never reads message content.
 -- Run after 202608051200_complete_legacy_private_mapping_gate.
 
--- 1. Content-free row classification.
+-- Content-free row classification.
 WITH legacy_roots AS (
     SELECT id AS conversation_id, client_id AS expected_client_id
     FROM digital.instructions
@@ -181,7 +179,7 @@ SELECT 'StrayPrivateAccess',
 FROM stray_private
 ORDER BY status_code, client_id NULLS FIRST, conversation_id;
 
--- 2. Deterministic status counts and readiness result.
+-- Status counts and readiness result.
 WITH status_rows AS (
     SELECT status_code, count(*)::bigint AS row_count
     FROM (

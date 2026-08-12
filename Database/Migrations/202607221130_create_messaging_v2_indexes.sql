@@ -1,14 +1,8 @@
--- CBS Support database migration
--- Version: 202607221130_create_messaging_v2_indexes
--- Purpose: Build Messaging V2 uniqueness and query indexes without long blocking
---          table locks on production-sized instruction history.
--- Owned objects: indexes in the digital schema only.
--- Preconditions: 202607221120_backfill_messaging_v2_history has been applied.
+-- Messaging V2 concurrent indexes.
+-- Preconditions: history backfill applied.
 -- migration-transaction: false
--- Transactional: No; PostgreSQL forbids CREATE INDEX CONCURRENTLY in a transaction.
--- Rollback/forward-fix: Each statement is rerunnable through IF NOT EXISTS. If the
--- runner stops partway, inspect invalid indexes, drop only the exact invalid index,
--- and rerun. Correct deployed definitions with a new concurrent forward-fix.
+-- Non-transactional because CREATE INDEX CONCURRENTLY cannot run in a transaction.
+-- Rerun after inspecting invalid indexes; use a forward-fix for deployed definitions.
 
 CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS ix_instructions_conversation_sequence_unique
 ON digital.instructions (instruction_id, conversation_sequence)

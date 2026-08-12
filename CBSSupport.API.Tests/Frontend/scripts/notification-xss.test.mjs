@@ -1,9 +1,4 @@
-// Execution regression tests for notification / toast / error XSS sinks.
-//
-// Loads the real browser scripts (admin-utils.js, admin-notification.js) under a
-// minimal DOM shim and verifies that XSS payloads passed to toast and
-// notification rendering are displayed as plain text, never parsed as HTML, and
-// that normal toast formatting is preserved. Run with: node notification-xss.test.mjs
+// XSS regression test for notification, toast, and error rendering.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -21,9 +16,6 @@ const PAYLOADS = [
     "plain text with <strong>tags</strong> and \"quotes\""
 ];
 
-// ---------------------------------------------------------------------------
-// Minimal DOM shim
-// ---------------------------------------------------------------------------
 
 class ClassListStub {
     constructor() { this._classes = new Set(); }
@@ -153,7 +145,6 @@ function loadScript(relativePath) {
     vm.runInThisContext(source, { filename: relativePath });
 }
 
-// Element tree helpers
 function allDescendants(root) {
     const result = [];
     const visit = node => {
@@ -179,9 +170,6 @@ function collectInnerHtml(root) {
         .join("\n");
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 globalThis.__xssTriggered = false;
 
@@ -191,7 +179,6 @@ loadScript("wwwroot/js/admin/admin-notification.js");
 assert.equal(typeof globalThis.AdminUtils, "object", "AdminUtils should load");
 assert.equal(typeof globalThis.AdminNotifications, "object", "AdminNotifications should load");
 
-// --- Toast sink -----------------------------------------------------------
 
 for (const payload of PAYLOADS) {
     globalThis.AdminUtils.showNotification(payload, "error");
@@ -225,7 +212,6 @@ for (const payload of PAYLOADS) {
         "payload must never be injected through innerHTML");
 }
 
-// --- Notification list sink ------------------------------------------------
 
 const container = documentStub.createElement("div");
 container.id = "admin-notification-list";
@@ -272,7 +258,6 @@ assert.equal(
     false,
     "notification payload must never be injected through innerHTML");
 
-// --- Empty state ------------------------------------------------------------
 
 globalThis.fetch = async () => ({ ok: true, json: async () => ({ items: [], unreadCount: 0 }) });
 await globalThis.AdminNotifications.loadNotifications();

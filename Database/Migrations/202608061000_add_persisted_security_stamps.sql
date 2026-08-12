@@ -1,7 +1,5 @@
--- Persisted per-account session invalidation material.
--- Requires the pgcrypto gen_random_bytes(integer) function to be installed by
--- the database owner. CBS Support does not create extensions in externally
--- managed schemas.
+-- Add persisted per-account session invalidation material.
+-- Requires pgcrypto gen_random_bytes(integer); CBS Support does not create extensions.
 
 DO $migration_guard$
 BEGIN

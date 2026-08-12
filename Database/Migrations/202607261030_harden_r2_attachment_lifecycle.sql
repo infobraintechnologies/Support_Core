@@ -1,10 +1,6 @@
--- CBS Support database migration
--- Version: 202607261030_harden_r2_attachment_lifecycle
--- Purpose: harden asynchronous validation, deletion retry diagnostics, and
---          deterministic object ownership after the initial R2 attachment schema.
+-- Harden attachment validation, deletion retry, and object ownership.
 -- migration-transaction: true
--- Rollback/forward-fix: durable attachment state must be corrected with a later
--- ordered forward migration after upload intents have been issued.
+-- Forward-fix only after upload intents are issued.
 
 ALTER TABLE digital.attachments
     DROP CONSTRAINT ck_attachments_sizes;

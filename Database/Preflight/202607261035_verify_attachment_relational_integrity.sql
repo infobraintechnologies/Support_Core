@@ -1,6 +1,4 @@
-  -- CBS Support read-only database preflight
-  -- Purpose: verify attachment tenant, uploader, message-binding, and quota-accounting
-  -- integrity before 202607261040_enforce_attachment_relational_invariants.
+  -- Read-only attachment relational checks before 202607261040.
   -- Expected result for every query: zero rows.
 
   SELECT attachment.id,

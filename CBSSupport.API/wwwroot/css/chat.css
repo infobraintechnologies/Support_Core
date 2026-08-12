@@ -1,6 +1,5 @@
-﻿/* === MODERN DESIGN SYSTEM === */
+﻿
 :root {
-    /* Compatibility aliases for the shared CBS Support design tokens. */
     --primary-color: var(--color-accent);
     --primary-hover: var(--color-accent-hover);
     --primary-light: var(--color-accent-subtle);
@@ -21,7 +20,6 @@
     --border-light: var(--color-border);
     --shadow-lg: var(--shadow-md);
     --shadow-xl: var(--shadow-md);
-    /* Spacing */
     --space-1: 0.25rem;
     --space-2: 0.5rem;
     --space-3: 0.75rem;
@@ -35,7 +33,6 @@
     --radius-2xl: var(--radius-lg);
 }
 
-/* === GLOBAL RESET & BASE === */
 * {
     box-sizing: border-box;
     margin: 0;
@@ -53,7 +50,6 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* === HEADER === */
 .app-header {
     position: fixed;
     top: 0;
@@ -127,7 +123,6 @@ body {
         box-shadow: var(--shadow-md);
     }
 
-/* === DASHBOARD LAYOUT === */
 .dashboard-container {
     display: grid;
     grid-template-columns: 15vw 35vw 50vw;
@@ -138,7 +133,6 @@ body {
     width: 100vw;
 }
 
-/* === SIDEBAR (CONVERSATIONS) === */
 .dashboard-panel {
     background: var(--bg-primary);
     border-right: 1px solid var(--border-color);
@@ -193,7 +187,6 @@ body {
     padding: 0;
 }
 
-/* === CONVERSATION ITEMS === */
 #conversation-list-panel .panel-body {
     padding: 0;
 }
@@ -276,7 +269,6 @@ body {
     line-height: 1.2;
 }
 
-/* === ACCORDION === */
 .accordion-item {
     border: none;
     border-bottom: 1px solid var(--border-light);
@@ -301,7 +293,6 @@ body {
         box-shadow: 0 0 0 3px var(--primary-light);
     }
 
-/* === CHAT PANEL === */
 #chat-panel {
     background: var(--bg-primary);
     display: flex;
@@ -415,7 +406,6 @@ body {
         z-index: 2;
     }
 
-/* === CHAT FOOTER === */
 .chat-footer {
     padding: var(--space-6);
     background: var(--bg-primary);
@@ -466,7 +456,6 @@ body {
             transform: scale(1.1);
         }
 
-        /* Hide emoji button */
         .chat-input-actions .btn[aria-label="Insert emoji"] {
             display: none;
         }
@@ -513,7 +502,6 @@ body {
         box-shadow: none;
     }
 
-/* === HISTORY COLUMN === */
 #history-column {
     background: var(--bg-secondary);
     padding: var(--space-4);
@@ -557,7 +545,6 @@ body {
     background: var(--bg-primary);
 }
 
-/* === DATATABLE STYLES === */
 .dataTables_wrapper {
     padding: var(--space-3);
     font-size: 0.8rem;
@@ -677,7 +664,6 @@ body {
             box-shadow: var(--shadow-md);
         }
 
-/* === BADGES === */
 .badge {
     display: inline-flex;
     align-items: center;
@@ -747,7 +733,6 @@ body {
     border: 1px solid #fca5a5;
 }
 
-/* === ACTION BUTTONS === */
 .action-buttons {
     display: flex;
     gap: var(--space-2);
@@ -778,7 +763,6 @@ body {
         box-shadow: var(--shadow-md);
     }
 
-/* === PAGINATION === */
 .dataTables_wrapper .dataTables_info {
     color: var(--text-muted);
     font-size: var(--text-sm);
@@ -822,7 +806,6 @@ body {
             background: var(--bg-secondary);
         }
 
-/* === BUTTONS === */
 .btn {
     display: inline-flex;
     align-items: center;
@@ -881,7 +864,6 @@ body {
     font-size: 0.8rem;
 }
 
-/* === MODALS === */
 .modal-content {
     border: none;
     border-radius: var(--radius-xl);
@@ -910,7 +892,6 @@ body {
     background: var(--bg-secondary);
 }
 
-/* === FORMS === */
 .form-label {
     font-weight: 500;
     color: var(--text-secondary);
@@ -941,8 +922,6 @@ body {
         color: var(--text-muted);
     }
 
-/* === RESPONSIVE DESIGN === */
-/* === RESPONSIVE DESIGN === */
 @media (max-width: 1400px) {
     .dashboard-container {
         grid-template-columns: 18vw 32vw 50vw;
@@ -1023,7 +1002,6 @@ body {
     }
 }
 
-/* === SCROLLBAR STYLING === */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -1042,7 +1020,6 @@ body {
         background: var(--text-muted);
     }
 
-/* === UTILITY CLASSES === */
 .text-primary {
     color: var(--text-primary);
 }
@@ -1135,7 +1112,6 @@ body {
     padding: var(--space-4);
 }
 
-/* === ACCESSIBILITY === */
 @media (prefers-reduced-motion: reduce) {
     * {
         animation-duration: 0.01ms !important;
@@ -1144,7 +1120,6 @@ body {
     }
 }
 
-/* Focus visibility for keyboard navigation */
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -1154,9 +1129,7 @@ a:focus-visible {
     outline-offset: 2px;
 }
 
-/* 🔔 CLIENT NOTIFICATION STYLES - ADD TO YOUR chat.css */
 
-/* CLIENT NOTIFICATION CONTAINER */
 .client-notification-container {
     position: relative;
     display: inline-block;
@@ -1190,7 +1163,6 @@ a:focus-visible {
     outline: none;
 }
 
-/* Badge styles for client notifications */
 .client-notification-btn .badge {
     font-size: 0.7rem;
     min-width: 18px;
@@ -1199,7 +1171,6 @@ a:focus-visible {
     padding: 0 4px;
 }
 
-/* Client notification dropdown positioning */
 .client-notification-dropdown-menu {
     position: absolute;
     top: calc(100% + 8px);
@@ -1220,7 +1191,6 @@ a:focus-visible {
     display: block !important;
 }
 
-/* Arrow pointer for client notifications */
 .client-notification-dropdown-menu::before {
     content: '';
     position: absolute;
@@ -1236,7 +1206,6 @@ a:focus-visible {
     z-index: 1051;
 }
 
-/* Notification content styles */
 .notification-header {
     padding: 15px 20px;
     border-bottom: 1px solid #e2e8f0;
@@ -1359,12 +1328,10 @@ a:focus-visible {
     margin-bottom: 10px;
 }
 
-/* Badge animations for client notifications */
 .client-notification-btn .badge {
     animation: none;
 }
 
-/* Notification bell shake animation for client */
 .client-notification-shake {
     animation: none;
 }
@@ -1375,7 +1342,6 @@ a:focus-visible {
     75% { transform: translateX(2px); }
 }
 
-/* Responsive adjustments for client notifications */
 @media (max-width: 768px) {
     .client-notification-dropdown-menu {
         width: 320px;
@@ -1387,7 +1353,6 @@ a:focus-visible {
     }
 }
 
-/* === CLIENT MESSAGING V2 === */
 .client-conversation-heading {
     align-items: flex-start;
 }
