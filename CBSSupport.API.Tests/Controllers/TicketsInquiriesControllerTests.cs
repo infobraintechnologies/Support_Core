@@ -207,7 +207,16 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         {
             ClientTickets =
             [
-                new TicketViewModel { Id = 1, InstTypeId = ConversationTypes.MigrationTicket, Status = "Open", ClientId = ClientId, Date = DateTime.UtcNow }
+                new TicketViewModel
+                {
+                    Id = 1,
+                    InstTypeId = ConversationTypes.MigrationTicket,
+                    Status = "Open",
+                    ClientId = ClientId,
+                    ClientName = "Example Client",
+                    CreatedBy = "Client User",
+                    Date = DateTime.UtcNow
+                }
             ]
         };
         var controller = CreateTicketsController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
@@ -218,6 +227,8 @@ public sealed class TicketsInquiriesApiV1ControllerTests
         var page = Assert.IsType<CasePage<TicketResponse>>(ok.Value);
         var item = Assert.Single(page.Items);
         Assert.Equal(CaseTypes.Migration, item.Type);
+        Assert.Equal("Example Client", item.ClientName);
+        Assert.Equal("Client User", item.CreatedByName);
         Assert.Equal(CaseListQuery.DefaultPageSize, page.PageSize);
         Assert.Equal(ClientId, chat.LastTicketCriteria!.ClientId);
     }
@@ -531,7 +542,19 @@ public sealed class TicketsInquiriesApiV1ControllerTests
     {
         var chat = new RecordingChatService
         {
-            InquiryPage = new CasePage<InquiryViewModel>([], CaseListQuery.DefaultPageSize, null)
+            InquiryPage = new CasePage<InquiryViewModel>(
+                [new InquiryViewModel
+                {
+                    Id = 2,
+                    InstTypeId = ConversationTypes.AccountsInquiry,
+                    Outcome = "Completed",
+                    ClientId = ClientId,
+                    ClientName = "Example Client",
+                    InquiredBy = "Client User",
+                    Date = DateTime.UtcNow
+                }],
+                CaseListQuery.DefaultPageSize,
+                null)
         };
         var controller = CreateInquiriesController(new RecordingCaseConversationService(), chat, CreateClientPrincipal());
 
@@ -541,6 +564,9 @@ public sealed class TicketsInquiriesApiV1ControllerTests
 
         var page = Assert.IsType<CasePage<InquiryResponse>>(Assert.IsType<OkObjectResult>(result.Result).Value);
         Assert.Equal(CaseListQuery.DefaultPageSize, page.PageSize);
+        var item = Assert.Single(page.Items);
+        Assert.Equal("Example Client", item.ClientName);
+        Assert.Equal("Client User", item.InquiredByName);
         Assert.Equal(ClientId, chat.LastInquiryCriteria!.ClientId);
         Assert.True(chat.LastInquiryCriteria.IsCompleted);
         Assert.Equal(ConversationTypes.AccountsInquiry, chat.LastInquiryCriteria.TypeCode);

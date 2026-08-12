@@ -86,60 +86,28 @@ window.AdminChat = (() => {
         return Array.isArray(page) ? page : (page?.items || []);
     }
 
-    async function loadInternalChats() {
-        const data = await fetchJson("/v1/api/instructions/by-type/internal-team-chat");
-        const seen = new Set();
-        const internalChats = (Array.isArray(data) ? data : [])
-            .filter(item => {
-                const id = Number(item.instructionId || item.id);
-                if (!Number.isSafeInteger(id) || id <= 0 || seen.has(id)) return false;
-                seen.add(id);
-                return true;
-            })
-            .map(item => ({
-                conversationId: item.instructionId || item.id,
-                displayName: "Internal Discussion",
-                subtitle: item.instruction || "No recent messages",
-                route: "internal-team-chat"
-            }));
-        return {
-            internalChats,
-            ticketChats: [],
-            inquiryChats: []
-        };
-    }
-
     async function initializeChatsPage(currentClientId) {
         const requestId = ++listRequest;
         setListsLoading();
         setConnectionStatus("loading");
 
-        const [v2Result, internalResult] = await Promise.allSettled([
-            listV2Conversations(),
-            loadInternalChats()
-        ]);
+        let conversations = [];
+        let loadError = null;
+        try {
+            conversations = await listV2Conversations();
+        } catch (error) {
+            loadError = error;
+        }
         if (requestId !== listRequest) return;
 
-        const conversations = v2Result.status === "fulfilled" ? v2Result.value : [];
-        const internal = internalResult.status === "fulfilled"
-            ? internalResult.value
-            : { internalChats: [], ticketChats: [], inquiryChats: [] };
-
-        if (v2Result.status === "rejected") {
-            console.error("AdminChat: failed to load Messaging V2 conversations.", v2Result.reason);
+        if (loadError) {
+            console.error("AdminChat: failed to load Messaging V2 conversations.", loadError);
             showListError("group-chats", "Could not load group chats.");
             showListError("private-chats", "Could not load private chats.");
         } else {
             renderV2Lists(conversations, currentClientId);
         }
 
-        if (internalResult.status === "rejected") {
-            console.error("AdminChat: failed to load internal conversations.", internalResult.reason);
-            showListError("internal-chats", "Could not load internal conversations.");
-            renderLegacyLists({ internalChats: [], ticketChats: [], inquiryChats: [] }, true);
-        } else {
-            renderLegacyLists(internal, true);
-        }
         restoreActiveListState();
         applyConversationFilters();
         setConnectionStatus();
@@ -159,7 +127,7 @@ window.AdminChat = (() => {
     }
 
     function setListsLoading() {
-        ["group-chats", "private-chats", "internal-chats", "ticket-chats", "inquiry-chats"]
+        ["group-chats", "private-chats", "ticket-chats", "inquiry-chats"]
             .forEach(id => {
                 const container = document.getElementById(id);
                 if (!container) return;
@@ -212,7 +180,7 @@ window.AdminChat = (() => {
                 start.dataset.createGroup = "true";
                 start.dataset.type = "group";
                 start.dataset.searchText = "start group chat";
-                start.innerHTML = '<i class="fas fa-users me-2" aria-hidden="true"></i>';
+                start.innerHTML = '<i class="bi bi-people me-2" aria-hidden="true"></i>';
                 start.appendChild(document.createTextNode("Start group chat"));
                 groupContainer.appendChild(start);
             }
@@ -286,37 +254,6 @@ window.AdminChat = (() => {
         return option?.textContent?.trim() || `Tenant ${clientId}`;
     }
 
-    function renderLegacyLists(data, hasTenant) {
-        renderLegacySection("internal-chats", data.internalChats, "internal", hasTenant);
-    }
-
-    function renderLegacySection(id, items, type, hasTenant) {
-        const container = document.getElementById(id);
-        if (!container) return;
-        container.replaceChildren();
-        if (!hasTenant) {
-            container.appendChild(createListMessage("Choose a tenant to view this section."));
-            return;
-        }
-        if (!items.length) {
-            container.appendChild(createListMessage(`No ${type} chats.`));
-            return;
-        }
-        items.forEach(item => container.appendChild(createLegacyConversationItem(item, type)));
-    }
-
-    function createLegacyConversationItem(item, type) {
-        return createConversationButton({
-            id: item.conversationId,
-            name: item.displayName || `${type} conversation`,
-            subtitle: item.subtitle || "No recent messages",
-            route: type === "ticket" || type === "inquiry"
-                ? "messaging-v2"
-                : (item.route || ""),
-            type
-        });
-    }
-
     function createConversationButton(data) {
         const button = document.createElement("button");
         button.type = "button";
@@ -333,7 +270,7 @@ window.AdminChat = (() => {
         avatar.className = `admin-avatar-initials ${getAvatarClass(data.type)} me-3`;
         avatar.setAttribute("aria-hidden", "true");
         const icon = document.createElement("i");
-        icon.className = `fas ${getAvatarIconClass(data.type)}`;
+        icon.className = `bi ${getAvatarIconClass(data.type)}`;
         avatar.appendChild(icon);
 
         const copy = document.createElement("span");
@@ -367,12 +304,12 @@ window.AdminChat = (() => {
 
     function getAvatarIconClass(type) {
         return {
-            private: "fa-user",
-            internal: "fa-building",
-            ticket: "fa-ticket-alt",
-            inquiry: "fa-question-circle",
-            group: "fa-users"
-        }[type] || "fa-comment";
+            private: "bi-person",
+            internal: "bi-buildings",
+            ticket: "bi-ticket-perforated",
+            inquiry: "bi-question-circle",
+            group: "bi-people"
+        }[type] || "bi-chat";
     }
 
     function renderUnreadBadge(item, count) {
@@ -557,11 +494,12 @@ window.AdminChat = (() => {
         setText(
             document.querySelector(".admin-chat-subtitle"),
             `${capitalize(mainChatContext.type)} chat`);
+        setText(
+            document.getElementById("admin-chat-context-badge"),
+            capitalize(mainChatContext.type));
         const isPrivate = mainChatContext.isV2 && mainChatContext.type === "private";
         document.getElementById("chat-transfer-btn").style.display = isPrivate ? "" : "none";
         document.getElementById("chat-archive-btn").style.display = isPrivate ? "" : "none";
-        document.getElementById("chat-info-btn").style.display = "";
-        document.getElementById("chat-settings-btn").style.display = "";
     }
 
     function capitalize(value) {
@@ -609,7 +547,9 @@ window.AdminChat = (() => {
         lastMainChatMessageDate = dateKey;
         const separator = document.createElement("div");
         separator.className = "date-separator";
-        separator.textContent = AdminUtils.formatDateForSeparator(dateValue);
+        const label = document.createElement("span");
+        label.textContent = AdminUtils.formatDateForSeparator(dateValue);
+        separator.appendChild(label);
         mainChatPanelBody.appendChild(separator);
     }
 
@@ -649,10 +589,7 @@ window.AdminChat = (() => {
             sender.textContent = senderName;
             cluster.append(sender, createMessageBubble(message));
 
-            const avatar = document.createElement("div");
-            avatar.className = "chat-avatar";
-            avatar.textContent = String(senderName).trim().charAt(0).toUpperCase() || "?";
-            group.append(cluster, avatar);
+            group.append(cluster);
             mainChatPanelBody.appendChild(group);
         }
         if (shouldAutoScroll) AdminUtils.scrollToBottom(mainChatPanelBody);
@@ -993,7 +930,8 @@ window.AdminChat = (() => {
         renderMainPanelMessage(message);
         setText(document.querySelector(".admin-chat-title"), "Select a Conversation");
         setText(document.querySelector(".admin-chat-subtitle"), "Choose from the list to continue");
-        ["chat-transfer-btn", "chat-archive-btn", "chat-info-btn", "chat-settings-btn"]
+        setText(document.getElementById("admin-chat-context-badge"), "No conversation selected");
+        ["chat-transfer-btn", "chat-archive-btn"]
             .forEach(id => {
                 const control = document.getElementById(id);
                 if (control) control.style.display = "none";
@@ -1173,29 +1111,65 @@ window.AdminChat = (() => {
     }
 
     async function refreshAdminConversations(currentClientId) {
-        const icon = document.querySelector("#refresh-conversations-btn .fas");
-        icon?.classList.add("fa-spin");
+        const icon = document.querySelector("#refresh-conversations-btn .bi");
+        icon?.classList.add("icon-spin");
         try {
             await initializeChatsPage(currentClientId);
         } finally {
-            icon?.classList.remove("fa-spin");
+            icon?.classList.remove("icon-spin");
         }
     }
 
-    async function openChatConversation(instructionId) {
-        const id = Number(instructionId);
-        let item = document.querySelector(`.admin-conversation-item[data-id="${id}"]`);
-        if (!item) {
-            await refreshAdminConversations(window.AdminCore?.getCurrentClientId?.());
-            item = document.querySelector(`.admin-conversation-item[data-id="${id}"]`);
+    function selectConversationTenant(clientId) {
+        const id = Number(clientId);
+        if (!Number.isSafeInteger(id) || id <= 0) return null;
+
+        const switcher = document.getElementById("client-switcher-chats");
+        const hasTenant = Array.from(switcher?.options || [])
+            .some(option => Number(option.value) === id);
+        if (!switcher || !hasTenant) return null;
+
+        if (String(window.AdminCore?.getCurrentClientId?.()) !== String(id)) {
+            switcher.value = String(id);
+            if (window.jQuery) {
+                window.jQuery(switcher).trigger("change");
+            } else {
+                switcher.dispatchEvent(new Event("change", { bubbles: true }));
+            }
         }
-        if (item) item.click();
-        else AdminUtils.showNotification("Could not open chat conversation.", "error");
+        return id;
+    }
+
+    async function openChatConversation(instructionId, clientId = null) {
+        const id = Number(instructionId);
+        if (!Number.isSafeInteger(id) || id <= 0) {
+            AdminUtils.showNotification("Could not open chat conversation.", "error");
+            return;
+        }
+
+        try {
+            const summary = conversationById.get(id);
+            const targetClientId = selectConversationTenant(clientId)
+                ?? selectConversationTenant(summary?.clientId)
+                ?? window.AdminCore?.getCurrentClientId?.();
+            await refreshAdminConversations(targetClientId);
+            const item = document.querySelector(`.admin-conversation-item[data-id="${id}"]`);
+            if (item) {
+                await openConversationItem(item);
+            } else {
+                AdminUtils.showNotification("Could not open chat conversation.", "error");
+            }
+        } catch (error) {
+            console.error("AdminChat: failed to open chat conversation.", error);
+            AdminUtils.showNotification("Could not open chat conversation.", "error");
+        }
     }
 
     function openEnhancedFloatingChatBox(item, type) {
-        const id = Number(item.id);
-        const chatBoxId = `chatbox-${type}-${id}`;
+        const caseId = Number(item.id);
+        const conversationId = Number(item.conversationId || item.id);
+        const clientId = Number(item.clientId);
+        const chatBoxId = `chatbox-${type}-${conversationId}`;
         const existing = document.getElementById(chatBoxId);
         if (existing) {
             existing.classList.remove("collapsed");
@@ -1205,7 +1179,10 @@ window.AdminChat = (() => {
         const box = document.createElement("section");
         box.className = "floating-chat-box";
         box.id = chatBoxId;
-        box.dataset.id = String(id);
+        box.dataset.id = String(conversationId);
+        if (Number.isSafeInteger(clientId) && clientId > 0) {
+            box.dataset.clientId = String(clientId);
+        }
         box.dataset.type = type;
         box.setAttribute("aria-label", `${type === "tkt" ? "Ticket" : "Inquiry"} chat`);
 
@@ -1213,13 +1190,13 @@ window.AdminChat = (() => {
         header.className = "chat-box-header";
         const title = document.createElement("span");
         title.className = "chat-box-title";
-        title.textContent = `#${id} - ${item.subject || item.topic || "Conversation"} (${item.clientName || "Client"})`;
+        title.textContent = `#${caseId} - ${item.subject || item.topic || "Conversation"} (${item.clientName || "Client"})`;
         const actions = document.createElement("div");
         actions.className = "chat-box-actions";
         actions.append(
-            floatingAction("action-minimize", "Minimize", "fa-minus"),
-            floatingAction("action-maximize", "Open in main chat", "fa-expand"),
-            floatingAction("action-close", "Close", "fa-times"));
+            floatingAction("action-minimize", "Minimize", "bi-dash"),
+            floatingAction("action-maximize", "Open in main chat", "bi-arrows-fullscreen"),
+            floatingAction("action-close", "Close", "bi-x-lg"));
         header.append(title, actions);
 
         const body = document.createElement("div");
@@ -1242,7 +1219,7 @@ window.AdminChat = (() => {
         attach.setAttribute("aria-label", "Add attachments");
         attach.hidden = !attachmentsEnabled;
         attach.disabled = !attachmentsEnabled;
-        attach.innerHTML = '<i class="fas fa-paperclip" aria-hidden="true"></i>';
+        attach.innerHTML = '<i class="bi bi-paperclip" aria-hidden="true"></i>';
         const input = document.createElement("textarea");
         input.className = "form-control chat-message-input";
         input.rows = 1;
@@ -1254,7 +1231,7 @@ window.AdminChat = (() => {
         send.className = "btn btn-primary action-send";
         send.title = "Send";
         send.disabled = true;
-        send.innerHTML = '<i class="fas fa-paper-plane" aria-hidden="true"></i>';
+        send.innerHTML = '<i class="bi bi-send" aria-hidden="true"></i>';
         controls.append(fileInput, attach, input, send);
         footer.append(uploadList, controls);
         box.append(header, body, footer);
@@ -1265,7 +1242,7 @@ window.AdminChat = (() => {
                 input: fileInput,
                 button: attach,
                 list: uploadList,
-                getConversationId: () => id,
+                getConversationId: () => conversationId,
                 onReadyChanged: () => updateFloatingSendState(box),
                 onError: message => AdminUtils.showNotification(message, "error")
             })
@@ -1275,8 +1252,8 @@ window.AdminChat = (() => {
             attach.disabled = false;
         }
         updateFloatingSendState(box);
-        window.AdminSignalR?.joinConversation(id, true)
-            .then(() => loadAndRenderFloatingChatMessages(id, body))
+        window.AdminSignalR?.joinConversation(conversationId, true)
+            .then(() => loadAndRenderFloatingChatMessages(conversationId, body))
             .catch(error => renderFloatingError(body, error));
         wireFloatingChat(box);
     }
@@ -1287,7 +1264,7 @@ window.AdminChat = (() => {
         button.className = className;
         button.title = label;
         button.setAttribute("aria-label", label);
-        button.innerHTML = `<i class="fas ${iconName}" aria-hidden="true"></i>`;
+        button.innerHTML = `<i class="bi ${iconName}" aria-hidden="true"></i>`;
         return button;
     }
 
@@ -1300,9 +1277,11 @@ window.AdminChat = (() => {
             await window.AdminSignalR?.leaveConversation(Number(box.dataset.id));
             box.remove();
         });
-        box.querySelector(".action-maximize")?.addEventListener("click", () => {
+        box.querySelector(".action-maximize")?.addEventListener("click", async () => {
             document.querySelector('[data-page="chats"]')?.click();
-            openChatConversation(Number(box.dataset.id));
+            await openChatConversation(
+                Number(box.dataset.id),
+                Number(box.dataset.clientId));
         });
         box.querySelector(".action-send")?.addEventListener("click", async () => {
             const input = box.querySelector(".chat-message-input");

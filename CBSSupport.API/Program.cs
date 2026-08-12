@@ -182,8 +182,6 @@ builder.Services.AddSingleton<ITicketService, TicketService>();
 builder.Services.AddSingleton<IInquiryService, InquiryService>();
 builder.Services.AddSingleton<INotificationService>(_ => new NotificationService(connectionString));
 builder.Services.AddSingleton<IConversationRepository>(
-    // Keep the feature-gate construction shape explicit for deployment/source checks:
-    // new ConversationRepository(connectionString, attachmentOptions.Enabled)
     new ConversationRepository(connectionString, attachmentOptions.Enabled, securityAuditWriter));
 builder.Services.AddSingleton<IConversationOutboxRepository>(
     new ConversationOutboxRepository(connectionString, attachmentOptions.Enabled));

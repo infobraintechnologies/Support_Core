@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 window.AdminTickets = (() => {
 
@@ -11,6 +11,17 @@ window.AdminTickets = (() => {
             ticketsTable = ticketTable.DataTable({
                 "ajax": {
                     "url": "/api/v1/admin/tickets",
+                    "data": function (request) {
+                        const clientId = window.AdminCore?.getCurrentClientId();
+                        if (clientId) {
+                            request.clientId = clientId;
+                        }
+
+                        const status = $('#status-filter-tickets').val();
+                        if (status) {
+                            request.status = status;
+                        }
+                    },
                     "dataSrc": "items"
                 },
                 "columns": [
@@ -47,12 +58,11 @@ window.AdminTickets = (() => {
                         "width": "27%",
                         "render": function (data, type, row) {
                             const subject = AdminUtils.escapeHtml(row.subject || 'General Support');
-                            const client = AdminUtils.escapeHtml(row.clientName || 'Unknown client');
-                            return `<div class="ticket-subject">${subject}</div><div class="ticket-client">${client}</div>`;
+                            return `<div class="ticket-subject">${subject}</div>`;
                         }
                     },
                     {
-                        "data": "createdBy",
+                        "data": "createdByName",
                         "title": "Requester",
                         "width": "15%",
                         "render": function (data) {
@@ -60,7 +70,7 @@ window.AdminTickets = (() => {
                         }
                     },
                     {
-                        "data": "date",
+                        "data": "createdAt",
                         "title": "Last updated",
                         "width": "15%",
                         "render": function (data, type) {
@@ -81,10 +91,10 @@ window.AdminTickets = (() => {
                             return `
                                 <div class="action-buttons">
                                     <button type="button" class="btn-icon-action view-ticket-details-btn" title="View details" aria-label="View ticket details">
-                                        <i class="fas fa-eye" aria-hidden="true"></i>
+                                        <i class="bi bi-eye" aria-hidden="true"></i>
                                     </button>
                                     <button type="button" class="btn-icon-action start-chat-btn" title="Open chat" aria-label="Open ticket conversation">
-                                        <i class="fas fa-comments" aria-hidden="true"></i>
+                                        <i class="bi bi-chat-square-text" aria-hidden="true"></i>
                                     </button>
                                 </div>`;
                         }
@@ -109,7 +119,16 @@ window.AdminTickets = (() => {
             });
 
             setupTicketTableEvents();
+            setupStatusFilter();
         }
+    }
+
+    function setupStatusFilter() {
+        $('#status-filter-tickets')
+            .off('change.adminTickets')
+            .on('change.adminTickets', function () {
+                filterByStatus($(this).val());
+            });
     }
 
     function setupTicketTableEvents() {
@@ -167,14 +186,16 @@ window.AdminTickets = (() => {
             $('#detail-ticket-subject').text(ticket.subject || 'General Support');
             $('#detail-ticket-status').val(ticket.status || 'Open');
             $('#detail-ticket-priority').html(AdminUtils.generatePriorityBadge(ticket.priority || 'Normal'));
-            $('#detail-ticket-created-by').text(ticket.createdBy || 'Unknown');
+            $('#detail-ticket-created-by').text(ticket.createdByName || 'Unknown');
             $('#detail-ticket-client').text(ticket.clientName || 'Unknown');
-            $('#detail-ticket-date').text(new Date(ticket.date).toLocaleString());
+            $('#detail-ticket-date').text(ticket.createdAt
+                ? new Date(ticket.createdAt).toLocaleString()
+                : 'Not available');
             $('#detail-ticket-description').text(ticket.description || 'No description available.');
-            $('#detail-ticket-resolved-by').text(ticket.resolvedBy || 'Not resolved');
+            $('#detail-ticket-resolved-by').text(ticket.resolvedByName || 'Not resolved');
 
-            if (ticket.resolvedDate) {
-                $('#detail-ticket-resolved-date').text(new Date(ticket.resolvedDate).toLocaleString());
+            if (ticket.resolvedAt) {
+                $('#detail-ticket-resolved-date').text(new Date(ticket.resolvedAt).toLocaleString());
             } else {
                 $('#detail-ticket-resolved-date').text('Not resolved');
             }
@@ -227,16 +248,16 @@ window.AdminTickets = (() => {
                 currentTicketData.status = newStatus;
 
                 if (isCompleted) {
-                    currentTicketData.resolvedDate = new Date().toISOString();
-                    currentTicketData.resolvedBy = currentUser?.name || 'Admin';
+                    currentTicketData.resolvedAt = new Date().toISOString();
+                    currentTicketData.resolvedByName = currentUser?.name || 'Admin';
                 } else {
-                    currentTicketData.resolvedDate = null;
-                    currentTicketData.resolvedBy = null;
+                    currentTicketData.resolvedAt = null;
+                    currentTicketData.resolvedByName = null;
                 }
 
-                if (currentTicketData.resolvedDate) {
-                    $('#detail-ticket-resolved-date').text(new Date(currentTicketData.resolvedDate).toLocaleString());
-                    $('#detail-ticket-resolved-by').text(currentTicketData.resolvedBy);
+                if (currentTicketData.resolvedAt) {
+                    $('#detail-ticket-resolved-date').text(new Date(currentTicketData.resolvedAt).toLocaleString());
+                    $('#detail-ticket-resolved-by').text(currentTicketData.resolvedByName);
                 } else {
                     $('#detail-ticket-resolved-date').text('Not resolved');
                     $('#detail-ticket-resolved-by').text('Not resolved');
@@ -257,7 +278,7 @@ window.AdminTickets = (() => {
         } finally {
             const updateBtn = $('#btn-update-ticket');
             updateBtn.prop('disabled', false);
-            updateBtn.html('<i class="fas fa-save" aria-hidden="true"></i> Save status');
+            updateBtn.html('<i class="bi bi-floppy" aria-hidden="true"></i> Save status');
         }
     }
 
@@ -270,6 +291,21 @@ window.AdminTickets = (() => {
     function startTicketChat() {
         if (currentTicketData && window.AdminChat) {
             window.AdminChat.openEnhancedFloatingChatBox(currentTicketData, 'tkt');
+        }
+    }
+
+    function filterByClient() {
+        if (ticketsTable) {
+            closeTicketDetail();
+            ticketsTable.ajax.reload(null, true);
+        }
+    }
+
+    function filterByStatus(status) {
+        $('#status-filter-tickets').val(status || '');
+        if (ticketsTable) {
+            closeTicketDetail();
+            ticketsTable.ajax.reload(null, true);
         }
     }
 
@@ -329,6 +365,8 @@ window.AdminTickets = (() => {
         updateTicketStatus,
         closeTicketDetail,
         startTicketChat,
+        filterByStatus,
+        filterByClient,
         getTicketsTable: () => ticketsTable,
         getCurrentTicketData: () => currentTicketData
     };

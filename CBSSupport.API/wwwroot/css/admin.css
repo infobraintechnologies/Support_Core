@@ -804,11 +804,11 @@ body {
     outline-offset: 2px;
 }
 
-.admin-chat-section-toggle .fas {
+.admin-chat-section-toggle .bi {
     transition: transform 0.2s ease;
 }
 
-.admin-chat-section-toggle.expanded .fas {
+.admin-chat-section-toggle.expanded .bi {
     transform: rotate(180deg);
 }
 

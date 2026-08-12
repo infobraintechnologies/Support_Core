@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Admin Panel Notifications System
  * Handles all notification functionality including loading, rendering, and user interactions
  */
@@ -19,12 +19,12 @@ window.AdminNotifications = (() => {
 
     function getNotificationIcon(type) {
         const icons = {
-            'ticket': 'fas fa-ticket-alt',
-            'inquiry': 'fas fa-question-circle',
-            'message': 'fas fa-comment',
-            'status_change': 'fas fa-exchange-alt'
+            'ticket': 'bi bi-ticket-perforated',
+            'inquiry': 'bi bi-question-circle',
+            'message': 'bi bi-chat',
+            'status_change': 'bi bi-arrow-left-right'
         };
-        return icons[type] || 'fas fa-bell';
+        return icons[type] || 'bi bi-bell';
     }
 
     async function loadNotifications() {
@@ -116,7 +116,7 @@ window.AdminNotifications = (() => {
             const empty = document.createElement('div');
             empty.className = 'notification-empty';
             const icon = document.createElement('i');
-            icon.className = 'fas fa-bell-slash fa-2x mb-2';
+            icon.className = 'bi bi-bell-slash fs-4 mb-2';
             const text = document.createElement('p');
             text.textContent = 'No notifications yet';
             empty.append(icon, text);

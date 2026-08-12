@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using CBSSupport.API.Configuration;
 
 namespace CBSSupport.API.Tests.Integration;
 
@@ -153,6 +154,36 @@ public sealed class LegacyPrivateMappingPostgreSqlIntegrationTests
             "SELECT count(*) FROM digital.private_conversation_review;"));
         Assert.Equal(0L, await database.QuerySingleAsync<long>(
             "SELECT count(*) FROM digital.conversation_access;"));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task ReadinessGate_V2CreatedPrivateConversationWithoutLegacyReview_IsReady()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeAsync();
+        await database.ApplyMigrationAsync();
+        await database.SeedV2PrivateConversationAsync(233, 5, 109, 1);
+
+        var readiness = await new PrivateMessagingReadinessGate(database.ConnectionString).CheckAsync();
+
+        Assert.True(readiness.IsReady);
+        Assert.Equal(0, readiness.NeedsReviewCount);
+        Assert.Equal(0, readiness.InvalidCount);
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task ReadinessGate_ActivePrivateConversationWithoutLegacyOrV2Evidence_RemainsNotReady()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeAsync();
+        await database.ApplyMigrationAsync();
+        await database.SeedAccessAsync(233, 5, "Private", "Active", 109, 1, null);
+
+        var readiness = await new PrivateMessagingReadinessGate(database.ConnectionString).CheckAsync();
+
+        Assert.False(readiness.IsReady);
+        Assert.Equal(0, readiness.NeedsReviewCount);
+        Assert.Equal(1, readiness.InvalidCount);
     }
 
     [PostgreSqlIntegrationFact]
@@ -372,6 +403,36 @@ public sealed class LegacyPrivateMappingPostgreSqlIntegrationTests
                         'clientUserId', @clientUserId,
                         'adminUserId', @adminUserId,
                         'reason', 'reviewed'));
+                """,
+                new { conversationId, clientId, clientUserId, adminUserId });
+        }
+
+        public async Task SeedV2PrivateConversationAsync(
+            long conversationId,
+            long clientId,
+            int clientUserId,
+            int adminUserId)
+        {
+            await SeedAccessAsync(
+                conversationId,
+                clientId,
+                "Private",
+                "Active",
+                clientUserId,
+                adminUserId,
+                null);
+
+            await ExecuteAsync(
+                """
+                INSERT INTO digital.conversation_audit (
+                    conversation_id, client_id, action, actor_kind,
+                    client_user_id, occurred_at, details)
+                VALUES (
+                    @conversationId, @clientId, 'Created', 'Client',
+                    @clientUserId, now(),
+                    jsonb_build_object(
+                        'clientUserId', @clientUserId,
+                        'adminUserId', @adminUserId));
                 """,
                 new { conversationId, clientId, clientUserId, adminUserId });
         }

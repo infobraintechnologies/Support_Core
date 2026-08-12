@@ -3,14 +3,14 @@ namespace CBSSupport.API.Tests.Frontend;
 public sealed class AdminMessagingV2BrowserTests
 {
     [Fact]
-    public void AdminChat_LoadsV2SummariesIndependentlyFromLegacyTenantSections()
+    public void AdminChat_LoadsV2SummariesWithoutTheRetiredInternalChatSection()
     {
         var source = ReadApiFile("wwwroot/js/admin/admin-chat.js");
 
         Assert.Contains("/api/v1/conversations?limit=100", source, StringComparison.Ordinal);
         Assert.Contains("listV2Conversations()", source, StringComparison.Ordinal);
-        Assert.Contains("loadInternalChats()", source, StringComparison.Ordinal);
-        Assert.Contains("/v1/api/instructions/by-type/internal-team-chat", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("loadInternalChats()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("/v1/api/instructions/by-type/internal-team-chat", source, StringComparison.Ordinal);
         Assert.Contains("No assigned private chats.", source, StringComparison.Ordinal);
         Assert.Contains("applyConversationFilters", source, StringComparison.Ordinal);
         Assert.Contains("String(summary.kind).toLowerCase() === \"private\"", source, StringComparison.Ordinal);
@@ -19,19 +19,16 @@ public sealed class AdminMessagingV2BrowserTests
     }
 
     [Fact]
-    public void AdminTicketAndInquiryChats_UseMessagingV2WhileInternalRetainsLegacyAdapter()
+    public void AdminTicketAndInquiryChats_UseMessagingV2()
     {
         var chatSource = ReadApiFile("wwwroot/js/admin/admin-chat.js");
         var signalRSource = ReadApiFile("wwwroot/js/admin/admin-signalR.js");
 
         Assert.Contains(
-            "type === \"ticket\" || type === \"inquiry\"",
+            "for (const kind of [\"ticket\", \"inquiry\"])",
             chatSource,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "? \"messaging-v2\"",
-            chatSource,
-            StringComparison.Ordinal);
+        Assert.Contains("route: \"messaging-v2\"", chatSource, StringComparison.Ordinal);
         Assert.Contains(
             "await messaging()?.reconcile(Number(conversationId))",
             chatSource,
@@ -123,8 +120,48 @@ public sealed class AdminMessagingV2BrowserTests
         Assert.Contains("id=\"admin-chat-back-btn\"", source, StringComparison.Ordinal);
         Assert.Contains("id=\"new-private-chat-form\"", source, StringComparison.Ordinal);
         Assert.Contains("aria-live=\"polite\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Internal chats", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"internal-chats\"", source, StringComparison.Ordinal);
         Assert.Contains("<textarea class=\"form-control\"", source, StringComparison.Ordinal);
         Assert.Contains("Shift+Enter for a new line", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AdminChatWorkspace_UsesClearContextAndAccessibleComposerLayout()
+    {
+        var view = ReadApiFile("Views/AdminSupport/Index.cshtml");
+        var script = ReadApiFile("wwwroot/js/admin/admin-chat.js");
+        var styles = ReadApiFile("wwwroot/css/site.css");
+
+        Assert.Contains("id=\"admin-chat-context-badge\"", view, StringComparison.Ordinal);
+        Assert.Contains("<label for=\"message-input\" class=\"visually-hidden\">Message</label>", view, StringComparison.Ordinal);
+        Assert.Contains("aria-describedby=\"admin-composer-hint\"", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"chat-info-btn\"", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"chat-settings-btn\"", view, StringComparison.Ordinal);
+        Assert.Contains("admin-chat-context-badge", script, StringComparison.Ordinal);
+        Assert.Contains("group.append(cluster);", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("chat-avatar", script, StringComparison.Ordinal);
+        Assert.Contains("grid-template-columns: minmax(18rem, 21rem) minmax(0, 1fr);", styles, StringComparison.Ordinal);
+        Assert.Contains(".admin-chat-section-content.collapsed", styles, StringComparison.Ordinal);
+        Assert.Contains(".message-group", styles, StringComparison.Ordinal);
+        Assert.DoesNotContain(".chat-avatar", styles, StringComparison.Ordinal);
+        Assert.Contains("grid-template-columns: auto minmax(0, 1fr) auto;", styles, StringComparison.Ordinal);
+        Assert.Contains("#chats-page .chat-dashboard-container {\n  display: grid;\n  flex: 1 1 auto;", styles, StringComparison.Ordinal);
+        Assert.DoesNotContain("height: clamp(30rem, calc(100dvh - 12rem), 50rem);", styles, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AdminUi_UsesBootstrapIconsInsteadOfFontAwesome()
+    {
+        var view = ReadApiFile("Views/AdminSupport/Index.cshtml");
+        var chat = ReadApiFile("wwwroot/js/admin/admin-chat.js");
+
+        Assert.Contains("bootstrap-icons@1.11.3", view, StringComparison.Ordinal);
+        Assert.Contains("bi bi-speedometer2", view, StringComparison.Ordinal);
+        Assert.Contains("bi bi-paperclip", chat, StringComparison.Ordinal);
+        Assert.DoesNotContain("font-awesome", view, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("fas fa-", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("fas fa-", chat, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -148,6 +185,37 @@ public sealed class AdminMessagingV2BrowserTests
         Assert.Contains("renderUnreadBadge", source, StringComparison.Ordinal);
         Assert.Contains("throughSequence: mainChatContext.latestSequence", source, StringComparison.Ordinal);
         Assert.Contains("markActiveConversationRead()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AdminDateSeparator_WrapsLabelSoDividerDoesNotCrossText()
+    {
+        var source = ReadApiFile("wwwroot/js/admin/admin-chat.js");
+
+        Assert.Contains(
+            "label.textContent = AdminUtils.formatDateForSeparator(dateValue);",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("separator.appendChild(label);", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FloatingCaseChat_SelectsOwningTenantBeforeOpeningInMainChat()
+    {
+        var source = ReadApiFile("wwwroot/js/admin/admin-chat.js");
+
+        Assert.Contains(
+            "const conversationId = Number(item.conversationId || item.id);",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("box.dataset.clientId = String(clientId);", source, StringComparison.Ordinal);
+        Assert.Contains("selectConversationTenant(clientId)", source, StringComparison.Ordinal);
+        Assert.Contains("selectConversationTenant(summary?.clientId)", source, StringComparison.Ordinal);
+        Assert.Contains("await refreshAdminConversations(targetClientId);", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "Number(box.dataset.clientId));",
+            source,
+            StringComparison.Ordinal);
     }
 
     private static string ReadApiFile(string relativePath) =>

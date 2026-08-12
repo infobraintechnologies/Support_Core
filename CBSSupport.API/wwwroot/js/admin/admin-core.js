@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 window.AdminCore = (() => {
 
@@ -185,22 +185,12 @@ window.AdminCore = (() => {
                 }
             }
 
-            if (window.AdminTickets && window.AdminTickets.getTicketsTable) {
-                const ticketsTable = window.AdminTickets.getTicketsTable();
-                if (ticketsTable) {
-                    const clientName = $(this).find('option:selected').text();
-                    const searchTerm = selectedClientId ? `^${clientName}$` : '';
-                    ticketsTable.column(1).search(searchTerm, true, false).draw();
-                }
+            if (window.AdminTickets?.filterByClient) {
+                window.AdminTickets.filterByClient();
             }
 
-            if (window.AdminInquiries && window.AdminInquiries.getInquiriesTable) {
-                const inquiriesTable = window.AdminInquiries.getInquiriesTable();
-                if (inquiriesTable) {
-                    const clientName = $(this).find('option:selected').text();
-                    const searchTerm = selectedClientId ? `^${clientName}$` : '';
-                    inquiriesTable.column(1).search(searchTerm, true, false).draw();
-                }
+            if (window.AdminInquiries?.filterByClient) {
+                window.AdminInquiries.filterByClient();
             }
         });
     }
@@ -224,10 +214,10 @@ window.AdminCore = (() => {
         });
 
         $(document).on('click', '#refresh-dashboard-btn', function () {
-            $(this).html('<i class="fas fa-spinner fa-spin me-1"></i>Refreshing...');
+            $(this).html('<i class="bi bi-arrow-repeat icon-spin me-1"></i>Refreshing...');
             if (window.AdminDashboard) {
                 window.AdminDashboard.loadEnhancedDashboardData(currentClientId).finally(() => {
-                    $(this).html('<i class="fas fa-sync-alt me-1"></i>Refresh');
+                    $(this).html('<i class="bi bi-arrow-clockwise me-1"></i>Refresh');
                 });
             }
         });
