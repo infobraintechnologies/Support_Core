@@ -18,6 +18,7 @@ public sealed class AttachmentSecurityModeRegistrationTests
 
         Assert.NotNull(factory.Services.GetRequiredService<AttachmentOptions>());
         Assert.Null(factory.Services.GetService<IFileScanner>());
+        Assert.IsType<LocalAttachmentStorage>(factory.Services.GetRequiredService<IFileStorage>());
         Assert.True(factory.Services
             .GetRequiredService<AttachmentUiCapability>()
             .CanCreateUploadIntents);
@@ -43,10 +44,6 @@ public sealed class AttachmentSecurityModeRegistrationTests
             builder.UseSetting("Attachments:Scanning:WorkerEnabled", "true");
             builder.UseSetting("Attachments:Scanning:Host", "unresolvable-clamav.invalid");
             builder.UseSetting("Attachments:Scanning:Port", "3310");
-            builder.UseSetting("Attachments:R2:AccessKeyId", "test-access-key");
-            builder.UseSetting("Attachments:R2:SecretAccessKey", "test-secret-key");
-            builder.UseSetting("Attachments:R2:BucketName", "test-bucket");
-            builder.UseSetting("Attachments:R2:ServiceUrl", "http://127.0.0.1:1");
             builder.ConfigureTestServices(services =>
             {
                 RegisteredHostedServiceTypes = services

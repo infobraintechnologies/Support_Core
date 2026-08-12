@@ -453,6 +453,261 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
     }
 
     [PostgreSqlIntegrationFact]
+    public async Task AttachmentBinding_ProjectsCompanyMetadataOnceUsingMirroredClientIdentity()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await database.SeedGroupConversationsAsync();
+        await EnsureClientFileIdentityBridgeAsync(database, 7);
+        var attachmentId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await database.ExecuteAsync(ReadyAttachmentInsert, new
+        {
+            Id = attachmentId,
+            ClientId = 42,
+            ConversationId = 1000,
+            ClientUserId = 7,
+            MessageId = (long?)null,
+            Position = (short?)null,
+            BoundAt = (DateTimeOffset?)null,
+            ReadyAt = now,
+            ExpiresAt = now.AddHours(24)
+        });
+        Assert.Equal(0, await database.QuerySingleAsync<int>(
+            "SELECT count(*) FROM admin.files WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") }));
+
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: true);
+        var actor = new ConversationActor(7, 42, IsAdmin: false, "Client 42");
+        var clientMessageId = Guid.NewGuid();
+        var created = await repository.SendMessageAsync(
+            1000,
+            actor,
+            clientMessageId,
+            null,
+            [attachmentId],
+            null);
+        var replay = await repository.SendMessageAsync(
+            1000,
+            actor,
+            clientMessageId,
+            null,
+            [attachmentId],
+            null);
+
+        Assert.Equal(ConversationCommandStatus.Created, created.Status);
+        Assert.Equal(ConversationCommandStatus.Replayed, replay.Status);
+        var companyFile = await database.QuerySingleAsync<CompanyFileRow>("""
+            SELECT id, table_name AS TableName, table_id AS TableId,
+                   file_name AS FileName, old_file_name AS OldFileName,
+                   file_desc AS FileDescription, status, insert_user AS InsertUser
+            FROM admin.files
+            WHERE id = @Id;
+            """, new { Id = attachmentId.ToString("D") });
+        Assert.Equal("digital.instructions", companyFile.TableName);
+        Assert.Equal(created.Value!.Id.ToString(), companyFile.TableId);
+        Assert.Equal($"{attachmentId:D}.txt", companyFile.FileName);
+        Assert.Equal("file.txt", companyFile.OldFileName);
+        Assert.Equal("MESSAGE_ATTACHMENT", companyFile.FileDescription);
+        Assert.True(companyFile.Status);
+        Assert.Equal(7, companyFile.InsertUser);
+        Assert.Equal(1, await database.QuerySingleAsync<int>(
+            "SELECT count(*) FROM admin.files WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") }));
+
+        var attachmentRepository = new AttachmentRepository(database.ConnectionString);
+        Assert.NotNull(await attachmentRepository.GetReadyForContentAsync(
+            attachmentId,
+            new AttachmentActor(7, 42, IsAdmin: false)));
+        await database.ExecuteAsync(
+            "UPDATE admin.files SET status = FALSE WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") });
+        Assert.Null(await attachmentRepository.GetReadyForContentAsync(
+            attachmentId,
+            new AttachmentActor(7, 42, IsAdmin: false)));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task AttachmentBinding_ConflictingCompanyRowRollsBackMessageAndBinding()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await database.SeedGroupConversationsAsync();
+        await EnsureClientFileIdentityBridgeAsync(database, 7);
+        var attachmentId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await database.ExecuteAsync(ReadyAttachmentInsert, new
+        {
+            Id = attachmentId,
+            ClientId = 42,
+            ConversationId = 1000,
+            ClientUserId = 7,
+            MessageId = (long?)null,
+            Position = (short?)null,
+            BoundAt = (DateTimeOffset?)null,
+            ReadyAt = now,
+            ExpiresAt = now.AddHours(24)
+        });
+        await database.ExecuteAsync("""
+            INSERT INTO admin.files (
+                id, table_name, table_id, file_name, old_file_name,
+                file_desc, status, insert_user, insert_date)
+            VALUES (@Id, 'another.table', '999', 'conflict.txt', 'other.txt',
+                    'OTHER', TRUE, 7, now());
+            """, new { Id = attachmentId.ToString("D") });
+        var clientMessageId = Guid.NewGuid();
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: true);
+
+        var result = await repository.SendMessageAsync(
+            1000,
+            new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
+            clientMessageId,
+            "Must roll back",
+            [attachmentId],
+            null);
+
+        Assert.Equal(ConversationCommandStatus.Conflict, result.Status);
+        Assert.Equal("attachment_file_metadata_conflict", result.ErrorCode);
+        Assert.Null(await database.QuerySingleAsync<long?>(
+            "SELECT message_id FROM digital.attachments WHERE id = @Id;",
+            new { Id = attachmentId }));
+        Assert.Equal(0, await database.QuerySingleAsync<int>(
+            "SELECT count(*) FROM digital.instructions WHERE client_message_id = @Id;",
+            new { Id = clientMessageId }));
+        Assert.Equal(0, await database.QuerySingleAsync<int>("""
+            SELECT count(*)
+            FROM digital.attachment_audit
+            WHERE attachment_id = @AttachmentId AND action = 'BoundToMessage';
+            """, new { AttachmentId = attachmentId }));
+        Assert.Equal("another.table", await database.QuerySingleAsync<string>(
+            "SELECT table_name FROM admin.files WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") }));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task AttachmentBinding_UnmappedClientIdentityFailsWithoutFabrication()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await database.SeedGroupConversationsAsync();
+        var attachmentId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await database.ExecuteAsync(ReadyAttachmentInsert, new
+        {
+            Id = attachmentId,
+            ClientId = 43,
+            ConversationId = 2000,
+            ClientUserId = 8,
+            MessageId = (long?)null,
+            Position = (short?)null,
+            BoundAt = (DateTimeOffset?)null,
+            ReadyAt = now,
+            ExpiresAt = now.AddHours(24)
+        });
+        var clientMessageId = Guid.NewGuid();
+        var repository = new ConversationRepository(database.ConnectionString, attachmentsEnabled: true);
+
+        var result = await repository.SendMessageAsync(
+            2000,
+            new ConversationActor(8, 43, IsAdmin: false, "Client 43"),
+            clientMessageId,
+            null,
+            [attachmentId],
+            null);
+
+        Assert.Equal(ConversationCommandStatus.Conflict, result.Status);
+        Assert.Equal("attachment_uploader_file_identity_unavailable", result.ErrorCode);
+        Assert.Null(await database.QuerySingleAsync<long?>(
+            "SELECT message_id FROM digital.attachments WHERE id = @Id;",
+            new { Id = attachmentId }));
+        Assert.Equal(0, await database.QuerySingleAsync<int>(
+            "SELECT count(*) FROM admin.files WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") }));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task AdminFilesBackfill_IsIdempotentForEligibleBoundAttachments()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await database.SeedGroupConversationsAsync();
+        await EnsureClientFileIdentityBridgeAsync(database, 7);
+        var attachmentId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await database.ExecuteAsync(ReadyAttachmentInsert, new
+        {
+            Id = attachmentId,
+            ClientId = 42,
+            ConversationId = 1000,
+            ClientUserId = 7,
+            MessageId = (long?)1000,
+            Position = (short?)1,
+            BoundAt = (DateTimeOffset?)now,
+            ReadyAt = now,
+            ExpiresAt = now.AddDays(365)
+        });
+
+        await database.ApplyMigrationAsync("202608111010_integrate_admin_files_attachments.sql");
+        await database.ApplyMigrationAsync("202608111010_integrate_admin_files_attachments.sql");
+        await database.ExecuteAsync(File.ReadAllText(
+            TestDatabase.ResolvePreflightSourcePath(
+                "202608111000_verify_admin_files_attachment_integration.sql")));
+
+        Assert.Equal(1, await database.QuerySingleAsync<int>(
+            "SELECT count(*) FROM admin.files WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") }));
+        Assert.Equal($"{attachmentId:D}.txt", await database.QuerySingleAsync<string>(
+            "SELECT file_name FROM admin.files WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") }));
+    }
+
+    [PostgreSqlIntegrationFact]
+    public async Task AdminFilesBackfill_ConflictingExistingRowFailsWithoutOverwrite()
+    {
+        await using var database = await TestDatabase.CreateAsync();
+        await database.InitializeMessagingSchemaAsync();
+        await database.ApplyCaseAndAttachmentMigrationsAsync();
+        await database.SeedGroupConversationsAsync();
+        await EnsureClientFileIdentityBridgeAsync(database, 7);
+        var attachmentId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        await database.ExecuteAsync(ReadyAttachmentInsert, new
+        {
+            Id = attachmentId,
+            ClientId = 42,
+            ConversationId = 1000,
+            ClientUserId = 7,
+            MessageId = (long?)1000,
+            Position = (short?)1,
+            BoundAt = (DateTimeOffset?)now,
+            ReadyAt = now,
+            ExpiresAt = now.AddDays(365)
+        });
+        await database.ExecuteAsync("""
+            INSERT INTO admin.files (
+                id, table_name, table_id, file_name, file_desc,
+                status, insert_user, insert_date)
+            VALUES (@Id, 'unrelated.table', '1', 'unrelated.bin', 'OTHER',
+                    TRUE, 7, now());
+            """, new { Id = attachmentId.ToString("D") });
+
+        var exception = await Assert.ThrowsAsync<PostgresException>(() =>
+            database.ApplyMigrationAsync("202608111010_integrate_admin_files_attachments.sql"));
+
+        Assert.Contains("Conflicting admin.files metadata", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("unrelated.table", await database.QuerySingleAsync<string>(
+            "SELECT table_name FROM admin.files WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") }));
+        Assert.Equal(1, await database.QuerySingleAsync<int>(
+            "SELECT count(*) FROM admin.files WHERE id = @Id;",
+            new { Id = attachmentId.ToString("D") }));
+    }
+
+    [PostgreSqlIntegrationFact]
     public async Task AttachmentQuota_ConcurrentIntentsSerializeRollingAndTenantLimits()
     {
         await using var database = await TestDatabase.CreateAsync();
@@ -549,6 +804,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         await database.InitializeMessagingSchemaAsync();
         await database.ApplyCaseAndAttachmentMigrationsAsync();
         await database.SeedGroupConversationsAsync();
+        await EnsureClientFileIdentityBridgeAsync(database, 7);
         var repository = new AttachmentRepository(database.ConnectionString);
         var now = DateTimeOffset.UtcNow;
         var pendingId = Guid.NewGuid();
@@ -589,6 +845,18 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             ReadyAt = now.AddDays(-366),
             ExpiresAt = now.AddDays(-1)
         });
+        await database.ExecuteAsync("""
+            INSERT INTO admin.files (
+                id, table_name, table_id, file_name, old_file_name,
+                file_desc, status, insert_user, insert_date)
+            VALUES (@Id, 'digital.instructions', '1000', @FileName, 'file.txt',
+                    'MESSAGE_ATTACHMENT', TRUE, 7, @InsertDate);
+            """, new
+        {
+            Id = boundId.ToString("D"),
+            FileName = $"{boundId:D}.txt",
+            InsertDate = now.AddDays(-366)
+        });
 
         var claimed = await repository.ClaimCleanupBatchAsync(
             "cleanup-test",
@@ -619,6 +887,12 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             FROM digital.attachments
             WHERE id = ANY(@Ids);
             """, new { Ids = new[] { pendingId, readyId, boundId } }));
+        Assert.False(await database.QuerySingleAsync<bool>(
+            "SELECT status FROM admin.files WHERE id = @Id;",
+            new { Id = boundId.ToString("D") }));
+        Assert.NotNull(await database.QuerySingleAsync<DateTime?>(
+            "SELECT edit_date FROM admin.files WHERE id = @Id;",
+            new { Id = boundId.ToString("D") }));
     }
 
     [PostgreSqlIntegrationFact]
@@ -1202,6 +1476,15 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             VALUES (@CaseId, 2);
             """, new { CaseId = caseId, ClientId = clientId });
 
+    private static Task EnsureClientFileIdentityBridgeAsync(TestDatabase database, int clientUserId) =>
+        database.ExecuteAsync("""
+            INSERT INTO admin.users (id, user_name, full_name)
+            SELECT id, user_name, full_name
+            FROM internal.support_users
+            WHERE id = @ClientUserId
+            ON CONFLICT (id) DO NOTHING;
+            """, new { ClientUserId = clientUserId });
+
     private const string PendingAttachmentInsert = """
         INSERT INTO digital.attachments (
             id, client_id, conversation_id, message_id, position,
@@ -1226,7 +1509,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             ready_at, bound_at, expires_at, created_at, updated_at, next_attempt_at)
         VALUES (
             @Id, @ClientId, @ConversationId, @MessageId, @Position,
-            @ClientUserId, 'Ready', 'quarantine/' || @Id, 'ready/' || @Id,
+            @ClientUserId, 'Ready', 'quarantine/' || @Id, @Id::text || '.txt',
             'file.txt', 'text/plain', 'text/plain',
             1024, 1024, 1024,
             'source-etag', 'ready-etag', decode(repeat('00', 32), 'hex'),
@@ -1286,6 +1569,16 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
         bool IsSystemGenerated);
 
     private sealed record NotificationRecipientRow(long NotificationId, int UserId);
+
+    private sealed record CompanyFileRow(
+        string Id,
+        string TableName,
+        string TableId,
+        string FileName,
+        string? OldFileName,
+        string? FileDescription,
+        bool Status,
+        int InsertUser);
 
     private sealed class TestDatabase : IAsyncDisposable
     {
@@ -1358,6 +1651,22 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                 INSERT INTO internal.support_users VALUES
                     (7, 42, 'client-42', 'Client 42'),
                     (8, 43, 'client-43', 'Client 43');
+
+                CREATE TABLE admin.files (
+                    id varchar(50) PRIMARY KEY,
+                    table_name varchar(50) NOT NULL,
+                    table_id varchar(50) NOT NULL,
+                    file_name varchar(50) NOT NULL,
+                    old_file_name text,
+                    file_desc varchar(50),
+                    status boolean NOT NULL DEFAULT TRUE,
+                    edited_file varchar(50) REFERENCES admin.files(id),
+                    remarks text,
+                    insert_user integer NOT NULL REFERENCES admin.users(id),
+                    insert_date timestamptz NOT NULL DEFAULT now(),
+                    edit_user integer REFERENCES admin.users(id),
+                    edit_date timestamptz
+                );
 
                 CREATE TABLE digital.instructions (
                     id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
@@ -1521,6 +1830,17 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
                 "..",
                 "Database",
                 "Migrations",
+                fileName));
+
+        public static string ResolvePreflightSourcePath(string fileName) =>
+            Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                "..",
+                "..",
+                "Database",
+                "Preflight",
                 fileName));
 
 

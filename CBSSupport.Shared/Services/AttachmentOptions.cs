@@ -13,13 +13,12 @@ public sealed class AttachmentOptions
     public int MaximumConcurrentUnboundPerUser { get; set; } = 10;
     public long MaximumUserBytesPerRollingDay { get; set; } = 100L * 1024 * 1024;
     public int UploadUrlLifetimeSeconds { get; set; } = 300;
-    public int DownloadUrlLifetimeSeconds { get; set; } = 60;
     public int ReadyUnboundHours { get; set; } = 24;
     public int PendingUploadHours { get; set; } = 1;
     public int BoundRetentionDays { get; set; } = 365;
+    public string UploadPath { get; set; } = "Uploads";
     public AttachmentScanningOptions Scanning { get; set; } = new();
     public AttachmentStructuralValidationOptions StructuralValidation { get; set; } = new();
-    public R2StorageOptions R2 { get; set; } = new();
 
     public void Validate()
     {
@@ -32,7 +31,6 @@ public sealed class AttachmentOptions
             || MaximumConcurrentUnboundPerUser != 10
             || MaximumUserBytesPerRollingDay != 100L * 1024 * 1024
             || UploadUrlLifetimeSeconds != 300
-            || DownloadUrlLifetimeSeconds != 60
             || ReadyUnboundHours != 24
             || PendingUploadHours != 1
             || BoundRetentionDays != 365)
@@ -43,6 +41,14 @@ public sealed class AttachmentOptions
         if (!Enum.IsDefined(SecurityMode))
         {
             throw new InvalidOperationException("Unknown attachment security mode.");
+        }
+
+        if (!string.Equals(UploadPath, "Uploads", StringComparison.Ordinal)
+            || Path.IsPathRooted(UploadPath)
+            || UploadPath.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0)
+        {
+            throw new InvalidOperationException(
+                "Attachments:UploadPath must be the company-approved relative directory 'Uploads'.");
         }
         if (SecurityMode == AttachmentSecurityMode.MalwareScanning
             && (Scanning.MaxConcurrentScans is < 1 or > 4
@@ -76,11 +82,6 @@ public sealed class AttachmentOptions
         {
             throw new InvalidOperationException(
                 "Attachment structural validation settings are outside the approved operating profile.");
-        }
-
-        if (Enabled)
-        {
-            R2.Validate();
         }
     }
 }
@@ -121,26 +122,4 @@ public sealed class AttachmentScanningOptions
     public int MaximumBackoffSeconds { get; set; } = 120;
     public int MaximumDefinitionAgeHours { get; set; } = 24;
     public int HealthCheckSeconds { get; set; } = 60;
-}
-
-public sealed class R2StorageOptions
-{
-    public string AccountId { get; set; } = "";
-    public string AccessKeyId { get; set; } = "";
-    public string SecretAccessKey { get; set; } = "";
-    public string BucketName { get; set; } = "";
-    public string? ServiceUrl { get; set; }
-
-    public void Validate()
-    {
-        if (string.IsNullOrWhiteSpace(AccessKeyId)
-            || string.IsNullOrWhiteSpace(SecretAccessKey)
-            || string.IsNullOrWhiteSpace(BucketName)
-            || (string.IsNullOrWhiteSpace(ServiceUrl)
-                && string.IsNullOrWhiteSpace(AccountId)))
-        {
-            throw new InvalidOperationException(
-                "Attachments:R2 requires AccessKeyId, SecretAccessKey, BucketName, and AccountId or ServiceUrl when attachments are enabled.");
-        }
-    }
 }

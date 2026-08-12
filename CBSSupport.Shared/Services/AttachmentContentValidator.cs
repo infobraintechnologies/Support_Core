@@ -143,6 +143,17 @@ public static class AttachmentContentValidator
     public static bool RequiresAttachmentDisposition(string mediaType) =>
         NormalizeMediaType(mediaType) is PdfMediaType or DocxMediaType or XlsxMediaType;
 
+    public static string GetExtensionForMediaType(string mediaType) =>
+        NormalizeMediaType(mediaType) switch
+        {
+            PdfMediaType => ".pdf",
+            JpegMediaType => ".jpg",
+            PngMediaType => ".png",
+            DocxMediaType => ".docx",
+            XlsxMediaType => ".xlsx",
+            _ => throw new ArgumentException("Unsupported attachment media type.", nameof(mediaType))
+        };
+
     private static AttachmentContentValidation ValidateImage(
         byte[] bytes,
         string expectedMediaType,

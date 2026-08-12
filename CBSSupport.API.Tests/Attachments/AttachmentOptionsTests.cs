@@ -28,29 +28,29 @@ public sealed class AttachmentOptionsTests
     }
 
     [Fact]
-    public void Validate_EnabledWithoutR2Credentials_Throws()
+    public void Validate_EnabledWithApprovedLocalPath_SucceedsWithoutCredentials()
     {
         var options = new AttachmentOptions { Enabled = true };
 
-        Assert.Throws<InvalidOperationException>(options.Validate);
+        options.Validate();
+
+        Assert.Equal("Uploads", options.UploadPath);
     }
 
-    [Fact]
-    public void Validate_EnabledWithR2ServiceUrlAndCredentials_Succeeds()
+    [Theory]
+    [InlineData("../Uploads")]
+    [InlineData("tenant/Uploads")]
+    [InlineData("C:\\Uploads")]
+    [InlineData("uploads")]
+    public void Validate_NonApprovedUploadPath_Throws(string uploadPath)
     {
         var options = new AttachmentOptions
         {
             Enabled = true,
-            R2 = new R2StorageOptions
-            {
-                AccessKeyId = "test-access-key",
-                SecretAccessKey = "test-secret-key",
-                BucketName = "test-bucket",
-                ServiceUrl = "http://127.0.0.1:1"
-            }
+            UploadPath = uploadPath
         };
 
-        options.Validate();
+        Assert.Throws<InvalidOperationException>(options.Validate);
     }
 
     [Theory]

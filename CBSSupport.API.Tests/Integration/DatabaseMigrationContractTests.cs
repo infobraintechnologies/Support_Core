@@ -3,6 +3,44 @@ namespace CBSSupport.API.Tests.Integration;
 public sealed class DatabaseMigrationContractTests
 {
     [Fact]
+    public void AdminFilesAttachmentIntegration_IsIdempotentFailClosedAndReadOnlyPreflightIsComplete()
+    {
+        var migration = ReadMigration("202608111010_integrate_admin_files_attachments.sql");
+        var preflight = ReadPreflight("202608111000_verify_admin_files_attachment_integration.sql");
+
+        Assert.Contains("admin.files.insert_user must reference admin.users(id)", migration, StringComparison.Ordinal);
+        Assert.Contains("mirrored_admin.id = support_user.id", migration, StringComparison.Ordinal);
+        Assert.Contains("mirrored_admin.user_name = support_user.user_name", migration, StringComparison.Ordinal);
+        Assert.Contains("ON CONFLICT (id) DO NOTHING", migration, StringComparison.Ordinal);
+        Assert.Contains("Conflicting admin.files metadata", migration, StringComparison.Ordinal);
+        Assert.Contains("attachment.state = 'Ready'", migration, StringComparison.Ordinal);
+        Assert.Contains("attachment.message_id IS NOT NULL", migration, StringComparison.Ordinal);
+        Assert.DoesNotContain("ALTER TABLE admin.files", migration, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("digital.schema_migrations", migration, StringComparison.OrdinalIgnoreCase);
+
+        foreach (var requiredCount in new[]
+                 {
+                     "bound_ready_attachment_count",
+                     "matching_admin_files_count",
+                     "missing_admin_files_count",
+                     "conflicting_admin_files_count",
+                     "orphan_admin_files_count",
+                     "invalid_table_binding_count",
+                     "filename_mismatch_count",
+                     "inactive_status_mismatch_count",
+                     "oversize_ready_key_count",
+                     "invalid_user_domain_mapping_count",
+                     "staged_admin_files_count"
+                 })
+        {
+            Assert.Contains(requiredCount, preflight, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("INSERT INTO", preflight, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("UPDATE ", preflight, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DELETE FROM", preflight, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void CaseReplyNormalization_RepairsOnlyReviewedLegacySentinelShape()
     {
         var sql = ReadMigration(

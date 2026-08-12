@@ -3,6 +3,7 @@ using CBSSupport.Shared.Contracts;
 using CBSSupport.Shared.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 
 namespace CBSSupport.API.Controllers;
 
@@ -60,6 +61,32 @@ public sealed class AttachmentsController(IAttachmentService attachments) : Cont
         };
     }
 
+    [HttpPut("api/v1/attachments/{attachmentId:guid}/upload")]
+    [RequestSizeLimit(RequestSizeLimits.MaximumAttachmentBodySizeBytes)]
+    public async Task<IActionResult> Upload(
+        Guid attachmentId,
+        CancellationToken cancellationToken)
+    {
+        var result = await attachments.UploadAsync(
+            attachmentId,
+            GetRequiredActor(),
+            Request.Body,
+            Request.ContentType,
+            Request.ContentLength,
+            cancellationToken);
+        return result.Status switch
+        {
+            AttachmentCommandStatus.Success when result.Value is not null =>
+                Uploaded(result.Value),
+            AttachmentCommandStatus.Unavailable => NotFound(),
+            AttachmentCommandStatus.Conflict => ProblemResult(
+                StatusCodes.Status409Conflict,
+                result.ErrorCode ?? "attachment_upload_conflict",
+                "Attachment upload conflict"),
+            _ => ValidationProblem("The attachment byte upload is invalid.")
+        };
+    }
+
     [HttpGet("api/v1/attachments/{attachmentId:guid}")]
     public async Task<ActionResult<AttachmentStatusResponse>> GetStatus(
         Guid attachmentId,
@@ -99,7 +126,7 @@ public sealed class AttachmentsController(IAttachmentService attachments) : Cont
         [FromQuery] string disposition = "attachment",
         CancellationToken cancellationToken = default)
     {
-        var result = await attachments.CreateContentUrlAsync(
+        var result = await attachments.OpenContentAsync(
             attachmentId,
             GetRequiredActor(),
             disposition,
@@ -108,10 +135,34 @@ public sealed class AttachmentsController(IAttachmentService attachments) : Cont
         return result.Status switch
         {
             AttachmentCommandStatus.Success when result.Value is not null =>
-                Redirect(result.Value),
+                Download(result.Value),
             AttachmentCommandStatus.Unavailable => NotFound(),
             _ => ValidationProblem("Disposition must be inline or attachment.")
         };
+    }
+
+    private IActionResult Uploaded(StoredObjectInfo stored)
+    {
+        Response.Headers.ETag = $"\"{stored.ETag}\"";
+        return NoContent();
+    }
+
+    private IActionResult Download(AttachmentContentRead content)
+    {
+        if (content.Disposition == "attachment")
+        {
+            return File(
+                content.Content,
+                content.MediaType,
+                content.DisplayName,
+                enableRangeProcessing: true);
+        }
+
+        Response.GetTypedHeaders().ContentDisposition = new ContentDispositionHeaderValue("inline")
+        {
+            FileNameStar = content.DisplayName
+        };
+        return File(content.Content, content.MediaType, enableRangeProcessing: true);
     }
 
     private AttachmentActor GetRequiredActor()

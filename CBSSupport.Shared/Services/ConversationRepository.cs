@@ -10,6 +10,9 @@ namespace CBSSupport.Shared.Services;
 
 public sealed class ConversationRepository : IConversationRepository
 {
+    private const string CompanyFileTableName = "digital.instructions";
+    private const string CompanyFileDescription = "MESSAGE_ATTACHMENT";
+
     private static readonly short[] AdminLegacyConversationTypeIds =
         [
             ConversationTypes.InternalTeam,
@@ -1090,6 +1093,21 @@ public sealed class ConversationRepository : IConversationRepository
                     ConversationCommandStatus.Conflict,
                     ErrorCode: "attachment_bind_conflict");
             }
+
+            var reconciledCompanyFiles = await ReconcileCompanyFileRowsAsync(
+                connection,
+                transaction,
+                attachmentIds,
+                messageId,
+                checked((int)actor.UserId),
+                cancellationToken);
+            if (reconciledCompanyFiles != attachmentIds.Count)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return new(
+                    ConversationCommandStatus.Conflict,
+                    ErrorCode: "attachment_file_metadata_conflict");
+            }
         }
 
         if (access.IsCase)
@@ -1963,6 +1981,38 @@ public sealed class ConversationRepository : IConversationRepository
             return new(ConversationCommandStatus.Success, []);
         }
 
+        const string filePrincipalSql = """
+            SELECT CASE
+                WHEN @IsAdmin THEN EXISTS (
+                    SELECT 1
+                    FROM admin.users admin_user
+                    WHERE admin_user.id = @UserId
+                      AND admin_user.status IS TRUE
+                      AND admin_user.deactive_date IS NULL)
+                ELSE EXISTS (
+                    SELECT 1
+                    FROM internal.support_users client_user
+                    JOIN admin.users mirrored_admin
+                      ON mirrored_admin.id = client_user.id
+                     AND mirrored_admin.user_name = client_user.user_name
+                    WHERE client_user.id = @UserId
+                      AND client_user.client_id = @ClientId
+                      AND client_user.status IS TRUE
+                      AND client_user.deactive_date IS NULL)
+            END;
+            """;
+        var filePrincipalAvailable = await connection.QuerySingleAsync<bool>(new CommandDefinition(
+            filePrincipalSql,
+            ActorParameters(actor),
+            transaction,
+            cancellationToken: cancellationToken));
+        if (!filePrincipalAvailable)
+        {
+            return new(
+                ConversationCommandStatus.Conflict,
+                ErrorCode: "attachment_uploader_file_identity_unavailable");
+        }
+
         const string sql = """
             SELECT id AS Id,
                    display_name AS DisplayName,
@@ -2033,6 +2083,91 @@ public sealed class ConversationRepository : IConversationRepository
                 row.Status,
                 row.RejectionCode,
                 index + 1)).ToArray());
+    }
+
+    private static async Task<int> ReconcileCompanyFileRowsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        IReadOnlyList<Guid> attachmentIds,
+        long messageId,
+        int insertUserId,
+        CancellationToken cancellationToken)
+    {
+        const string insertSql = """
+            WITH source AS MATERIALIZED (
+                SELECT attachment.id::text AS id,
+                       @TableName::varchar(50) AS table_name,
+                       attachment.message_id::text AS table_id,
+                       attachment.ready_key AS file_name,
+                       attachment.display_name AS old_file_name,
+                       @FileDescription::varchar(50) AS file_desc,
+                       @InsertUserId::integer AS insert_user,
+                       attachment.bound_at AS insert_date
+                FROM digital.attachments attachment
+                WHERE attachment.id = ANY(@AttachmentIds)
+                  AND attachment.message_id = @MessageId
+                  AND attachment.state = 'Ready'
+                  AND attachment.ready_key IS NOT NULL
+                  AND attachment.bound_at IS NOT NULL
+            )
+            INSERT INTO admin.files (
+                id, table_name, table_id, file_name, old_file_name,
+                file_desc, status, edited_file, remarks,
+                insert_user, insert_date, edit_user, edit_date)
+            SELECT id, table_name, table_id, file_name, old_file_name,
+                   file_desc, TRUE, NULL, NULL,
+                   insert_user, insert_date, NULL, NULL
+            FROM source
+            ON CONFLICT (id) DO NOTHING;
+            """;
+        var parameters = new
+        {
+            AttachmentIds = attachmentIds.ToArray(),
+            MessageId = messageId,
+            InsertUserId = insertUserId,
+            TableName = CompanyFileTableName,
+            FileDescription = CompanyFileDescription
+        };
+        await connection.ExecuteAsync(new CommandDefinition(
+            insertSql,
+            parameters,
+            transaction,
+            cancellationToken: cancellationToken));
+
+        const string verifySql = """
+            WITH source AS MATERIALIZED (
+                SELECT attachment.id::text AS id,
+                       @TableName::varchar(50) AS table_name,
+                       attachment.message_id::text AS table_id,
+                       attachment.ready_key AS file_name,
+                       attachment.display_name AS old_file_name,
+                       @FileDescription::varchar(50) AS file_desc,
+                       @InsertUserId::integer AS insert_user
+                FROM digital.attachments attachment
+                WHERE attachment.id = ANY(@AttachmentIds)
+                  AND attachment.message_id = @MessageId
+                  AND attachment.state = 'Ready'
+                  AND attachment.ready_key IS NOT NULL
+                  AND attachment.bound_at IS NOT NULL
+            )
+            SELECT count(*)::integer
+            FROM source
+            JOIN admin.files company_file ON company_file.id = source.id
+            WHERE company_file.table_name = source.table_name
+              AND company_file.table_id = source.table_id
+              AND company_file.file_name = source.file_name
+              AND company_file.old_file_name IS NOT DISTINCT FROM source.old_file_name
+              AND company_file.file_desc IS NOT DISTINCT FROM source.file_desc
+              AND company_file.status IS TRUE
+              AND company_file.edited_file IS NULL
+              AND company_file.remarks IS NULL
+              AND company_file.insert_user = source.insert_user;
+            """;
+        return await connection.QuerySingleAsync<int>(new CommandDefinition(
+            verifySql,
+            parameters,
+            transaction,
+            cancellationToken: cancellationToken));
     }
 
     private static async Task<Dictionary<long, IReadOnlyList<AttachmentSummary>>>

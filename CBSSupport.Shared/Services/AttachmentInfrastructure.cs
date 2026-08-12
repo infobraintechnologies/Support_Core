@@ -44,19 +44,11 @@ public enum ValidatedWriteResult
 
 public interface IFileStorage
 {
-    Task<string> CreatePresignedPutUrlAsync(
+    Task<StoredObjectInfo> WriteAsync(
         string key,
+        Stream content,
         string mediaType,
         long size,
-        TimeSpan lifetime,
-        CancellationToken cancellationToken = default);
-
-    Task<string> CreatePresignedGetUrlAsync(
-        string key,
-        string disposition,
-        string displayName,
-        string mediaType,
-        TimeSpan lifetime,
         CancellationToken cancellationToken = default);
 
     Task<StoredObjectInfo?> HeadAsync(
@@ -88,6 +80,14 @@ public interface IFileStorage
         string key,
         CancellationToken cancellationToken = default);
 }
+
+public sealed class AttachmentStorageConflictException(string message) : IOException(message);
+
+public sealed record AttachmentContentRead(
+    Stream Content,
+    string DisplayName,
+    string MediaType,
+    string Disposition);
 
 public enum FileScanStatus
 {

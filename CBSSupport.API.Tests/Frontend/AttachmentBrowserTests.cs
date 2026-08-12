@@ -3,13 +3,14 @@ namespace CBSSupport.API.Tests.Frontend;
 public sealed class AttachmentBrowserTests
 {
     [Fact]
-    public void SharedComposer_UsesDirectPutAndRequiredPollingSchedule()
+    public void SharedComposer_UsesAuthorizedSameOriginPutAndRequiredPollingSchedule()
     {
         var source = ReadApiFile("wwwroot/js/messaging/attachments.js");
 
         Assert.Contains("new XMLHttpRequest()", source, StringComparison.Ordinal);
         Assert.Contains("xhr.open(\"PUT\", intent.uploadUrl, true)", source, StringComparison.Ordinal);
         Assert.Contains("intent.requiredHeaders", source, StringComparison.Ordinal);
+        Assert.Contains("RequestVerificationToken", source, StringComparison.Ordinal);
         Assert.Contains("getResponseHeader(\"ETag\")", source, StringComparison.Ordinal);
         Assert.Contains("elapsed < 30000 ? 2000 : 5000", source, StringComparison.Ordinal);
         Assert.Contains("5 * 60 * 1000", source, StringComparison.Ordinal);

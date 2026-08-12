@@ -187,12 +187,18 @@ public sealed class AttachmentsControllerTests
     }
 
     [Fact]
-    public async Task Content_RedirectsOnlySuccessfulReadyAuthorization()
+    public async Task Content_StreamsOnlySuccessfulReadyAuthorization()
     {
-        const string signedUrl = "https://r2.example.test/ready/object?signature=secret";
+        var bytes = "%PDF-test"u8.ToArray();
         var service = new RecordingAttachmentService
         {
-            ContentResult = new(AttachmentCommandStatus.Success, signedUrl)
+            ContentResult = new(
+                AttachmentCommandStatus.Success,
+                new AttachmentContentRead(
+                    new MemoryStream(bytes),
+                    "report.pdf",
+                    "application/pdf",
+                    "attachment"))
         };
         var controller = CreateController(service);
 
@@ -201,8 +207,9 @@ public sealed class AttachmentsControllerTests
             "inline",
             CancellationToken.None);
 
-        var redirect = Assert.IsType<RedirectResult>(result);
-        Assert.Equal(signedUrl, redirect.Url);
+        var file = Assert.IsType<FileStreamResult>(result);
+        Assert.Equal("report.pdf", file.FileDownloadName);
+        Assert.Equal("application/pdf", file.ContentType);
         Assert.Equal("inline", service.LastDisposition);
     }
 
@@ -263,7 +270,7 @@ public sealed class AttachmentsControllerTests
     private static AttachmentUploadIntent CreateIntent() =>
         new(
             AttachmentId,
-            "https://r2.example.test/quarantine/object?signature=secret",
+            $"/api/v1/attachments/{AttachmentId:D}/upload",
             DateTimeOffset.UtcNow.AddMinutes(5),
             new Dictionary<string, string>
             {
@@ -301,7 +308,9 @@ public sealed class AttachmentsControllerTests
         public AttachmentStatusResponse? StatusResult { get; init; }
         public AttachmentCommandResult<bool> CancelResult { get; init; } =
             new(AttachmentCommandStatus.Invalid);
-        public AttachmentCommandResult<string> ContentResult { get; init; } =
+        public AttachmentCommandResult<StoredObjectInfo> UploadResult { get; init; } =
+            new(AttachmentCommandStatus.Invalid);
+        public AttachmentCommandResult<AttachmentContentRead> ContentResult { get; init; } =
             new(AttachmentCommandStatus.Invalid);
         public AttachmentActor? LastActor { get; private set; }
         public string? LastDisposition { get; private set; }
@@ -325,6 +334,18 @@ public sealed class AttachmentsControllerTests
             return Task.FromResult(CompleteResult);
         }
 
+        public Task<AttachmentCommandResult<StoredObjectInfo>> UploadAsync(
+            Guid attachmentId,
+            AttachmentActor actor,
+            Stream content,
+            string? mediaType,
+            long? contentLength,
+            CancellationToken cancellationToken = default)
+        {
+            LastActor = actor;
+            return Task.FromResult(UploadResult);
+        }
+
         public Task<AttachmentStatusResponse?> GetStatusAsync(
             Guid attachmentId,
             AttachmentActor actor,
@@ -343,7 +364,7 @@ public sealed class AttachmentsControllerTests
             return Task.FromResult(CancelResult);
         }
 
-        public Task<AttachmentCommandResult<string>> CreateContentUrlAsync(
+        public Task<AttachmentCommandResult<AttachmentContentRead>> OpenContentAsync(
             Guid attachmentId,
             AttachmentActor actor,
             string disposition,
