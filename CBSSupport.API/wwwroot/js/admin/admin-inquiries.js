@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 window.AdminInquiries = (() => {
 
@@ -11,6 +11,17 @@ window.AdminInquiries = (() => {
             inquiriesTable = inquiryTable.DataTable({
                 "ajax": {
                     "url": "/api/v1/admin/inquiries",
+                    "data": function (request) {
+                        const clientId = window.AdminCore?.getCurrentClientId();
+                        if (clientId) {
+                            request.clientId = clientId;
+                        }
+
+                        const status = $('#status-filter-inquiries').val();
+                        if (status) {
+                            request.status = status;
+                        }
+                    },
                     "dataSrc": "items"
                 },
                 "columns": [
@@ -24,7 +35,7 @@ window.AdminInquiries = (() => {
                         }
                     },
                     {
-                        "data": "outcome",
+                        "data": "status",
                         "title": "Outcome",
                         "width": "16%",
                         "className": "text-center",
@@ -40,12 +51,11 @@ window.AdminInquiries = (() => {
                         "width": "29%",
                         "render": function (data, type, row) {
                             const topic = AdminUtils.escapeHtml(row.topic || 'General Inquiry');
-                            const client = AdminUtils.escapeHtml(row.clientName || 'Unknown client');
-                            return `<div class="ticket-subject">${topic}</div><div class="ticket-client">${client}</div>`;
+                            return `<div class="ticket-subject">${topic}</div>`;
                         }
                     },
                     {
-                        "data": "inquiredBy",
+                        "data": "inquiredByName",
                         "title": "Submitted by",
                         "width": "18%",
                         "render": function (data) {
@@ -53,7 +63,7 @@ window.AdminInquiries = (() => {
                         }
                     },
                     {
-                        "data": "date",
+                        "data": "createdAt",
                         "title": "Submitted",
                         "width": "17%",
                         "render": function (data, type) {
@@ -74,10 +84,10 @@ window.AdminInquiries = (() => {
                             return `
                                 <div class="action-buttons">
                                     <button type="button" class="btn-icon-action view-inquiry-details-btn" title="View details" aria-label="View inquiry details">
-                                        <i class="fas fa-eye" aria-hidden="true"></i>
+                                        <i class="bi bi-eye" aria-hidden="true"></i>
                                     </button>
                                     <button type="button" class="btn-icon-action start-inquiry-chat-btn" title="Open chat" aria-label="Open inquiry conversation">
-                                        <i class="fas fa-comments" aria-hidden="true"></i>
+                                        <i class="bi bi-chat-square-text" aria-hidden="true"></i>
                                     </button>
                                 </div>`;
                         }
@@ -111,7 +121,16 @@ window.AdminInquiries = (() => {
             });
 
             setupInquiryTableEvents();
+            setupStatusFilter();
         }
+    }
+
+    function setupStatusFilter() {
+        $('#status-filter-inquiries')
+            .off('change.adminInquiries')
+            .on('change.adminInquiries', function () {
+                filterByStatus($(this).val());
+            });
     }
 
     function setupInquiryTableEvents() {
@@ -171,12 +190,12 @@ window.AdminInquiries = (() => {
 
             $('#detail-inquiry-id').text(`#INQ-${inquiry.id}`);
             $('#detail-inquiry-topic').text(inquiry.topic || 'General Inquiry');
-            $('#detail-inquiry-outcome').val(inquiry.outcome || 'Pending');
-            $('#detail-inquiry-inquired-by').text(inquiry.inquiredBy || 'Unknown');
+            $('#detail-inquiry-outcome').val(inquiry.status || 'Pending');
+            $('#detail-inquiry-inquired-by').text(inquiry.inquiredByName || 'Unknown');
             $('#detail-inquiry-client').text(inquiry.clientName || 'Unknown');
 
-            if (inquiry.date) {
-                $('#detail-inquiry-date').text(new Date(inquiry.date).toLocaleString());
+            if (inquiry.createdAt) {
+                $('#detail-inquiry-date').text(new Date(inquiry.createdAt).toLocaleString());
             } else {
                 $('#detail-inquiry-date').text('Not available');
             }
@@ -228,7 +247,7 @@ window.AdminInquiries = (() => {
 
             if (result && result.id) {
                 currentInquiryData.version = result.version;
-                currentInquiryData.outcome = newOutcome;
+                currentInquiryData.status = newOutcome;
 
                 if (inquiriesTable) {
                     inquiriesTable.ajax.reload(null, false);
@@ -251,7 +270,7 @@ window.AdminInquiries = (() => {
         } finally {
             const updateBtn = $('#btn-update-inquiry');
             updateBtn.prop('disabled', false);
-            updateBtn.html('<i class="fas fa-save" aria-hidden="true"></i> Save outcome');
+            updateBtn.html('<i class="bi bi-floppy" aria-hidden="true"></i> Save outcome');
         }
     }
 
@@ -330,17 +349,17 @@ window.AdminInquiries = (() => {
     }
 
     function filterByStatus(status) {
+        $('#status-filter-inquiries').val(status || '');
         if (inquiriesTable) {
-            console.log(`❓ AdminInquiries: Filtering by status: ${status}`);
-            const searchTerm = status ? `^${status}$` : '';
-            inquiriesTable.column(1).search(searchTerm, true, false).draw();
+            closeInquiryDetail();
+            inquiriesTable.ajax.reload(null, true);
         }
     }
 
-    function filterByClient(clientName) {
+    function filterByClient() {
         if (inquiriesTable) {
-            console.log(`❓ AdminInquiries: Filtering by client: ${clientName}`);
-            inquiriesTable.column(2).search(clientName || '', false, true).draw();
+            closeInquiryDetail();
+            inquiriesTable.ajax.reload(null, true);
         }
     }
 
@@ -422,9 +441,9 @@ window.AdminInquiries = (() => {
             const row = [
                 inquiry.id,
                 `"${(inquiry.topic || '').replace(/"/g, '""')}"`,
-                `"${(inquiry.inquiredBy || '').replace(/"/g, '""')}"`,
-                inquiry.date ? new Date(inquiry.date).toLocaleDateString() : '',
-                inquiry.outcome || 'Pending',
+                `"${(inquiry.inquiredByName || '').replace(/"/g, '""')}"`,
+                inquiry.createdAt ? new Date(inquiry.createdAt).toLocaleDateString() : '',
+                inquiry.status || 'Pending',
                 `"${(inquiry.description || inquiry.instruction || '').replace(/"/g, '""')}"`
             ];
             csvRows.push(row.join(','));
@@ -451,8 +470,8 @@ window.AdminInquiries = (() => {
         const data = inquiriesTable.rows().data().toArray();
         const stats = {
             total: data.length,
-            pending: data.filter(i => i.outcome === 'Pending').length,
-            completed: data.filter(i => i.outcome === 'Completed').length,
+            pending: data.filter(i => i.status === 'Pending').length,
+            completed: data.filter(i => i.status === 'Completed').length,
             topics: {}
         };
 
@@ -466,11 +485,6 @@ window.AdminInquiries = (() => {
     }
 
     function setupEventHandlers() {
-        $('#status-filter-inquiries').on('change', function () {
-            const status = $(this).val();
-            filterByStatus(status);
-        });
-
         $('#inquiry-search-input').on('keyup', AdminUtils.debounce(function () {
             const searchTerm = $(this).val();
             searchInquiries(searchTerm);
@@ -503,16 +517,16 @@ window.AdminInquiries = (() => {
             tableHeader.after(`
                 <div class="d-inline-block ms-3">
                     <button type="button" id="refresh-inquiries-btn" class="btn btn-outline-secondary btn-sm" title="Refresh inquiries" aria-label="Refresh inquiries">
-                        <i class="fas fa-sync-alt" aria-hidden="true"></i>
+                        <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
                     </button>
                 </div>
             `);
 
             $('#refresh-inquiries-btn').on('click', function () {
-                $(this).find('i').addClass('fa-spin');
+                $(this).find('i').addClass('icon-spin');
                 refreshTable();
                 setTimeout(() => {
-                    $(this).find('i').removeClass('fa-spin');
+                    $(this).find('i').removeClass('icon-spin');
                 }, 1000);
             });
         }

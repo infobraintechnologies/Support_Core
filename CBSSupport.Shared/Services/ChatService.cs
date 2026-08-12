@@ -346,10 +346,11 @@ namespace CBSSupport.Shared.Services
             i.id AS Id,
             COALESCE(public.try_get_json_value(i.remarks, 'subject'), 'General Support') AS Subject,
             i.datetime AS Date,
-            u.full_name AS CreatedBy,
+            COALESCE(u.full_name, u.user_name, 'Unknown') AS CreatedBy,
             res.full_name AS ResolvedBy,
             CASE WHEN COALESCE(i.completed, false) THEN 'Resolved' ELSE 'Open' END AS Status,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
+            COALESCE(u.full_name, u.user_name, 'Unknown Client') AS ClientName,
             i.instruction AS Description,
             i.remarks AS Remarks,
             i.expiry_date::timestamp without time zone AS ExpiryDate,
@@ -385,9 +386,10 @@ namespace CBSSupport.Shared.Services
         SELECT
             i.id AS Id,
             COALESCE(t.inst_type_name, 'Unknown Topic') AS Topic,
-            COALESCE(au.full_name, u.full_name, 'Unknown') AS InquiredBy,
+            COALESCE(u.full_name, u.user_name, au.full_name, au.user_name, 'Unknown') AS InquiredBy,
             i.datetime AS Date,
             CASE WHEN COALESCE(i.completed, false) THEN 'Completed' ELSE 'Pending' END AS Outcome,
+            COALESCE(u.full_name, u.user_name, au.full_name, au.user_name, 'Unknown Client') AS ClientName,
             i.instruction AS Description,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
             i.completed_on AS ResolvedDate,
@@ -427,7 +429,7 @@ namespace CBSSupport.Shared.Services
             i.id AS Id,
             COALESCE(public.try_get_json_value(i.remarks, 'subject'), 'General Support') AS Subject,
             i.datetime AS Date,
-            u.full_name AS CreatedBy,
+            COALESCE(u.full_name, u.user_name, 'Unknown') AS CreatedBy,
             res.full_name AS ResolvedBy,
             CASE WHEN i.completed = true THEN 'Resolved' ELSE 'Open' END AS Status,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
@@ -527,7 +529,7 @@ namespace CBSSupport.Shared.Services
             res.full_name AS ResolvedBy,
             CASE WHEN i.completed = true THEN 'Resolved' ELSE 'Open' END AS Status,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
-            COALESCE(u.full_name, 'Unknown Client') AS ClientName,
+            COALESCE(u.full_name, u.user_name, 'Unknown Client') AS ClientName,
             i.instruction AS Description,
             i.remarks AS Remarks,
             i.expiry_date::timestamp without time zone AS ExpiryDate,
@@ -561,13 +563,13 @@ namespace CBSSupport.Shared.Services
         SELECT
             i.id AS Id,
             COALESCE(t.inst_type_name, 'Unknown Topic') AS Topic,
-            COALESCE(au.full_name, u.full_name, 'Unknown') AS InquiredBy,
+            COALESCE(u.full_name, u.user_name, au.full_name, au.user_name, 'Unknown') AS InquiredBy,
             i.datetime AS Date,
             CASE 
                 WHEN i.completed = true THEN 'Completed'
                 ELSE 'Pending'
             END AS Outcome,
-            COALESCE(u.full_name, au.full_name, 'Unknown Client') AS ClientName,
+            COALESCE(u.full_name, u.user_name, au.full_name, au.user_name, 'Unknown Client') AS ClientName,
             i.instruction AS Description,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
             i.completed_on AS ResolvedDate,
@@ -743,7 +745,7 @@ namespace CBSSupport.Shared.Services
             i.id AS Id,
             COALESCE(public.try_get_json_value(i.remarks, 'subject'), 'General Support') AS Subject,
             i.datetime AS Date,
-            u.full_name AS CreatedBy,
+            COALESCE(u.full_name, u.user_name, 'Unknown') AS CreatedBy,
             res.full_name AS ResolvedBy,
             CASE WHEN i.completed = true THEN 'Resolved' ELSE 'Open' END AS Status,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,
@@ -751,7 +753,7 @@ namespace CBSSupport.Shared.Services
             i.remarks AS Remarks,
             i.expiry_date::timestamp without time zone AS ExpiryDate,
             i.completed_on AS ResolvedDate,
-            COALESCE(u.full_name, 'Unknown Client') AS ClientName,
+            COALESCE(u.full_name, u.user_name, 'Unknown Client') AS ClientName,
             i.client_id AS ClientId,
             i.inst_type_id AS InstTypeId,
             ca.version AS Version
@@ -784,13 +786,13 @@ namespace CBSSupport.Shared.Services
         SELECT
             i.id AS Id,
             COALESCE(t.inst_type_name, 'Unknown Topic') AS Topic,
-            COALESCE(au.full_name, u.full_name, 'Unknown') AS InquiredBy,
+            COALESCE(u.full_name, u.user_name, au.full_name, au.user_name, 'Unknown') AS InquiredBy,
             i.datetime AS Date,
             CASE 
                 WHEN i.completed = true THEN 'Completed'
                 ELSE 'Pending'
             END AS Outcome,
-            COALESCE(u.full_name, au.full_name, 'Unknown Client') AS ClientName,
+            COALESCE(u.full_name, u.user_name, au.full_name, au.user_name, 'Unknown Client') AS ClientName,
             i.client_id AS ClientId,
             i.instruction AS Description,
             COALESCE(public.try_get_json_value(i.remarks, 'priority'), 'Normal') AS Priority,

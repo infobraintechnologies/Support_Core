@@ -1187,7 +1187,7 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             new ConversationActor(7, 42, IsAdmin: false, "Client 42"),
             ConversationTypes.TrainingTicket,
             InstructionCategories.Ticket,
-            "Recipient durability", null, null, null, DateTime.UtcNow);
+            "Recipient durability", """{"subject":"Migration preparation"}""", null, null, DateTime.UtcNow);
         var caseId = Assert.IsType<ChatMessage>(created.Value).Id;
         var recipients = (await database.QueryAsync<NotificationRecipientRow>("""
             SELECT notification_id AS NotificationId, admin_user_id AS UserId
@@ -1211,9 +1211,16 @@ public sealed class CaseAttachmentPostgreSqlIntegrationTests
             item => item.IsAdmin && item.RecipientUserId == firstRecipient.UserId);
         Assert.Equal(caseId, delivery.Change.Notification!.CaseId);
         Assert.Equal("TicketCreated", delivery.Change.Notification.EventType);
+        Assert.Equal($"New ticket · Ticket #{caseId}", delivery.Change.Notification.Title);
+        Assert.Equal(
+            "Migration preparation — A new ticket was created.",
+            delivery.Change.Notification.Message);
 
         var initial = await firstDevice.ListAsync(firstRecipient, 20, null);
         Assert.Equal(1, initial.UnreadCount);
+        Assert.Equal(
+            "Migration preparation — A new ticket was created.",
+            Assert.Single(initial.Items).Message);
 
         var read = await firstDevice.MarkReadAsync(firstRecipient, recipients[0].NotificationId);
         Assert.NotNull(read);

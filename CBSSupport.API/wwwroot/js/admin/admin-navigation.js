@@ -30,13 +30,8 @@ window.AdminNavigation = (() => {
             }
         }
 
-        if (statusFilter && window.AdminTickets && window.AdminTickets.getTicketsTable) {
-            const ticketsTable = window.AdminTickets.getTicketsTable();
-            if (ticketsTable) {
-                setTimeout(() => {
-                    ticketsTable.column(4).search(statusFilter).draw();
-                }, 100);
-            }
+        if (window.AdminTickets?.filterByStatus) {
+            window.AdminTickets.filterByStatus(statusFilter);
         }
     }
 
@@ -52,13 +47,8 @@ window.AdminNavigation = (() => {
             }
         }
 
-        if (statusFilter && window.AdminInquiries && window.AdminInquiries.getInquiriesTable) {
-            const inquiriesTable = window.AdminInquiries.getInquiriesTable();
-            if (inquiriesTable) {
-                setTimeout(() => {
-                    inquiriesTable.column(3).search(statusFilter).draw();
-                }, 100);
-            }
+        if (window.AdminInquiries?.filterByStatus) {
+            window.AdminInquiries.filterByStatus(statusFilter);
         }
     }
 

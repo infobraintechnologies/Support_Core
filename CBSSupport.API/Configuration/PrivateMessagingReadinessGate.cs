@@ -99,22 +99,37 @@ public sealed class PrivateMessagingReadinessGate(string connectionString)
                     WHEN access.state = 'NeedsReview' AND review.review_state = 'NeedsReview'
                         THEN 'unresolved_needs_review'
                     WHEN access.state IN ('Active', 'Archived') AND NOT (
-                         review.review_state = 'Resolved'
-                         AND review.remediation_code = 'participants_confirmed'
-                         AND review.resolved_at IS NOT NULL
-                         AND review.resolved_by_admin_user_id IS NOT NULL
-                         AND EXISTS (
-                             SELECT 1
-                             FROM digital.conversation_audit audit
-                             WHERE audit.conversation_id = access.conversation_id
-                               AND audit.client_id = access.client_id
-                               AND audit.action = 'LegacyPrivateApproved'
-                               AND audit.actor_kind = 'Admin'
-                               AND audit.admin_user_id = review.resolved_by_admin_user_id
-                               AND audit.details->>'clientUserId' = access.client_user_id::text
-                               AND audit.details->>'adminUserId' = access.admin_user_id::text
-                               AND NULLIF(btrim(audit.details->>'reason'), '') IS NOT NULL))
+                         (
+                             review.review_state = 'Resolved'
+                             AND review.remediation_code = 'participants_confirmed'
+                             AND review.resolved_at IS NOT NULL
+                             AND review.resolved_by_admin_user_id IS NOT NULL
+                             AND EXISTS (
+                                 SELECT 1
+                                 FROM digital.conversation_audit audit
+                                 WHERE audit.conversation_id = access.conversation_id
+                                   AND audit.client_id = access.client_id
+                                   AND audit.action = 'LegacyPrivateApproved'
+                                   AND audit.actor_kind = 'Admin'
+                                   AND audit.admin_user_id = review.resolved_by_admin_user_id
+                                   AND audit.details->>'clientUserId' = access.client_user_id::text
+                                   AND audit.details->>'adminUserId' = access.admin_user_id::text
+                                   AND NULLIF(btrim(audit.details->>'reason'), '') IS NOT NULL)
+                         )
+                         OR (
+                             review.conversation_id IS NULL
+                             AND EXISTS (
+                                 SELECT 1
+                                 FROM digital.conversation_audit audit
+                                 WHERE audit.conversation_id = access.conversation_id
+                                   AND audit.client_id = access.client_id
+                                   AND audit.action = 'Created'
+                                   AND audit.details->>'clientUserId' = access.client_user_id::text
+                                   AND audit.details->>'adminUserId' = access.admin_user_id::text)
+                         ))
                         THEN 'resolved_without_approval_evidence'
+                    WHEN access.state = 'Active' AND review.conversation_id IS NULL THEN 'valid_v2_active'
+                    WHEN access.state = 'Archived' AND review.conversation_id IS NULL THEN 'valid_v2_archived'
                     WHEN access.state = 'Active' THEN 'valid_resolved_active'
                     WHEN access.state = 'Archived' THEN 'valid_resolved_archived'
                     ELSE 'conflicting_review_state'
@@ -137,7 +152,11 @@ public sealed class PrivateMessagingReadinessGate(string connectionString)
             )
             SELECT count(*) FILTER (WHERE status_code = 'unresolved_needs_review') AS NeedsReviewCount,
                    count(*) FILTER (WHERE status_code NOT IN (
-                       'unresolved_needs_review', 'valid_resolved_active', 'valid_resolved_archived')) AS InvalidCount
+                       'unresolved_needs_review',
+                       'valid_resolved_active',
+                       'valid_resolved_archived',
+                       'valid_v2_active',
+                       'valid_v2_archived')) AS InvalidCount
             FROM all_rows;
             """,
             cancellationToken: cancellationToken));

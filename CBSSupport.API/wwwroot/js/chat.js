@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 
 document.addEventListener("DOMContentLoaded", () => {
     const bootstrapDataElement = document.getElementById("client-bootstrap-data");
@@ -38,6 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const conversationListContainer = document.getElementById("conversation-list-container");
     const conversationList = document.getElementById("client-conversation-list");
     const conversationListState = document.getElementById("conversation-list-state");
+    const conversationCount = document.getElementById("client-conversation-count");
     const conversationSearch = document.getElementById("conversation-search");
     const conversationKindFilter = document.getElementById("conversation-kind-filter");
     const connectionStatus = document.getElementById("connection-status");
@@ -139,9 +140,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const generatePriorityBadge = (priority) => {
         const p = priority ? priority.toLowerCase() : 'normal';
         const badgeClass = `badge-priority-${p}`;
-        const icon = p === 'urgent' ? 'fas fa-exclamation-triangle' :
-            p === 'high' ? 'fas fa-exclamation' :
-                p === 'normal' || p === 'medium' ? 'fas fa-minus' : 'fas fa-arrow-down';
+        const icon = p === 'urgent' ? 'bi bi-exclamation-triangle' :
+            p === 'high' ? 'bi bi-exclamation-lg' :
+                p === 'normal' || p === 'medium' ? 'bi bi-dash' : 'bi bi-arrow-down';
 
         return `<span class="badge ${badgeClass}">
         <i class="${icon} me-1" style="font-size: 0.7rem"></i>${escapeHtml(priority || 'Normal')}
@@ -165,7 +166,9 @@ document.addEventListener("DOMContentLoaded", () => {
             lastMessageDate = dateStr;
             const ds = document.createElement("div");
             ds.className = "date-separator";
-            ds.textContent = formatDateForSeparator(msgDateStr);
+            const label = document.createElement("span");
+            label.textContent = formatDateForSeparator(msgDateStr);
+            ds.appendChild(label);
             chatPanelBody.appendChild(ds);
         }
     }
@@ -186,12 +189,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function getNotificationIcon(type) {
         const icons = {
-            'ticket': 'fas fa-ticket-alt',
-            'inquiry': 'fas fa-question-circle',
-            'message': 'fas fa-comment',
-            'status_change': 'fas fa-exchange-alt'
+            'ticket': 'bi bi-ticket-perforated',
+            'inquiry': 'bi bi-question-circle',
+            'message': 'bi bi-chat',
+            'status_change': 'bi bi-arrow-left-right'
         };
-        return icons[type] || 'fas fa-bell';
+        return icons[type] || 'bi bi-bell';
     }
 
     function showNotificationToast(message, type = 'info') {
@@ -204,9 +207,9 @@ document.addEventListener("DOMContentLoaded", () => {
             document.body.appendChild(toastContainer);
         }
 
-        const iconClass = type === 'success' ? 'fa-check-circle text-success' :
-            type === 'error' ? 'fa-exclamation-triangle text-danger' :
-                'fa-info-circle text-info';
+        const iconClass = type === 'success' ? 'bi-check-circle text-success' :
+            type === 'error' ? 'bi-exclamation-triangle text-danger' :
+                'bi-info-circle text-info';
 
         const toast = document.createElement('div');
         toast.className = 'toast';
@@ -217,7 +220,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const header = document.createElement('div');
         header.className = 'toast-header';
         const icon = document.createElement('i');
-        icon.className = `fas ${iconClass} me-2`;
+        icon.className = `bi ${iconClass} me-2`;
         const strong = document.createElement('strong');
         strong.className = 'me-auto';
         strong.textContent = 'Notification';
@@ -351,11 +354,11 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         document.addEventListener("fullscreenchange", () => {
             if (document.fullscreenElement) {
-                fullscreenIcon.classList.remove("fa-expand");
-                fullscreenIcon.classList.add("fa-compress");
+                fullscreenIcon.classList.remove("bi-arrows-fullscreen");
+                fullscreenIcon.classList.add("bi-fullscreen-exit");
             } else {
-                fullscreenIcon.classList.remove("fa-compress");
-                fullscreenIcon.classList.add("fa-expand");
+                fullscreenIcon.classList.remove("bi-fullscreen-exit");
+                fullscreenIcon.classList.add("bi-arrows-fullscreen");
             }
         });
     }
@@ -432,6 +435,23 @@ document.addEventListener("DOMContentLoaded", () => {
         return "Everyone in your organization";
     }
 
+    function getConversationIconClass(kind) {
+        if (kind === "Private") return "bi-person";
+        if (kind === "Ticket") return "bi-ticket-perforated";
+        if (kind === "Inquiry") return "bi-question-circle";
+        return "bi-people";
+    }
+
+    function createConversationIcon(kind) {
+        const surface = document.createElement("span");
+        surface.className = "client-conversation-icon";
+        const icon = document.createElement("i");
+        icon.className = `bi ${getConversationIconClass(kind)}`;
+        icon.setAttribute("aria-hidden", "true");
+        surface.appendChild(icon);
+        return surface;
+    }
+
     function createConversationItem(conversation) {
         const item = document.createElement("button");
         item.type = "button";
@@ -444,21 +464,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const content = document.createElement("div");
         content.className = "client-conversation-item-content";
-        const avatarLabel = conversation.kind === "Private"
-            ? getConversationName(conversation).trim().charAt(0).toUpperCase() || "S"
-            : conversation.kind === "Ticket"
-                ? "T"
-                : conversation.kind === "Inquiry" ? "I" : "G";
-        const avatar = appendTextElement(
-            content,
-            "span",
-            `avatar-initials ${conversation.kind === "Private" ? "avatar-bg-blue" : "avatar-bg-success"}`,
-            avatarLabel);
-        avatar.setAttribute("aria-hidden", "true");
+        content.appendChild(createConversationIcon(conversation.kind));
 
         const copy = document.createElement("span");
         copy.className = "client-conversation-copy";
-        appendTextElement(copy, "span", "fw-bold", getConversationName(conversation));
+        appendTextElement(copy, "span", "client-conversation-name", getConversationName(conversation));
         appendTextElement(copy, "small", "text-muted conversation-subtitle", getConversationSubtitle(conversation));
         content.appendChild(copy);
 
@@ -475,11 +485,17 @@ document.addEventListener("DOMContentLoaded", () => {
         conversationList.replaceChildren();
         conversationsById.clear();
 
+        let conversationTotal = 0;
         for (const conversation of conversations) {
             const id = Number(conversation.id);
             if (!Number.isSafeInteger(id) || id <= 0) continue;
             conversationsById.set(id, { ...conversation, id });
             conversationList.appendChild(createConversationItem(conversation));
+            conversationTotal += 1;
+        }
+
+        if (conversationCount) {
+            conversationCount.textContent = `${conversationTotal} conversation${conversationTotal === 1 ? "" : "s"}`;
         }
 
         const hasGroup = conversations.some(conversation => conversation.kind === "Group");
@@ -490,11 +506,15 @@ document.addEventListener("DOMContentLoaded", () => {
             startGroup.dataset.action = "start-group";
             startGroup.dataset.kind = "Group";
             startGroup.dataset.searchText = "group support organization";
-            appendTextElement(startGroup, "span", "avatar-initials avatar-bg-success", "G");
+            const content = document.createElement("div");
+            content.className = "client-conversation-item-content";
+            content.appendChild(createConversationIcon("Group"));
             const label = document.createElement("span");
-            appendTextElement(label, "span", "fw-bold", "Group support");
-            appendTextElement(label, "small", "text-muted", "Start your organization conversation");
-            startGroup.appendChild(label);
+            label.className = "client-conversation-copy";
+            appendTextElement(label, "span", "client-conversation-name", "Group support");
+            appendTextElement(label, "small", "text-muted conversation-subtitle", "Start your organization conversation");
+            content.appendChild(label);
+            startGroup.appendChild(content);
             conversationList.prepend(startGroup);
         }
 
@@ -503,7 +523,7 @@ document.addEventListener("DOMContentLoaded", () => {
         conversationListContainer?.setAttribute("aria-busy", "false");
         if (!conversationList.childElementCount) {
             conversationListState.hidden = false;
-            conversationListState.textContent = "No conversations yet. Start a private chat when you need support.";
+            conversationListState.textContent = "No conversations yet. Create a ticket or inquiry when you need support.";
         }
 
         if (currentChatContext.id) {
@@ -950,7 +970,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const empty = document.createElement('div');
             empty.className = 'notification-empty';
             const icon = document.createElement('i');
-            icon.className = 'fas fa-bell-slash fa-2x mb-2';
+            icon.className = 'bi bi-bell-slash fs-4 mb-2';
             const text = document.createElement('p');
             text.textContent = 'No notifications yet';
             empty.append(icon, text);
@@ -1485,7 +1505,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         updateSendButtonState();
         await loadConversations();
-        loadAvailableAdmins();
         initializeClientNotifications();
 
         if (supportTicketsTableE1.length) {
@@ -1500,7 +1519,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 "columns": [
                     {
                         "data": "id",
-                        "title": '<i class="fas fa-hashtag me-1"></i>ID',
+                        "title": '<i class="bi bi-hash me-1"></i>ID',
                         "width": "8%",
                         "className": "text-center fw-bold",
                         "render": function (data) {
@@ -1509,7 +1528,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     },
                     {
                         "data": "subject",
-                        "title": '<i class="fas fa-ticket-alt me-1"></i>Subject',
+                        "title": '<i class="bi bi-ticket-perforated me-1"></i>Subject',
                         "width": "30%",
                         "className": "fw-semibold",
                         "render": function (data, type, row) {
@@ -1520,7 +1539,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     },
                     {
                         "data": "date",
-                        "title": '<i class="fas fa-calendar me-1"></i>Date',
+                        "title": '<i class="bi bi-calendar3 me-1"></i>Date',
                         "width": "15%",
                         "className": "text-center",
                         "render": function (data) {
@@ -1540,25 +1559,25 @@ document.addEventListener("DOMContentLoaded", () => {
                     },
                     {
                         "data": "status",
-                        "title": '<i class="fas fa-info-circle me-1"></i>Status',
+                        "title": '<i class="bi bi-info-circle me-1"></i>Status',
                         "width": "12%",
                         "className": "text-center",
                         "render": function (data) {
                             const status = data || 'Pending';
                             const statusClass = `badge-status-${status.toLowerCase()}`;
-                            return `<span class="badge ${statusClass}"><i class="fas fa-circle me-1" style="font-size: 0.5rem"></i>${escapeHtml(status)}</span>`;
+                            return `<span class="badge ${statusClass}"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem"></i>${escapeHtml(status)}</span>`;
                         }
                     },
                     {
                         "data": "priority",
-                        "title": '<i class="fas fa-exclamation-triangle me-1"></i>Priority',
+                        "title": '<i class="bi bi-exclamation-triangle me-1"></i>Priority',
                         "width": "12%",
                         "className": "text-center",
                         "render": (data) => generatePriorityBadge(data)
                     },
                     {
                         "data": null,
-                        "title": '<i class="fas fa-cogs me-1"></i>Actions',
+                        "title": '<i class="bi bi-gear me-1"></i>Actions',
                         "orderable": false,
                         "width": "15%",
                         "className": "text-center",
@@ -1567,10 +1586,10 @@ document.addEventListener("DOMContentLoaded", () => {
                             return `
                         <div class="action-buttons">
                             <button type="button" id="view-ticket-details-${rowId}" class="btn-icon-action view-details-btn" title="View Details" aria-label="View ticket #${rowId} details" data-bs-toggle="tooltip">
-                                <i class="fas fa-eye"></i>
+                                <i class="bi bi-eye"></i>
                             </button>
                             <button type="button" id="open-ticket-chat-${rowId}" class="btn-icon-action start-chat-btn" title="Open Chat" aria-label="Open chat for ticket #${rowId}" data-bs-toggle="tooltip">
-                                <i class="fas fa-comments"></i>
+                                <i class="bi bi-chat-square-text"></i>
                             </button>
                         </div>`;
                         }
@@ -1580,16 +1599,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 "pageLength": 10,
                 "lengthMenu": [[5, 10, 25, 50], [5, 10, 25, 50]],
                 "language": {
-                    "emptyTable": '<div class="text-center p-4"><i class="fas fa-ticket-alt fa-3x text-muted mb-3"></i><br><span class="text-muted">You haven\'t created any support tickets yet.</span><br><small class="text-secondary">Click "New Support Ticket" to get started!</small></div>',
-                    "search": '<i class="fas fa-search me-2"></i>',
+                    "emptyTable": '<div class="text-center p-4"><i class="bi bi-ticket-perforated fs-1 text-muted mb-3"></i><br><span class="text-muted">You haven\'t created any support tickets yet.</span><br><small class="text-secondary">Click "New Support Ticket" to get started!</small></div>',
+                    "search": '<i class="bi bi-search me-2"></i>',
                     "lengthMenu": 'Show _MENU_ tickets',
                     "info": 'Showing _START_ to _END_ of _TOTAL_ tickets',
                     "infoEmpty": 'No tickets available',
                     "paginate": {
-                        "first": '<i class="fas fa-angle-double-left"></i>',
-                        "last": '<i class="fas fa-angle-double-right"></i>',
-                        "next": '<i class="fas fa-angle-right"></i>',
-                        "previous": '<i class="fas fa-angle-left"></i>'
+                        "first": '<i class="bi bi-chevron-bar-left"></i>',
+                        "last": '<i class="bi bi-chevron-bar-right"></i>',
+                        "next": '<i class="bi bi-chevron-right"></i>',
+                        "previous": '<i class="bi bi-chevron-left"></i>'
                     }
                 },
                 "dom": '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rt<"row"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
@@ -1625,7 +1644,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 "columns": [
                     {
                         "data": "id",
-                        "title": '<i class="fas fa-hashtag me-1"></i>ID',
+                        "title": '<i class="bi bi-hash me-1"></i>ID',
                         "width": "8%",
                         "className": "text-center fw-bold",
                         "render": function (data) {
@@ -1634,7 +1653,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     },
                     {
                         "data": "topic",
-                        "title": '<i class="fas fa-question-circle me-1"></i>Topic',
+                        "title": '<i class="bi bi-question-circle me-1"></i>Topic',
                         "width": "25%",
                         "className": "fw-semibold text-primary",
                         "render": function (data) {
@@ -1643,7 +1662,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     },
                     {
                         "data": "inquiredBy",
-                        "title": '<i class="fas fa-user me-1"></i>Inquired By',
+                        "title": '<i class="bi bi-person me-1"></i>Inquired By',
                         "width": "20%",
                         "render": function (data) {
                             return escapeHtml(data || 'Unknown');
@@ -1651,7 +1670,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     },
                     {
                         "data": "date",
-                        "title": '<i class="fas fa-calendar me-1"></i>Date',
+                        "title": '<i class="bi bi-calendar3 me-1"></i>Date',
                         "width": "15%",
                         "className": "text-center",
                         "render": function (data) {
@@ -1670,19 +1689,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     },
                     {
                         "data": "outcome",
-                        "title": '<i class="fas fa-info-circle me-1"></i>Outcome',
+                        "title": '<i class="bi bi-info-circle me-1"></i>Outcome',
                         "width": "12%",
                         "className": "text-center",
                         "render": function (data, type, row) {
                             const outcome = data || row.outcome || 'Pending';
                             const mappedOutcome = outcome === 'Completed' ? 'Resolved' : outcome;
                             const outcomeClass = `badge-status-${mappedOutcome.toLowerCase()}`;
-                            return `<span class="badge ${outcomeClass}"><i class="fas fa-circle me-1" style="font-size: 0.5rem"></i>${escapeHtml(outcome)}</span>`;
+                            return `<span class="badge ${outcomeClass}"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem"></i>${escapeHtml(outcome)}</span>`;
                         }
                     },
                     {
                         "data": null,
-                        "title": '<i class="fas fa-cogs me-1"></i>Actions',
+                        "title": '<i class="bi bi-gear me-1"></i>Actions',
                         "orderable": false,
                         "width": "20%",
                         "className": "text-center",
@@ -1691,10 +1710,10 @@ document.addEventListener("DOMContentLoaded", () => {
                             return `
                     <div class="action-buttons">
                         <button type="button" id="view-inquiry-details-${rowId}" class="btn-icon-action view-details-btn" title="View Details" aria-label="View inquiry #${rowId} details" data-bs-toggle="tooltip">
-                            <i class="fas fa-eye"></i>
+                            <i class="bi bi-eye"></i>
                         </button>
                         <button type="button" id="open-inquiry-chat-${rowId}" class="btn-icon-action start-chat-btn" title="Open Chat" aria-label="Open chat for inquiry #${rowId}" data-bs-toggle="tooltip">
-                            <i class="fas fa-comments"></i>
+                            <i class="bi bi-chat-square-text"></i>
                         </button>
                     </div>`;
                         }
@@ -1704,16 +1723,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 "pageLength": 10,
                 "lengthMenu": [[5, 10, 25, 50], [5, 10, 25, 50]],
                 "language": {
-                    "emptyTable": '<div class="text-center p-4"><i class="fas fa-question-circle fa-3x text-muted mb-3"></i><br><span class="text-muted">No inquiries found.</span><br><small class="text-secondary">Click "New Inquiry" to submit your first inquiry!</small></div>',
-                    "search": '<i class="fas fa-search me-2"></i>',
+                    "emptyTable": '<div class="text-center p-4"><i class="bi bi-question-circle fs-1 text-muted mb-3"></i><br><span class="text-muted">No inquiries found.</span><br><small class="text-secondary">Click "New Inquiry" to submit your first inquiry!</small></div>',
+                    "search": '<i class="bi bi-search me-2"></i>',
                     "lengthMenu": 'Show _MENU_ inquiries',
                     "info": 'Showing _START_ to _END_ of _TOTAL_ inquiries',
                     "infoEmpty": 'No inquiries available',
                     "paginate": {
-                        "first": '<i class="fas fa-angle-double-left"></i>',
-                        "last": '<i class="fas fa-angle-double-right"></i>',
-                        "next": '<i class="fas fa-angle-right"></i>',
-                        "previous": '<i class="fas fa-angle-left"></i>'
+                        "first": '<i class="bi bi-chevron-bar-left"></i>',
+                        "last": '<i class="bi bi-chevron-bar-right"></i>',
+                        "next": '<i class="bi bi-chevron-right"></i>',
+                        "previous": '<i class="bi bi-chevron-left"></i>'
                     }
                 },
                 "dom": '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rt<"row"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',

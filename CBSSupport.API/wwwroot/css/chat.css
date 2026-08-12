@@ -1512,7 +1512,7 @@ a:focus-visible {
     color: #b91c1c;
 }
 
-.client-chat-empty > .fas {
+.client-chat-empty > .bi {
     font-size: 2rem;
     opacity: 0.55;
 }

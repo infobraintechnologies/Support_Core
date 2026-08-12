@@ -75,6 +75,20 @@ public sealed class ClientChatInteractionTests
     }
 
     [Fact]
+    public void ClientPrivatePicker_IsNotRenderedOrRequestedWhilePrivateMessagingIsDisabled()
+    {
+        var script = File.ReadAllText(GetApiPath("wwwroot/js/chat.js"));
+        var view = File.ReadAllText(GetApiPath("Views/Support/Index.cshtml"));
+
+        Assert.Contains("var privateMessagingEnabled = MessagingFeatures.Value.PrivateEnabled;", view, StringComparison.Ordinal);
+        Assert.Contains("@if (privateMessagingEnabled)", view, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "await loadConversations();\n        loadAvailableAdmins();",
+            script,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ClientMessages_UseSafeDomAndExposeRetryState()
     {
         var source = File.ReadAllText(GetApiPath("wwwroot/js/chat.js"));
@@ -106,6 +120,67 @@ public sealed class ClientChatInteractionTests
         Assert.Contains("Shift+Enter for a new line", view, StringComparison.Ordinal);
         Assert.Contains("e.key === \"Enter\" && !e.shiftKey", script, StringComparison.Ordinal);
         Assert.Contains("id=\"mobile-conversation-back\"", view, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClientDateSeparator_WrapsLabelSoDividerDoesNotCrossText()
+    {
+        var source = File.ReadAllText(GetApiPath("wwwroot/js/chat.js"));
+
+        Assert.Contains(
+            "label.textContent = formatDateForSeparator(msgDateStr);",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("ds.appendChild(label);", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClientUi_UsesBootstrapIconsInsteadOfFontAwesome()
+    {
+        var view = File.ReadAllText(GetApiPath("Views/Support/Index.cshtml"));
+        var layout = File.ReadAllText(GetApiPath("Views/Shared/_Layout.cshtml"));
+        var source = File.ReadAllText(GetApiPath("wwwroot/js/chat.js"));
+
+        Assert.Contains("bootstrap-icons@1.11.3", view, StringComparison.Ordinal);
+        Assert.Contains("bootstrap-icons@1.11.3", layout, StringComparison.Ordinal);
+        Assert.Contains("bi bi-send", view, StringComparison.Ordinal);
+        Assert.Contains("bi bi-ticket-perforated", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("font-awesome", view, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("fas fa-", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("fas fa-", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClientHeaderActionIcons_AreVisibleOnTheLightHeader()
+    {
+        var view = File.ReadAllText(GetApiPath("Views/Support/Index.cshtml"));
+        var styles = File.ReadAllText(GetApiPath("wwwroot/css/site.css"));
+
+        Assert.Contains("id=\"fullscreen-btn\"", view, StringComparison.Ordinal);
+        Assert.Contains("id=\"client-notification-btn\"", view, StringComparison.Ordinal);
+        Assert.Contains(".client-portal .app-header .btn-icon,", styles, StringComparison.Ordinal);
+        Assert.Contains("color: var(--color-text-secondary);", styles, StringComparison.Ordinal);
+        Assert.Contains(".client-portal .app-header .btn-icon:focus-visible,", styles, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ClientConversationSidebar_UsesClearTypesAndSelectableConversationStates()
+    {
+        var view = File.ReadAllText(GetApiPath("Views/Support/Index.cshtml"));
+        var source = File.ReadAllText(GetApiPath("wwwroot/js/chat.js"));
+        var styles = File.ReadAllText(GetApiPath("wwwroot/css/site.css"));
+
+        Assert.Contains("Support chats, tickets, and inquiries", view, StringComparison.Ordinal);
+        Assert.Contains("id=\"client-conversation-count\"", view, StringComparison.Ordinal);
+        Assert.Contains("class=\"client-conversation-search\"", view, StringComparison.Ordinal);
+        Assert.Contains("function getConversationIconClass(kind)", source, StringComparison.Ordinal);
+        Assert.Contains("bi-ticket-perforated", source, StringComparison.Ordinal);
+        Assert.Contains("client-conversation-icon", source, StringComparison.Ordinal);
+        Assert.Contains(".client-portal #client-conversation-list .conversation-item.active", styles, StringComparison.Ordinal);
+        Assert.Contains(".client-portal .client-conversation-icon", styles, StringComparison.Ordinal);
+        Assert.Contains("grid-template-columns: minmax(0, 1fr);", styles, StringComparison.Ordinal);
+        Assert.Contains(".client-portal .client-conversation-heading #new-private-chat-btn", styles, StringComparison.Ordinal);
+        Assert.Contains("width: 100%;", styles, StringComparison.Ordinal);
     }
 
     private static string GetApiPath(string relativePath) =>

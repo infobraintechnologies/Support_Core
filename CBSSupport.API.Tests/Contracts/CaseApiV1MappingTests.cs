@@ -33,6 +33,7 @@ public sealed class CaseApiV1MappingTests
         Assert.Equal(CasePriorities.High, response.Priority);
         Assert.Equal("Open", response.Status);
         Assert.Equal(1001, response.ClientId);
+        Assert.Equal("Example User", response.ClientName);
         Assert.Equal("Example User", response.CreatedByName);
         Assert.Equal(1, response.Version);
     }
@@ -68,6 +69,7 @@ public sealed class CaseApiV1MappingTests
             WebOptions);
 
         Assert.Contains("\"createdByName\"", json);
+        Assert.Contains("\"clientName\"", json);
         Assert.DoesNotContain("senderName", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("clientAuthUserId", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("insertUser", json, StringComparison.OrdinalIgnoreCase);
@@ -88,6 +90,7 @@ public sealed class CaseApiV1MappingTests
             Status = "Resolved",
             Priority = "High",
             ClientId = 55,
+            ClientName = "Example Client",
             Description = "body",
             Remarks = "remarks",
             InstTypeId = ConversationTypes.MigrationTicket,
@@ -104,6 +107,7 @@ public sealed class CaseApiV1MappingTests
         Assert.Equal("Alice", response.CreatedByName);
         Assert.Equal("Bob", response.ResolvedByName);
         Assert.Equal(55, response.ClientId);
+        Assert.Equal("Example Client", response.ClientName);
         Assert.Equal(6, response.Version);
     }
 
@@ -118,6 +122,7 @@ public sealed class CaseApiV1MappingTests
             Date = DateTime.UtcNow,
             Outcome = "Pending",
             ClientId = 9,
+            ClientName = "Example Client",
             Description = "body",
             Priority = "Normal",
             InstTypeId = ConversationTypes.AccountsInquiry,
@@ -130,6 +135,7 @@ public sealed class CaseApiV1MappingTests
         Assert.Equal(CaseTypes.Accounts, response.Type);
         Assert.Equal("Pending", response.Status);
         Assert.Equal("Alice", response.InquiredByName);
+        Assert.Equal("Example Client", response.ClientName);
         Assert.Equal(4, response.Version);
     }
 
@@ -149,6 +155,7 @@ public sealed class CaseApiV1MappingTests
         var json = JsonSerializer.Serialize(CaseDtoMapper.ToInquiry(view), WebOptions);
 
         Assert.Contains("\"inquiredByName\"", json);
+        Assert.Contains("\"clientName\"", json);
         Assert.DoesNotContain("instTypeId", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("clientAuthUserId", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("insertUser", json, StringComparison.OrdinalIgnoreCase);

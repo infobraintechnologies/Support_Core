@@ -110,12 +110,28 @@ classified AS (
                WHEN state = 'NeedsReview' AND review_state = 'NeedsReview'
                    THEN 'unresolved_needs_review'
                WHEN state IN ('Active', 'Archived') AND NOT (
-                    review_state = 'Resolved'
-                    AND remediation_code = 'participants_confirmed'
-                    AND resolved_at IS NOT NULL
-                    AND resolved_by_admin_user_id IS NOT NULL
-                    AND approval_audit_count > 0)
+                    (
+                        review_state = 'Resolved'
+                        AND remediation_code = 'participants_confirmed'
+                        AND resolved_at IS NOT NULL
+                        AND resolved_by_admin_user_id IS NOT NULL
+                        AND approval_audit_count > 0
+                    )
+                    OR (
+                        review_state IS NULL
+                        AND EXISTS (
+                            SELECT 1
+                            FROM digital.conversation_audit AS creation_audit
+                            WHERE creation_audit.conversation_id = base.conversation_id
+                              AND creation_audit.client_id = base.client_id
+                              AND creation_audit.action = 'Created'
+                              AND creation_audit.details->>'clientUserId' = base.client_user_id::text
+                              AND creation_audit.details->>'adminUserId' = base.admin_user_id::text
+                        )
+                    ))
                    THEN 'resolved_without_approval_evidence'
+               WHEN state = 'Active' AND review_state IS NULL THEN 'valid_v2_active'
+               WHEN state = 'Archived' AND review_state IS NULL THEN 'valid_v2_archived'
                WHEN state = 'Active' THEN 'valid_resolved_active'
                WHEN state = 'Archived' THEN 'valid_resolved_archived'
                ELSE 'conflicting_review_state'
@@ -223,22 +239,37 @@ WITH status_rows AS (
                         AND review.review_state = 'NeedsReview'
                        THEN 'unresolved_needs_review'
                    WHEN access.state IN ('Active', 'Archived') AND NOT (
-                        review.review_state = 'Resolved'
-                        AND review.remediation_code = 'participants_confirmed'
-                        AND review.resolved_at IS NOT NULL
-                        AND review.resolved_by_admin_user_id IS NOT NULL
-                        AND EXISTS (
-                            SELECT 1
-                            FROM digital.conversation_audit audit
-                            WHERE audit.conversation_id = access.conversation_id
-                              AND audit.client_id = access.client_id
-                              AND audit.action = 'LegacyPrivateApproved'
-                              AND audit.actor_kind = 'Admin'
-                              AND audit.admin_user_id = review.resolved_by_admin_user_id
-                              AND audit.details->>'clientUserId' = access.client_user_id::text
-                              AND audit.details->>'adminUserId' = access.admin_user_id::text
-                              AND NULLIF(btrim(audit.details->>'reason'), '') IS NOT NULL))
+                        (
+                            review.review_state = 'Resolved'
+                            AND review.remediation_code = 'participants_confirmed'
+                            AND review.resolved_at IS NOT NULL
+                            AND review.resolved_by_admin_user_id IS NOT NULL
+                            AND EXISTS (
+                                SELECT 1
+                                FROM digital.conversation_audit audit
+                                WHERE audit.conversation_id = access.conversation_id
+                                  AND audit.client_id = access.client_id
+                                  AND audit.action = 'LegacyPrivateApproved'
+                                  AND audit.actor_kind = 'Admin'
+                                  AND audit.admin_user_id = review.resolved_by_admin_user_id
+                                  AND audit.details->>'clientUserId' = access.client_user_id::text
+                                  AND audit.details->>'adminUserId' = access.admin_user_id::text
+                                  AND NULLIF(btrim(audit.details->>'reason'), '') IS NOT NULL)
+                        )
+                        OR (
+                            review.conversation_id IS NULL
+                            AND EXISTS (
+                                SELECT 1
+                                FROM digital.conversation_audit audit
+                                WHERE audit.conversation_id = access.conversation_id
+                                  AND audit.client_id = access.client_id
+                                  AND audit.action = 'Created'
+                                  AND audit.details->>'clientUserId' = access.client_user_id::text
+                                  AND audit.details->>'adminUserId' = access.admin_user_id::text)
+                        ))
                        THEN 'resolved_without_approval_evidence'
+                   WHEN access.state = 'Active' AND review.conversation_id IS NULL THEN 'valid_v2_active'
+                   WHEN access.state = 'Archived' AND review.conversation_id IS NULL THEN 'valid_v2_archived'
                    WHEN access.state = 'Active' THEN 'valid_resolved_active'
                    WHEN access.state = 'Archived' THEN 'valid_resolved_archived'
                    ELSE 'conflicting_review_state'
@@ -263,6 +294,8 @@ expected(status_code) AS (
         ('unresolved_needs_review'),
         ('valid_resolved_active'),
         ('valid_resolved_archived'),
+        ('valid_v2_active'),
+        ('valid_v2_archived'),
         ('resolved_without_approval_evidence'),
         ('not_private_kind'),
         ('tenant_mismatch'),

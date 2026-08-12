@@ -42,6 +42,23 @@ public sealed class NotificationService(string connectionString) : INotification
 {
     private const int MaxPageSize = 100;
 
+    // Case text is deliberately not persisted in notification payloads. It is projected only
+    // after the recipient filter has been applied, from the tenant-matching canonical root.
+    private const string CasePresentationColumns = """
+        CASE
+            WHEN case_root.inst_category_id = 101 THEN 'Ticket'
+            WHEN case_root.inst_category_id = 102 THEN 'Inquiry'
+            ELSE NULL
+        END AS CaseType,
+        CASE
+            WHEN case_root.inst_category_id = 101 THEN
+                NULLIF(BTRIM(public.try_get_json_value(case_root.remarks, 'subject')), '')
+            WHEN case_root.inst_category_id = 102 THEN
+                NULLIF(BTRIM(case_type.inst_type_name), '')
+            ELSE NULL
+        END AS CaseSummary
+        """;
+
     public async Task<NotificationPage> ListAsync(
         NotificationRecipient recipient,
         int pageSize,
@@ -56,24 +73,29 @@ public sealed class NotificationService(string connectionString) : INotification
             await connection.QueryAsync<NotificationRow>(
                 new CommandDefinition(
                     $"""
-                    SELECT notification_id AS Id,
-                           case_id AS CaseId,
-                           event_type AS EventType,
-                           created_at AS CreatedAt,
-                           read_at AS ReadAt,
-                           payload ->> 'title' AS Title,
-                           payload ->> 'message' AS Message
-                    FROM digital.case_notifications
-                    WHERE {RecipientPredicate(recipient)}
+                    SELECT notification.notification_id AS Id,
+                           notification.case_id AS CaseId,
+                           notification.event_type AS EventType,
+                           notification.created_at AS CreatedAt,
+                           notification.read_at AS ReadAt,
+                           {CasePresentationColumns}
+                    FROM digital.case_notifications notification
+                    LEFT JOIN digital.instructions case_root
+                      ON case_root.id = notification.case_id
+                     AND case_root.client_id = notification.client_id
+                     AND case_root.instruction_id = case_root.id
+                    LEFT JOIN digital.inst_types case_type
+                      ON case_type.id = case_root.inst_type_id
+                    WHERE {RecipientPredicate(recipient, "notification")}
                       AND (
                           CAST(@CursorCreatedAt AS timestamptz) IS NULL
-                          OR (created_at, notification_id) <
+                          OR (notification.created_at, notification.notification_id) <
                              (
                                  CAST(@CursorCreatedAt AS timestamptz),
                                  CAST(@CursorId AS bigint)
                              )
                       )
-                    ORDER BY created_at DESC, notification_id DESC
+                    ORDER BY notification.created_at DESC, notification.notification_id DESC
                     LIMIT @TakePlusOne;
                     """,
                     Parameters(
@@ -119,17 +141,31 @@ public sealed class NotificationService(string connectionString) : INotification
             var row = await connection.QuerySingleOrDefaultAsync<NotificationRow>(
                 new CommandDefinition(
                     $"""
-                    UPDATE digital.case_notifications
-                    SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
-                    WHERE notification_id = @NotificationId
-                      AND {RecipientPredicate(recipient)}
-                    RETURNING notification_id AS Id,
-                              case_id AS CaseId,
-                              event_type AS EventType,
-                              created_at AS CreatedAt,
-                              read_at AS ReadAt,
-                              payload ->> 'title' AS Title,
-                              payload ->> 'message' AS Message;
+                    WITH updated AS (
+                        UPDATE digital.case_notifications notification
+                        SET read_at = COALESCE(notification.read_at, CURRENT_TIMESTAMP)
+                        WHERE notification.notification_id = @NotificationId
+                          AND {RecipientPredicate(recipient, "notification")}
+                        RETURNING notification.notification_id AS Id,
+                                  notification.case_id AS CaseId,
+                                  notification.client_id AS ClientId,
+                                  notification.event_type AS EventType,
+                                  notification.created_at AS CreatedAt,
+                                  notification.read_at AS ReadAt
+                    )
+                    SELECT updated.Id,
+                           updated.CaseId,
+                           updated.EventType,
+                           updated.CreatedAt,
+                           updated.ReadAt,
+                           {CasePresentationColumns}
+                    FROM updated
+                    LEFT JOIN digital.instructions case_root
+                      ON case_root.id = updated.CaseId
+                     AND case_root.client_id = updated.ClientId
+                     AND case_root.instruction_id = case_root.id
+                    LEFT JOIN digital.inst_types case_type
+                      ON case_type.id = case_root.inst_type_id;
                     """,
                     Parameters(recipient, new { NotificationId = notificationId }),
                     transaction: transaction,
@@ -214,12 +250,15 @@ public sealed class NotificationService(string connectionString) : INotification
         var rows = (
             await connection.QueryAsync<NotificationEventRow>(
                 new CommandDefinition(
-                    """
-                    SELECT notification_id AS Id, case_id AS CaseId, event_type AS EventType,
-                           created_at AS CreatedAt, read_at AS ReadAt,
+                    $"""
+                    SELECT notification.notification_id AS Id,
+                           notification.case_id AS CaseId,
+                           notification.event_type AS EventType,
+                           notification.created_at AS CreatedAt,
+                           notification.read_at AS ReadAt,
+                           {CasePresentationColumns},
                            recipient_kind AS RecipientKind, admin_user_id AS AdminUserId,
                            client_id AS ClientId, client_user_id AS ClientUserId,
-                           payload ->> 'title' AS Title, payload ->> 'message' AS Message,
                            (SELECT count(*)
                             FROM digital.case_notifications recipient_notifications
                             WHERE recipient_notifications.recipient_kind = notification.recipient_kind
@@ -228,6 +267,12 @@ public sealed class NotificationService(string connectionString) : INotification
                               AND recipient_notifications.client_user_id IS NOT DISTINCT FROM notification.client_user_id
                               AND recipient_notifications.read_at IS NULL) AS UnreadCount
                     FROM digital.case_notifications notification
+                    LEFT JOIN digital.instructions case_root
+                      ON case_root.id = notification.case_id
+                     AND case_root.client_id = notification.client_id
+                     AND case_root.instruction_id = case_root.id
+                    LEFT JOIN digital.inst_types case_type
+                      ON case_type.id = case_root.inst_type_id
                     WHERE notification.event_id = @EventId
                     ORDER BY notification.notification_id;
                     """,
@@ -247,8 +292,11 @@ public sealed class NotificationService(string connectionString) : INotification
             .ToArray();
     }
 
-    private static NotificationResponse ToResponse(NotificationRow row) =>
-        new(
+    private static NotificationResponse ToResponse(NotificationRow row)
+    {
+        var caseType = CaseTypeFor(row.CaseType, row.EventType);
+        var caseReference = $"{caseType} #{row.CaseId}";
+        return new(
             row.Id,
             row.CaseId,
             row.EventType,
@@ -256,14 +304,18 @@ public sealed class NotificationService(string connectionString) : INotification
             row.ReadAt is null
                 ? null
                 : new DateTimeOffset(DateTime.SpecifyKind(row.ReadAt.Value, DateTimeKind.Utc)),
-            row.Title ?? TitleFor(row.EventType),
-            row.Message ?? MessageFor(row.EventType, row.CaseId)
+            TitleFor(row.EventType, caseReference),
+            MessageFor(row.EventType, caseType, caseReference, row.CaseSummary)
         );
+    }
 
-    private static string RecipientPredicate(NotificationRecipient recipient) =>
-        recipient.IsAdmin
-            ? "recipient_kind = 'Admin' AND admin_user_id = @UserId"
-            : "recipient_kind = 'Client' AND client_id = @ClientId AND client_user_id = @UserId";
+    private static string RecipientPredicate(NotificationRecipient recipient, string? tableAlias = null)
+    {
+        var prefix = string.IsNullOrWhiteSpace(tableAlias) ? string.Empty : $"{tableAlias}.";
+        return recipient.IsAdmin
+            ? $"{prefix}recipient_kind = 'Admin' AND {prefix}admin_user_id = @UserId"
+            : $"{prefix}recipient_kind = 'Client' AND {prefix}client_id = @ClientId AND {prefix}client_user_id = @UserId";
+    }
 
     private static DynamicParameters Parameters(NotificationRecipient recipient, object values)
     {
@@ -288,19 +340,50 @@ public sealed class NotificationService(string connectionString) : INotification
             )
         );
 
-    private static string TitleFor(string eventType) =>
+    private static string CaseTypeFor(string? caseType, string eventType) =>
+        caseType is "Ticket" or "Inquiry"
+            ? caseType
+            : eventType.StartsWith("Ticket", StringComparison.Ordinal)
+                ? "Ticket"
+                : eventType.StartsWith("Inquiry", StringComparison.Ordinal)
+                    ? "Inquiry"
+                    : "Support case";
+
+    private static string TitleFor(string eventType, string caseReference) =>
         eventType switch
         {
-            "TicketCreated" => "New support ticket",
-            "InquiryCreated" => "New inquiry",
-            "TicketResolved" or "TicketReopened" or "TicketUpdated" => "Ticket update",
-            "InquiryCompleted" or "InquiryReopened" => "Inquiry update",
-            "CaseReplyCreated" => "New case reply",
-            _ => "Support update",
+            "TicketCreated" => $"New ticket · {caseReference}",
+            "InquiryCreated" => $"New inquiry · {caseReference}",
+            "TicketResolved" => $"{caseReference} resolved",
+            "TicketReopened" => $"{caseReference} reopened",
+            "TicketUpdated" => $"{caseReference} updated",
+            "InquiryCompleted" => $"{caseReference} completed",
+            "InquiryReopened" => $"{caseReference} reopened",
+            "CaseReplyCreated" => $"New reply on {caseReference}",
+            _ => $"{caseReference} updated",
         };
 
-    private static string MessageFor(string eventType, long caseId) =>
-        $"{TitleFor(eventType)} for case #{caseId}.";
+    private static string MessageFor(
+        string eventType,
+        string caseType,
+        string caseReference,
+        string? caseSummary)
+    {
+        var summary = string.IsNullOrWhiteSpace(caseSummary) ? caseReference : caseSummary.Trim();
+        var action = eventType switch
+        {
+            "TicketCreated" => "A new ticket was created.",
+            "InquiryCreated" => "A new inquiry was created.",
+            "TicketResolved" => "This ticket was resolved.",
+            "TicketReopened" => "This ticket was reopened.",
+            "TicketUpdated" => "Ticket details were updated.",
+            "InquiryCompleted" => "This inquiry was completed.",
+            "InquiryReopened" => "This inquiry was reopened.",
+            "CaseReplyCreated" => "A new reply was added.",
+            _ => $"This {caseType.ToLowerInvariant()} was updated.",
+        };
+        return $"{summary} — {action}";
+    }
 
     private record NotificationRow(
         long Id,
@@ -308,8 +391,8 @@ public sealed class NotificationService(string connectionString) : INotification
         string EventType,
         DateTime CreatedAt,
         DateTime? ReadAt,
-        string? Title,
-        string? Message
+        string? CaseType,
+        string? CaseSummary
     );
 
     private sealed record NotificationEventRow(
@@ -318,14 +401,14 @@ public sealed class NotificationService(string connectionString) : INotification
         string EventType,
         DateTime CreatedAt,
         DateTime? ReadAt,
+        string? CaseType,
+        string? CaseSummary,
         string RecipientKind,
         int? AdminUserId,
         long ClientId,
         int? ClientUserId,
-        string? Title,
-        string? Message,
         long UnreadCount
-    ) : NotificationRow(Id, CaseId, EventType, CreatedAt, ReadAt, Title, Message);
+    ) : NotificationRow(Id, CaseId, EventType, CreatedAt, ReadAt, CaseType, CaseSummary);
 
     private sealed record NotificationCursor(DateTime CreatedAt, long Id)
     {
